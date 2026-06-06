@@ -23,6 +23,7 @@ venv.bak/
 .cache/
 .python_deps/
 .ros/
+standard_vtol_nmpc/results/
 
 # Locally cloned/built dependencies for demo setup
 Micro-XRCE-DDS-Agent/
