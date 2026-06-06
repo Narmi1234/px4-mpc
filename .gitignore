@@ -18,3 +18,15 @@ venv.bak/
 
 *c_generated_code*
 *.json
+
+# Local ROS/acados/demo runtime artifacts
+.cache/
+.python_deps/
+.ros/
+
+# Locally cloned/built dependencies for demo setup
+Micro-XRCE-DDS-Agent/
+microxrce_agent_install/
+acados/
+px4-offboard/
+px4_msgs/
