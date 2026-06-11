@@ -1,4 +1,4 @@
-"""CasADi/Ipopt NMPC formulation for the standard VTOL transition."""
+"""CasADi/Ipopt NMPC formulation for a 6DOF standard VTOL transition."""
 
 from __future__ import annotations
 
@@ -19,13 +19,15 @@ except ImportError:  # Allows: python standard_vtol_nmpc/simulate.py
 
 @dataclass(frozen=True)
 class MpcConfig:
-    dt: float = 0.12
-    horizon_steps: int = 25
-    max_ipopt_iter: int = 120
+    dt: float = 0.15
+    horizon_steps: int = 18
+    max_ipopt_iter: int = 160
+    max_tilt_deg: float = 70.0
+    max_body_rate: float = 2.0
 
 
 class StandardVtolNMPC:
-    """Small multiple-shooting NMPC solver built with CasADi Opti."""
+    """Multiple-shooting NMPC solver built with CasADi Opti."""
 
     def __init__(self, model: StandardVtolModel, config: MpcConfig | None = None):
         if ca is None:
@@ -44,6 +46,9 @@ class StandardVtolNMPC:
         x_ref: np.ndarray,
         previous_solution: dict[str, np.ndarray] | None = None,
     ) -> dict[str, np.ndarray | float]:
+        x0 = self.model.normalize_state(x0)
+        x_ref = self.model.normalize_state(x_ref)
+
         opti = self.opti
         opti.set_value(self.x0_param, x0)
         opti.set_value(self.x_ref_param, x_ref)
@@ -65,6 +70,9 @@ class StandardVtolNMPC:
             u_pred = np.array(stats.value(self.U), dtype=float)
             objective = float(stats.value(self.objective))
             status = "Solver_Failed_Debug_Solution"
+
+        for k in range(x_pred.shape[1]):
+            x_pred[:, k] = self.model.normalize_state(x_pred[:, k])
 
         return {
             "x_pred": x_pred,
@@ -89,15 +97,25 @@ class StandardVtolNMPC:
         f = self.model.casadi_dynamics()
         objective = 0.0
 
-        q_weights = np.diag([0.2, 18.0, 3.0, 4.0, 8.0, 0.4])
-        q_terminal = np.diag([0.5, 50.0, 12.0, 8.0, 18.0, 1.0])
-        r_weights = np.diag([0.012, 0.035, 0.08])
-        du_weights = np.diag([0.05, 0.03, 0.12])
+        weights = {
+            "position": np.diag([0.18, 5.0, 18.0]),
+            "velocity": np.diag([3.0, 2.0, 4.0]),
+            "attitude": np.diag([12.0, 14.0, 5.0]),
+            "omega": np.diag([0.4, 0.5, 0.25]),
+            "quat_norm": 20.0,
+        }
+        terminal_weights = {
+            "position": np.diag([0.7, 20.0, 65.0]),
+            "velocity": np.diag([12.0, 6.0, 14.0]),
+            "attitude": np.diag([35.0, 45.0, 15.0]),
+            "omega": np.diag([1.5, 1.8, 1.0]),
+            "quat_norm": 60.0,
+        }
+        r_weights = np.diag([0.012, 0.035, 0.09, 0.11, 0.08])
+        du_weights = np.diag([0.05, 0.03, 0.14, 0.16, 0.11])
 
-        hover_u = self.model.hover_control
-        forward_trim_u = np.array([12.0, 8.0, 0.0])
-        u_ref = opti.parameter(nu)
-        opti.set_value(u_ref, forward_trim_u)
+        hover_u = ca.DM(self.model.hover_control)
+        forward_trim_u = ca.DM(self.model.forward_trim_control)
 
         opti.subject_to(X[:, 0] == x0_param)
         for k in range(n):
@@ -105,28 +123,38 @@ class StandardVtolNMPC:
             opti.subject_to(X[:, k + 1] == x_next)
 
             progress = (k + 1) / n
-            scheduled_ref = x0_param + progress * (x_ref_param - x0_param)
-            state_error = X[:, k] - scheduled_ref
-            control_error = U[:, k] - ((1.0 - progress) * hover_u + progress * u_ref)
+            scheduled_ref = self._scheduled_reference(x0_param, x_ref_param, progress)
+            objective += self._state_tracking_cost(X[:, k], scheduled_ref, weights)
 
-            objective += ca.mtimes([state_error.T, q_weights, state_error])
+            control_ref = (1.0 - progress) * hover_u + progress * forward_trim_u
+            control_error = U[:, k] - control_ref
             objective += ca.mtimes([control_error.T, r_weights, control_error])
             if k > 0:
                 delta_u = U[:, k] - U[:, k - 1]
                 objective += ca.mtimes([delta_u.T, du_weights, delta_u])
 
-        terminal_error = X[:, n] - x_ref_param
-        objective += ca.mtimes([terminal_error.T, q_terminal, terminal_error])
+        objective += self._state_tracking_cost(X[:, n], x_ref_param, terminal_weights)
 
         lb_u = self.model.control_lower_bounds
         ub_u = self.model.control_upper_bounds
-        opti.subject_to(opti.bounded(lb_u[0], U[0, :], ub_u[0]))
-        opti.subject_to(opti.bounded(lb_u[1], U[1, :], ub_u[1]))
-        opti.subject_to(opti.bounded(lb_u[2], U[2, :], ub_u[2]))
+        for idx in range(nu):
+            opti.subject_to(opti.bounded(lb_u[idx], U[idx, :], ub_u[idx]))
 
-        opti.subject_to(opti.bounded(-0.45, X[4, :], 0.45))
-        opti.subject_to(opti.bounded(-1.5, X[5, :], 1.5))
-        opti.subject_to(opti.bounded(-6.0, X[3, :], 6.0))
+        min_body_z_world_z = np.cos(np.deg2rad(cfg.max_tilt_deg))
+        for k in range(n + 1):
+            quat = X[6:10, k]
+            opti.subject_to(opti.bounded(0.95, ca.sumsqr(quat), 1.05))
+            opti.subject_to(quat[0] >= 0.0)
+            quat_unit = self._quat_normalize(quat)
+            body_z_world_z = 1.0 - 2.0 * (
+                quat_unit[1] * quat_unit[1] + quat_unit[2] * quat_unit[2]
+            )
+            opti.subject_to(body_z_world_z >= min_body_z_world_z)
+
+        opti.subject_to(opti.bounded(-8.0, X[4, :], 8.0))
+        opti.subject_to(opti.bounded(-6.0, X[5, :], 6.0))
+        for idx in range(10, 13):
+            opti.subject_to(opti.bounded(-cfg.max_body_rate, X[idx, :], cfg.max_body_rate))
 
         opti.minimize(objective)
         opts = {
@@ -136,6 +164,8 @@ class StandardVtolNMPC:
             "ipopt.max_iter": cfg.max_ipopt_iter,
             "ipopt.tol": 1e-4,
             "ipopt.acceptable_tol": 1e-3,
+            "ipopt.hessian_approximation": "limited-memory",
+            "ipopt.mu_strategy": "adaptive",
         }
         opti.solver("ipopt", opts)
 
@@ -145,6 +175,45 @@ class StandardVtolNMPC:
         self.x0_param = x0_param
         self.x_ref_param = x_ref_param
         self.objective = objective
+
+    def _scheduled_reference(self, x0, x_ref, progress: float):
+        pos_ref = x0[0:3] + progress * (x_ref[0:3] - x0[0:3])
+        vel_ref = x0[3:6] + progress * (x_ref[3:6] - x0[3:6])
+        return ca.vertcat(pos_ref, vel_ref, x_ref[6:10], x_ref[10:13])
+
+    def _state_tracking_cost(self, x, x_ref, weights: dict[str, np.ndarray]):
+        pos_error = x[0:3] - x_ref[0:3]
+        vel_error = x[3:6] - x_ref[3:6]
+        quat_error = self._quat_error_vector(x[6:10], x_ref[6:10])
+        omega_error = x[10:13] - x_ref[10:13]
+
+        cost = ca.mtimes([pos_error.T, weights["position"], pos_error])
+        cost += ca.mtimes([vel_error.T, weights["velocity"], vel_error])
+        cost += ca.mtimes([quat_error.T, weights["attitude"], quat_error])
+        cost += ca.mtimes([omega_error.T, weights["omega"], omega_error])
+        quat_norm_error = ca.sumsqr(x[6:10]) - 1.0
+        cost += weights["quat_norm"] * quat_norm_error * quat_norm_error
+        return cost
+
+    def _quat_error_vector(self, q, q_ref):
+        q = self._quat_normalize(q)
+        q_ref = self._quat_normalize(q_ref)
+        q_ref_conj = ca.vertcat(q_ref[0], -q_ref[1], -q_ref[2], -q_ref[3])
+        q_err = self._quat_multiply(q_ref_conj, q)
+        return 2.0 * q_err[1:4]
+
+    def _quat_normalize(self, q):
+        return q / ca.sqrt(ca.sumsqr(q) + 1e-12)
+
+    def _quat_multiply(self, a, b):
+        aw, ax, ay, az = a[0], a[1], a[2], a[3]
+        bw, bx, by, bz = b[0], b[1], b[2], b[3]
+        return ca.vertcat(
+            aw * bw - ax * bx - ay * by - az * bz,
+            aw * bx + ax * bw + ay * bz - az * by,
+            aw * by - ax * bz + ay * bw + az * bx,
+            aw * bz + ax * by - ay * bx + az * bw,
+        )
 
     def _rk4_symbolic(self, f, x, u, dt: float):
         k1 = f(x=x, u=u)["xdot"]
@@ -157,11 +226,13 @@ class StandardVtolNMPC:
         n = self.config.horizon_steps
         for k in range(n + 1):
             progress = k / n
-            self.opti.set_initial(self.X[:, k], x0 + progress * (x_ref - x0))
+            guess_x = self.model.interpolate_state(x0, x_ref, progress)
+            self.opti.set_initial(self.X[:, k], guess_x)
         for k in range(n):
             progress = (k + 1) / n
-            guess_u = (1.0 - progress) * self.model.hover_control + progress * np.array(
-                [12.0, 8.0, 0.0]
+            guess_u = (
+                (1.0 - progress) * self.model.hover_control
+                + progress * self.model.forward_trim_control
             )
             self.opti.set_initial(self.U[:, k], guess_u)
 

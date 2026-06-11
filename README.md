@@ -42,7 +42,8 @@ For instructions, follow the [documentation](https://docs.px4.io/main/en/ros/ros
 
 Run PX4 SITL
 ```
-make px4_sitl gazebo
+cd /home/imran/Repositories/PX4-Autopilot
+make px4_sitl gz_standard_vtol
 ```
 
 Run the micro-ros-agent

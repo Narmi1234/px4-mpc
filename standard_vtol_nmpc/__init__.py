@@ -1,2 +1,1 @@
-"""Offline NMPC experiment for a simplified standard VTOL quadplane."""
-
+"""Offline 6DOF NMPC experiment for a simplified standard VTOL quadplane."""

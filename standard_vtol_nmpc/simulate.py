@@ -1,4 +1,4 @@
-"""Run closed-loop offline NMPC transition simulation."""
+"""Run closed-loop offline NMPC transition simulation for a 6DOF VTOL."""
 
 from __future__ import annotations
 
@@ -16,17 +16,32 @@ except ImportError:  # Allows: python standard_vtol_nmpc/simulate.py
     from mpc_casadi import MpcConfig, StandardVtolNMPC
 
 
+def make_initial_state(model: StandardVtolModel) -> np.ndarray:
+    x = np.zeros(model.nx, dtype=float)
+    x[3] = 0.05
+    x[6] = 1.0
+    return x
+
+
+def make_forward_flight_reference(model: StandardVtolModel) -> np.ndarray:
+    x_ref = np.zeros(model.nx, dtype=float)
+    x_ref[0] = 120.0
+    x_ref[3] = 16.0
+    x_ref[6] = 1.0
+    return x_ref
+
+
 def run_simulation(
-    total_time: float = 8.0,
-    dt: float = 0.12,
-    horizon_steps: int = 25,
+    total_time: float = 6.0,
+    dt: float = 0.15,
+    horizon_steps: int = 18,
 ) -> dict[str, np.ndarray]:
     model = StandardVtolModel()
     mpc = StandardVtolNMPC(model, MpcConfig(dt=dt, horizon_steps=horizon_steps))
 
     steps = int(round(total_time / dt))
-    x = np.array([0.0, 0.0, 0.05, 0.0, 0.0, 0.0], dtype=float)
-    x_ref = np.array([120.0, 0.0, 16.0, 0.0, 0.04, 0.0], dtype=float)
+    x = make_initial_state(model)
+    x_ref = make_forward_flight_reference(model)
 
     state_history = np.zeros((steps + 1, model.nx))
     control_history = np.zeros((steps, model.nu))
@@ -38,10 +53,10 @@ def run_simulation(
     previous_solution = None
 
     for k in range(steps):
-        # Move the position target forward with the vehicle so velocity and
-        # altitude dominate the transition behavior.
         local_ref = x_ref.copy()
         local_ref[0] = x[0] + 35.0
+        local_ref[1] = 0.0
+        local_ref[2] = 0.0
 
         solution = mpc.solve(x, local_ref, previous_solution)
         u = np.asarray(solution["u0"], dtype=float)
@@ -56,11 +71,13 @@ def run_simulation(
             "u_pred": np.asarray(solution["u_pred"], dtype=float),
         }
 
+        euler_deg = np.rad2deg(model.quaternion_to_euler(x[6:10]))
         print(
             f"{k + 1:03d}/{steps} "
-            f"vx={x[2]:6.2f} m/s z={x[1]:6.2f} m "
-            f"theta={np.rad2deg(x[4]):6.2f} deg "
-            f"u=[{u[0]:5.1f}, {u[1]:5.1f}, {u[2]:5.2f}] "
+            f"p=[{x[0]:6.1f}, {x[1]:5.1f}, {x[2]:5.1f}] m "
+            f"v=[{x[3]:5.1f}, {x[4]:5.1f}, {x[5]:5.1f}] m/s "
+            f"rpy=[{euler_deg[0]:5.1f}, {euler_deg[1]:5.1f}, {euler_deg[2]:5.1f}] deg "
+            f"u=[{u[0]:5.1f}, {u[1]:5.1f}, {u[2]:5.2f}, {u[3]:5.2f}, {u[4]:5.2f}] "
             f"{solution['status']}"
         )
 
@@ -75,14 +92,14 @@ def run_simulation(
 
 def save_results(results: dict[str, np.ndarray], output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    np.savez(output_dir / "transition_results.npz", **results)
+    np.savez(output_dir / "transition_6dof_results.npz", **results)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--total-time", type=float, default=8.0)
-    parser.add_argument("--dt", type=float, default=0.12)
-    parser.add_argument("--horizon-steps", type=int, default=25)
+    parser.add_argument("--total-time", type=float, default=6.0)
+    parser.add_argument("--dt", type=float, default=0.15)
+    parser.add_argument("--horizon-steps", type=int, default=18)
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -103,7 +120,7 @@ def main() -> None:
         raise SystemExit(2) from exc
 
     save_results(results, args.output_dir)
-    print(f"Saved results to {args.output_dir / 'transition_results.npz'}")
+    print(f"Saved results to {args.output_dir / 'transition_6dof_results.npz'}")
 
 
 if __name__ == "__main__":

@@ -187,8 +187,8 @@ Za puni demo trebaju tri terminala.
 Terminal 1: PX4 SITL
 
 ```bash
-cd <PX4-Autopilot>
-make px4_sitl gazebo
+cd /home/imran/Repositories/PX4-Autopilot
+make px4_sitl gz_standard_vtol
 ```
 
 Terminal 2: DDS/micro agent
