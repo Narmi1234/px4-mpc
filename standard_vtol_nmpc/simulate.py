@@ -51,10 +51,12 @@ def run_simulation(
 
     state_history[0] = x
     previous_solution = None
+    horizon_duration = dt * horizon_steps
 
     for k in range(steps):
         local_ref = x_ref.copy()
-        local_ref[0] = x[0] + 35.0
+        # Constant-acceleration reference: distance = average speed * horizon time.
+        local_ref[0] = x[0] + 0.5 * (x[3] + x_ref[3]) * horizon_duration
         local_ref[1] = 0.0
         local_ref[2] = 0.0
 

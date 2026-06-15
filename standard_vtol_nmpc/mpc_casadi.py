@@ -177,7 +177,13 @@ class StandardVtolNMPC:
         self.objective = objective
 
     def _scheduled_reference(self, x0, x_ref, progress: float):
-        pos_ref = x0[0:3] + progress * (x_ref[0:3] - x0[0:3])
+        horizon_duration = self.config.dt * self.config.horizon_steps
+        elapsed = progress * horizon_duration
+        # Integrate the linearly scheduled forward speed to obtain px_ref.
+        acceleration_x = (x_ref[3] - x0[3]) / horizon_duration
+        px_ref = x0[0] + x0[3] * elapsed + 0.5 * acceleration_x * elapsed * elapsed
+        yz_ref = x0[1:3] + progress * (x_ref[1:3] - x0[1:3])
+        pos_ref = ca.vertcat(px_ref, yz_ref)
         vel_ref = x0[3:6] + progress * (x_ref[3:6] - x0[3:6])
         return ca.vertcat(pos_ref, vel_ref, x_ref[6:10], x_ref[10:13])
 
