@@ -69,7 +69,7 @@ class StandardVtolNMPC:
             x_pred = np.array(stats.value(self.X), dtype=float)
             u_pred = np.array(stats.value(self.U), dtype=float)
             objective = float(stats.value(self.objective))
-            status = "Solver_Failed_Debug_Solution"
+            status = self._return_status("Solver_Failed_Debug_Solution")
 
         for k in range(x_pred.shape[1]):
             x_pred[:, k] = self.model.normalize_state(x_pred[:, k])
@@ -175,6 +175,12 @@ class StandardVtolNMPC:
         self.x0_param = x0_param
         self.x_ref_param = x_ref_param
         self.objective = objective
+
+    def _return_status(self, fallback: str) -> str:
+        try:
+            return str(self.opti.stats().get("return_status", fallback))
+        except RuntimeError:
+            return fallback
 
     def _scheduled_reference(self, x0, x_ref, progress: float):
         horizon_duration = self.config.dt * self.config.horizon_steps

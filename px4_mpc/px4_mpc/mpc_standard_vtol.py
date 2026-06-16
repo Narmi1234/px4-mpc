@@ -24,6 +24,7 @@ from px4_msgs.msg import (
     VehicleAngularVelocity,
     VehicleAttitude,
     VehicleLocalPosition,
+    VehicleOdometry,
     VehicleRatesSetpoint,
     VehicleStatus,
 )
@@ -103,7 +104,7 @@ class StandardVtolMPC(Node):
         mpc_config = MpcConfig(
             dt=self.control_dt,
             horizon_steps=int(
-                self.declare_parameter("horizon_steps", 18).value
+                self.declare_parameter("horizon_steps", 8).value
             ),
             max_ipopt_iter=int(
                 self.declare_parameter("max_ipopt_iter", 80).value
@@ -160,6 +161,12 @@ class StandardVtolMPC(Node):
             VehicleLocalPosition,
             _px4_topic(self.namespace, "/fmu/out/vehicle_local_position"),
             self.vehicle_local_position_callback,
+            sub_qos,
+        )
+        self.create_subscription(
+            VehicleOdometry,
+            _px4_topic(self.namespace, "/fmu/out/vehicle_odometry"),
+            self.vehicle_odometry_callback,
             sub_qos,
         )
         self.create_subscription(
@@ -260,6 +267,43 @@ class StandardVtolMPC(Node):
         self.vehicle_local_velocity[1] = -msg.vy
         self.vehicle_local_velocity[2] = -msg.vz
         self.have_local_position = True
+
+        if not self.have_reference:
+            self.reference_state[0] = self.vehicle_local_position[0]
+            self.reference_state[1] = self.vehicle_local_position[1]
+
+    def vehicle_odometry_callback(self, msg: VehicleOdometry) -> None:
+        if msg.pose_frame != VehicleOdometry.POSE_FRAME_NED:
+            return
+
+        position = np.asarray(msg.position, dtype=float)
+        if not np.isfinite(position).all():
+            return
+
+        self.vehicle_local_position[0] = position[0]
+        self.vehicle_local_position[1] = -position[1]
+        self.vehicle_local_position[2] = -position[2]
+        self.have_local_position = True
+
+        velocity = np.asarray(msg.velocity, dtype=float)
+        if (
+            msg.velocity_frame == VehicleOdometry.VELOCITY_FRAME_NED
+            and np.isfinite(velocity).all()
+        ):
+            self.vehicle_local_velocity[0] = velocity[0]
+            self.vehicle_local_velocity[1] = -velocity[1]
+            self.vehicle_local_velocity[2] = -velocity[2]
+
+        attitude = np.asarray(msg.q, dtype=float)
+        if np.isfinite(attitude).all() and float(np.linalg.norm(attitude)) > 1e-6:
+            self.vehicle_attitude[0] = attitude[0]
+            self.vehicle_attitude[1] = attitude[1]
+            self.vehicle_attitude[2] = -attitude[2]
+            self.vehicle_attitude[3] = -attitude[3]
+            self.vehicle_attitude = self.model.quaternion_normalize(
+                self.vehicle_attitude
+            )
+            self.have_attitude = True
 
         if not self.have_reference:
             self.reference_state[0] = self.vehicle_local_position[0]
@@ -419,8 +463,13 @@ class StandardVtolMPC(Node):
     def _state_ready(self) -> bool:
         if self.have_local_position and self.have_attitude:
             return True
+        missing = []
+        if not self.have_local_position:
+            missing.append("local position")
+        if not self.have_attitude:
+            missing.append("attitude")
         self.get_logger().info(
-            "waiting for PX4 local position and attitude",
+            f"waiting for PX4 {' and '.join(missing)}",
             throttle_duration_sec=2.0,
         )
         return False

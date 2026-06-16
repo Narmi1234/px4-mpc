@@ -26,7 +26,7 @@ def generate_launch_description():
             DeclareLaunchArgument("forward_speed", default_value="16.0"),
             DeclareLaunchArgument("profile", default_value="transition"),
             DeclareLaunchArgument("control_dt", default_value="0.15"),
-            DeclareLaunchArgument("horizon_steps", default_value="18"),
+            DeclareLaunchArgument("horizon_steps", default_value="8"),
             DeclareLaunchArgument("max_ipopt_iter", default_value="80"),
             DeclareLaunchArgument("auto_start", default_value="false"),
             Node(

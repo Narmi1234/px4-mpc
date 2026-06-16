@@ -302,9 +302,14 @@ class StandardVtolModel:
         if symbolic:
             speed = ca.sqrt(ca.sumsqr(vel_body) + p.min_speed_for_aero**2)
             alpha = -ca.atan2(vel_body[2], vel_body[0] + 1e-3)
+            longitudinal_speed = ca.sqrt(
+                vel_body[0] * vel_body[0]
+                + vel_body[2] * vel_body[2]
+                + p.min_speed_for_aero**2
+            )
             beta = ca.atan2(
                 vel_body[1],
-                ca.sqrt(vel_body[0] * vel_body[0] + vel_body[2] * vel_body[2]) + 1e-3,
+                longitudinal_speed,
             )
             cl = p.cl_max * ca.tanh((p.cl_alpha / p.cl_max) * alpha)
             sin_alpha = ca.sin(alpha)
@@ -312,10 +317,17 @@ class StandardVtolModel:
         else:
             speed = float(np.sqrt(np.dot(vel_body, vel_body) + p.min_speed_for_aero**2))
             alpha = float(-np.arctan2(vel_body[2], vel_body[0] + 1e-3))
+            longitudinal_speed = float(
+                np.sqrt(
+                    vel_body[0] * vel_body[0]
+                    + vel_body[2] * vel_body[2]
+                    + p.min_speed_for_aero**2
+                )
+            )
             beta = float(
                 np.arctan2(
                     vel_body[1],
-                    np.sqrt(vel_body[0] * vel_body[0] + vel_body[2] * vel_body[2]) + 1e-3,
+                    longitudinal_speed,
                 )
             )
             cl = float(p.cl_max * np.tanh((p.cl_alpha / p.cl_max) * alpha))
