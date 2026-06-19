@@ -16,7 +16,7 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
-from px4_msgs.msg import VehicleLocalPosition
+from px4_msgs.msg import VehicleLocalPosition, VehicleOdometry
 
 
 def _px4_topic(namespace: str, topic: str) -> str:
@@ -32,6 +32,18 @@ def _px4_sub_qos() -> QoSProfile:
         history=QoSHistoryPolicy.KEEP_LAST,
         depth=1,
     )
+
+
+def _px4_quat_to_model(q_px4) -> np.ndarray:
+    q = np.asarray(q_px4, dtype=float)
+    if not np.isfinite(q).all() or float(np.linalg.norm(q)) < 1e-6:
+        return np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+
+    converted = np.array([q[0], q[1], -q[2], -q[3]], dtype=float)
+    converted = converted / float(np.linalg.norm(converted))
+    if converted[0] < 0.0:
+        converted = -converted
+    return converted
 
 
 class StandardVtolReference(Node):
@@ -59,6 +71,9 @@ class StandardVtolReference(Node):
         self.min_lookahead = float(
             self.declare_parameter("min_lookahead", 10.0).value
         )
+        self.max_odometry_position_norm = float(
+            self.declare_parameter("max_odometry_position_norm", 1000.0).value
+        )
         self.x_offset = float(self.declare_parameter("x_offset", 0.0).value)
         self.y_offset = float(self.declare_parameter("y_offset", 0.0).value)
         self.reference_topic = self.declare_parameter(
@@ -66,13 +81,22 @@ class StandardVtolReference(Node):
         ).value
 
         self.current_position = np.zeros(3, dtype=float)
+        self.current_attitude = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+        self.odometry_origin: np.ndarray | None = None
         self.have_position = False
+        self.have_attitude = False
         self.start_time = self.get_clock().now()
 
         self.create_subscription(
             VehicleLocalPosition,
             _px4_topic(self.namespace, "/fmu/out/vehicle_local_position"),
             self.local_position_callback,
+            _px4_sub_qos(),
+        )
+        self.create_subscription(
+            VehicleOdometry,
+            _px4_topic(self.namespace, "/fmu/out/vehicle_odometry"),
+            self.vehicle_odometry_callback,
             _px4_sub_qos(),
         )
         self.reference_pub = self.create_publisher(
@@ -96,11 +120,33 @@ class StandardVtolReference(Node):
         self.current_position[2] = -msg.z
         self.have_position = True
 
+    def vehicle_odometry_callback(self, msg: VehicleOdometry) -> None:
+        if msg.pose_frame != VehicleOdometry.POSE_FRAME_NED:
+            return
+
+        position = np.asarray(msg.position, dtype=float)
+        if np.isfinite(position).all():
+            if self.odometry_origin is None:
+                self.odometry_origin = position.copy()
+            local_position = position - self.odometry_origin
+            if float(np.linalg.norm(local_position)) > self.max_odometry_position_norm:
+                return
+            self.current_position[0] = local_position[0]
+            self.current_position[1] = -local_position[1]
+            self.current_position[2] = -local_position[2]
+            self.have_position = True
+
+        attitude = np.asarray(msg.q, dtype=float)
+        if np.isfinite(attitude).all() and float(np.linalg.norm(attitude)) > 1e-6:
+            self.current_attitude = _px4_quat_to_model(attitude)
+            self.have_attitude = True
+
     def publish_reference(self) -> None:
         elapsed = (
             self.get_clock().now().nanoseconds - self.start_time.nanoseconds
         ) * 1e-9
         position, velocity = self._reference_at(elapsed)
+        attitude = self._attitude_reference()
 
         msg = Odometry()
         msg.header.frame_id = "map"
@@ -109,10 +155,10 @@ class StandardVtolReference(Node):
         msg.pose.pose.position.x = float(position[0])
         msg.pose.pose.position.y = float(position[1])
         msg.pose.pose.position.z = float(position[2])
-        msg.pose.pose.orientation.w = 1.0
-        msg.pose.pose.orientation.x = 0.0
-        msg.pose.pose.orientation.y = 0.0
-        msg.pose.pose.orientation.z = 0.0
+        msg.pose.pose.orientation.w = float(attitude[0])
+        msg.pose.pose.orientation.x = float(attitude[1])
+        msg.pose.pose.orientation.y = float(attitude[2])
+        msg.pose.pose.orientation.z = float(attitude[3])
         msg.twist.twist.linear.x = float(velocity[0])
         msg.twist.twist.linear.y = float(velocity[1])
         msg.twist.twist.linear.z = float(velocity[2])
@@ -156,6 +202,11 @@ class StandardVtolReference(Node):
         )
         velocity = np.array([speed, 0.0, 0.0], dtype=float)
         return position, velocity
+
+    def _attitude_reference(self) -> np.ndarray:
+        if self.profile == "hover" and self.have_attitude:
+            return self.current_attitude.copy()
+        return np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
 
     @staticmethod
     def _smooth_ramp(value: float) -> float:

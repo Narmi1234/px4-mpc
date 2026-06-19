@@ -51,6 +51,21 @@ def _px4_qos(durability: QoSDurabilityPolicy) -> QoSProfile:
     )
 
 
+def _px4_quat_to_model(q_px4) -> np.ndarray:
+    q = np.asarray(q_px4, dtype=float)
+    if not np.isfinite(q).all() or float(np.linalg.norm(q)) < 1e-6:
+        return np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+
+    converted = np.array([q[0], q[1], -q[2], -q[3]], dtype=float)
+    norm = float(np.linalg.norm(converted))
+    if norm < 1e-6:
+        return np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
+    converted = converted / norm
+    if converted[0] < 0.0:
+        converted = -converted
+    return converted
+
+
 def _pose_msg(
     frame_id: str,
     position: np.ndarray,
@@ -80,7 +95,7 @@ class StandardVtolMPC(Node):
 
         self.namespace = self.declare_parameter("namespace", "").value
         self.control_dt = float(
-            self.declare_parameter("control_dt", 0.15).value
+            self.declare_parameter("control_dt", 0.05).value
         )
         self.heartbeat_dt = float(
             self.declare_parameter("heartbeat_dt", 0.05).value
@@ -97,6 +112,33 @@ class StandardVtolMPC(Node):
         self.rate_setpoint_limit = float(
             self.declare_parameter("rate_setpoint_limit", 2.0).value
         )
+        self.nmpc_max_body_rate = float(
+            self.declare_parameter("nmpc_max_body_rate", 2.0).value
+        )
+        self.max_tilt_deg = float(
+            self.declare_parameter("max_tilt_deg", 70.0).value
+        )
+        self.max_safe_speed = float(
+            self.declare_parameter("max_safe_speed", 15.0).value
+        )
+        self.max_safe_tilt_deg = float(
+            self.declare_parameter("max_safe_tilt_deg", 95.0).value
+        )
+        self.max_odometry_position_norm = float(
+            self.declare_parameter("max_odometry_position_norm", 1000.0).value
+        )
+        self.fallback_hover_thrust = float(
+            self.declare_parameter("fallback_hover_thrust", 0.38).value
+        )
+        self.fallback_altitude_gain = float(
+            self.declare_parameter("fallback_altitude_gain", 0.08).value
+        )
+        self.fallback_min_thrust = float(
+            self.declare_parameter("fallback_min_thrust", 0.15).value
+        )
+        self.fallback_max_thrust = float(
+            self.declare_parameter("fallback_max_thrust", 0.55).value
+        )
         self.reference_topic = self.declare_parameter(
             "reference_topic", "px4_mpc/standard_vtol/reference"
         ).value
@@ -109,15 +151,14 @@ class StandardVtolMPC(Node):
             max_ipopt_iter=int(
                 self.declare_parameter("max_ipopt_iter", 80).value
             ),
-            max_tilt_deg=float(
-                self.declare_parameter("max_tilt_deg", 70.0).value
-            ),
-            max_body_rate=self.rate_setpoint_limit,
+            max_tilt_deg=self.max_tilt_deg,
+            max_body_rate=self.nmpc_max_body_rate,
         )
 
         self.model = StandardVtolModel()
         self.mpc = StandardVtolNMPC(self.model, mpc_config)
         self.previous_solution: dict[str, np.ndarray] | None = None
+        self.odometry_origin: np.ndarray | None = None
 
         self.vehicle_attitude = np.array([1.0, 0.0, 0.0, 0.0], dtype=float)
         self.vehicle_local_position = np.zeros(3, dtype=float)
@@ -230,13 +271,7 @@ class StandardVtolMPC(Node):
         self.arming_state = msg.arming_state
 
     def vehicle_attitude_callback(self, msg: VehicleAttitude) -> None:
-        self.vehicle_attitude[0] = msg.q[0]
-        self.vehicle_attitude[1] = msg.q[1]
-        self.vehicle_attitude[2] = -msg.q[2]
-        self.vehicle_attitude[3] = -msg.q[3]
-        self.vehicle_attitude = self.model.quaternion_normalize(
-            self.vehicle_attitude
-        )
+        self.vehicle_attitude = _px4_quat_to_model(msg.q)
         self.have_attitude = True
 
     def vehicle_angular_velocity_callback(
@@ -277,13 +312,29 @@ class StandardVtolMPC(Node):
             return
 
         position = np.asarray(msg.position, dtype=float)
-        if not np.isfinite(position).all():
-            return
-
-        self.vehicle_local_position[0] = position[0]
-        self.vehicle_local_position[1] = -position[1]
-        self.vehicle_local_position[2] = -position[2]
-        self.have_local_position = True
+        if np.isfinite(position).all():
+            if self.odometry_origin is None:
+                self.odometry_origin = position.copy()
+                self.get_logger().info(
+                    "using current PX4 odometry sample as local origin"
+                )
+            local_position = position - self.odometry_origin
+            if float(np.linalg.norm(local_position)) > self.max_odometry_position_norm:
+                self.get_logger().warn(
+                    "ignoring implausible relative PX4 odometry position: "
+                    f"norm={float(np.linalg.norm(local_position)):.1f} m",
+                    throttle_duration_sec=2.0,
+                )
+                return
+            self.vehicle_local_position[0] = local_position[0]
+            self.vehicle_local_position[1] = -local_position[1]
+            self.vehicle_local_position[2] = -local_position[2]
+            self.have_local_position = True
+        else:
+            self.get_logger().warn(
+                "ignoring non-finite PX4 odometry position",
+                throttle_duration_sec=2.0,
+            )
 
         velocity = np.asarray(msg.velocity, dtype=float)
         if (
@@ -296,13 +347,7 @@ class StandardVtolMPC(Node):
 
         attitude = np.asarray(msg.q, dtype=float)
         if np.isfinite(attitude).all() and float(np.linalg.norm(attitude)) > 1e-6:
-            self.vehicle_attitude[0] = attitude[0]
-            self.vehicle_attitude[1] = attitude[1]
-            self.vehicle_attitude[2] = -attitude[2]
-            self.vehicle_attitude[3] = -attitude[3]
-            self.vehicle_attitude = self.model.quaternion_normalize(
-                self.vehicle_attitude
-            )
+            self.vehicle_attitude = _px4_quat_to_model(attitude)
             self.have_attitude = True
 
         if not self.have_reference:
@@ -376,16 +421,33 @@ class StandardVtolMPC(Node):
         )
         x_ref = self.reference_state.copy()
 
-        solution = self.mpc.solve(x0, x_ref, self.previous_solution)
-        self.previous_solution = {
-            "x_pred": np.asarray(solution["x_pred"], dtype=float),
-            "u_pred": np.asarray(solution["u_pred"], dtype=float),
-        }
-        self.last_solve_status = str(solution["status"])
+        if self._unsafe_for_nmpc():
+            self.previous_solution = None
+            u0 = self._hover_fallback_control()
+            self.get_logger().warn(
+                self._safety_fallback_message(),
+                throttle_duration_sec=1.0,
+            )
+        else:
+            solution = self.mpc.solve(x0, x_ref, self.previous_solution)
+            self.last_solve_status = str(solution["status"])
+            solve_succeeded = self.last_solve_status == "Solve_Succeeded"
 
-        x_pred = np.asarray(solution["x_pred"], dtype=float)
-        u0 = np.asarray(solution["u0"], dtype=float)
-        self.publish_prediction(x_pred)
+            if solve_succeeded:
+                x_pred = np.asarray(solution["x_pred"], dtype=float)
+                self.previous_solution = {
+                    "x_pred": x_pred,
+                    "u_pred": np.asarray(solution["u_pred"], dtype=float),
+                }
+                u0 = np.asarray(solution["u0"], dtype=float)
+                self.publish_prediction(x_pred)
+            else:
+                u0 = self._hover_fallback_control()
+                self.get_logger().warn(
+                    self._solver_failure_message(),
+                    throttle_duration_sec=2.0,
+                )
+
         self.publish_reference_marker(x_ref)
 
         should_publish_setpoint = (
@@ -394,12 +456,6 @@ class StandardVtolMPC(Node):
         )
         if should_publish_setpoint:
             self.publish_rate_setpoint(u0)
-
-        if self.last_solve_status != "Solve_Succeeded":
-            self.get_logger().warn(
-                f"NMPC status: {self.last_solve_status}",
-                throttle_duration_sec=2.0,
-            )
 
     def publish_rate_setpoint(self, u: np.ndarray) -> None:
         params = self.model.params
@@ -428,6 +484,68 @@ class StandardVtolMPC(Node):
         msg.thrust_body[2] = float(-lift)
         msg.reset_integral = False
         self.rates_setpoint_pub.publish(msg)
+
+    def _hover_fallback_control(self) -> np.ndarray:
+        fallback = np.zeros(self.model.nu, dtype=float)
+        altitude_error = (
+            float(self.reference_state[2]) - float(self.vehicle_local_position[2])
+        )
+        normalized_lift = self.fallback_hover_thrust + (
+            self.fallback_altitude_gain * altitude_error
+        )
+        normalized_lift = float(
+            np.clip(
+                normalized_lift,
+                self.fallback_min_thrust,
+                self.fallback_max_thrust,
+            )
+        )
+        fallback[0] = normalized_lift * self.model.params.max_lift_thrust
+        fallback[1:] = 0.0
+        return fallback
+
+    def _unsafe_for_nmpc(self) -> bool:
+        return (
+            self._speed() > self.max_safe_speed
+            or self._tilt_deg() > self.max_safe_tilt_deg
+        )
+
+    def _safety_fallback_message(self) -> str:
+        return (
+            "NMPC safety fallback active; "
+            f"tilt={self._tilt_deg():.1f}/{self.max_safe_tilt_deg:.1f} deg, "
+            f"speed={self._speed():.1f}/{self.max_safe_speed:.1f} m/s, "
+            f"altitude={self.vehicle_local_position[2]:.1f}/"
+            f"{self.reference_state[2]:.1f} m"
+        )
+
+    def _solver_failure_message(self) -> str:
+        return (
+            f"NMPC status: {self.last_solve_status}; "
+            "publishing hover fallback; "
+            f"tilt={self._tilt_deg():.1f}/{self.max_tilt_deg:.1f} deg, "
+            f"speed={self._speed():.1f} m/s, "
+            f"altitude={self.vehicle_local_position[2]:.1f}/"
+            f"{self.reference_state[2]:.1f} m, "
+            f"body_rates={self._body_rates_label()}"
+        )
+
+    def _speed(self) -> float:
+        return float(np.linalg.norm(self.vehicle_local_velocity))
+
+    def _body_rates_label(self) -> str:
+        return (
+            f"[{self.vehicle_angular_velocity[0]:.2f}, "
+            f"{self.vehicle_angular_velocity[1]:.2f}, "
+            f"{self.vehicle_angular_velocity[2]:.2f}]/"
+            f"{self.nmpc_max_body_rate:.2f} rad/s"
+        )
+
+    def _tilt_deg(self) -> float:
+        q = self.model.quaternion_normalize(self.vehicle_attitude)
+        body_z_world_z = 1.0 - 2.0 * (q[1] * q[1] + q[2] * q[2])
+        body_z_world_z = float(np.clip(body_z_world_z, -1.0, 1.0))
+        return float(np.rad2deg(np.arccos(body_z_world_z)))
 
     def publish_prediction(self, x_pred: np.ndarray) -> None:
         msg = Path()

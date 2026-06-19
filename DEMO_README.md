@@ -414,6 +414,11 @@ Ovo pokrece PX4/Gazebo standard VTOL model i NMPC offboard controller. Trebas
 imati otvoren QGroundControl i Gazebo, jer ces tamo najlakse vidjeti da letjelica
 stvarno poleti i krene naprijed.
 
+Vazno: prije commandera mora raditi QGroundControl. Ako QGroundControl ne vidi
+vehicle, ne pokreci `standard_vtol_commander`; prvo popravi PX4/Gazebo/QGC vezu.
+QGroundControl ti je safety UI za `Hold`, `Land`, `Disarm`, health/preflight
+poruke i brzu potvrdu da je PX4 stvarno u `Offboard` modu.
+
 Sta radi svaki novi node:
 
 - `mpc_standard_vtol`: cita `/fmu/out/vehicle_status`,
@@ -456,13 +461,60 @@ colcon build --packages-up-to px4_mpc --symlink-install
 source install/setup.bash
 ```
 
+Ako terminal kaze `colcon: command not found`, prvo source-aj ROS:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+```
+
+Ako `colcon` i dalje ne postoji, instaliraj ga:
+
+```bash
+sudo apt install python3-colcon-common-extensions
+```
+
+Ako build pukne sa greskom poput:
+
+```text
+failed to create symbolic link ... because existing path cannot be removed: Is a directory
+```
+
+to je obicno stari `--symlink-install` build artifact, ne greska u kodu.
+Prvo probaj rebuildati samo Python controller paket:
+
+```bash
+colcon build --packages-select px4_mpc --symlink-install
+source install/setup.bash
+```
+
+Ako ti treba puni dependency build do `px4_mpc`, ocisti samo generisane build
+outpute i ponovi build:
+
+```bash
+rm -rf build/mpc_msgs install/mpc_msgs
+rm -rf build/px4_msgs install/px4_msgs
+rm -rf build/px4_mpc install/px4_mpc
+
+colcon build --packages-up-to px4_mpc --symlink-install
+source install/setup.bash
+```
+
+Nemoj brisati source foldere `mpc_msgs/`, `px4_msgs/` ili `px4_mpc/`; brisu se
+samo `build/` i `install/` outputi.
+
 Provjeri da entry point-i postoje:
 
 ```bash
 ros2 pkg executables px4_mpc | grep -E "mpc_standard_vtol|standard_vtol_reference|standard_vtol_commander"
 ```
 
-#### 3.2.2 Terminal 1: PX4 standard VTOL SITL
+#### 3.2.2 Terminal 0: QGroundControl
+
+Pokreni QGroundControl prije arm/offboard koraka i ostavi ga otvoren tokom
+testa. U QGroundControl-u treba vidjeti vehicle, health/preflight status i mode.
+Ako QGroundControl ne vidi vehicle, ne nastavljaj na commander.
+
+#### 3.2.3 Terminal 1: PX4 standard VTOL SITL
 
 U posebnom terminalu:
 
@@ -471,9 +523,16 @@ cd /home/imran/Repositories/PX4-Autopilot
 make px4_sitl gz_standard_vtol
 ```
 
-Sacekaj da Gazebo ucita standard VTOL model i da QGroundControl vidi vehicle.
+Sacekaj da Gazebo ucita standard VTOL model i da QGroundControl vidi vehicle. Da se pokrene neka suma koristi sljedecu komandu.
 
-#### 3.2.3 Terminal 2: DDS/Micro XRCE Agent
+```bash
+cd /home/imran/Repositories/PX4-Autopilot
+make px4_sitl gz_standard_vtol_forest
+```
+
+U Entity Tree idi na standard_vtol_0 i desni klik follow da bi kamera pratila kretanje letjelice.
+
+#### 3.2.4 Terminal 2: DDS/Micro XRCE Agent
 
 U posebnom terminalu:
 
@@ -493,7 +552,7 @@ ros2 topic list | grep fmu
 Ako nema `/fmu/out/...` topic-a, PX4 i ROS 2 nisu spojeni. Prvo popravi agent
 ili PX4 SITL prije pokretanja NMPC-a.
 
-#### 3.2.4 Terminal 3: Standard VTOL NMPC + referenca
+#### 3.2.5 Terminal 3: Standard VTOL NMPC + referenca
 
 U posebnom terminalu:
 
@@ -528,7 +587,7 @@ ros2 topic hz /fmu/in/offboard_control_mode
 ros2 topic hz /fmu/in/vehicle_rates_setpoint
 ```
 
-#### 3.2.5 Terminal 4: arm + Offboard mode
+#### 3.2.6 Terminal 4: arm + Offboard mode
 
 Kad controller radi par sekundi, u posebnom terminalu pokreni commander:
 
@@ -540,6 +599,22 @@ source install/setup.bash
 
 ros2 run px4_mpc standard_vtol_commander
 ```
+
+Ako u SITL/debug letu commander stalno pise da ceka preflight check, a
+`/fmu/out/vehicle_status` pokazuje:
+
+```text
+pre_flight_checks_pass: false
+```
+
+mozes privremeno pokrenuti commander bez tog guard-a:
+
+```bash
+ros2 run px4_mpc standard_vtol_commander --ros-args -p require_preflight_checks:=false
+```
+
+Ovaj override koristi samo za SITL/debug. Za realnu letjelicu prvo rijesi
+preflight/failsafe razlog umjesto gasenja zastite.
 
 Commander ce:
 
@@ -556,7 +631,7 @@ ros2 launch px4_mpc mpc_standard_vtol_launch.py altitude:=12.0 forward_speed:=8.
 Za prvi test je sigurnije pokrenuti commander rucno u Terminalu 4, jer jasnije
 vidis trenutak kada saljes arm/offboard.
 
-#### 3.2.6 Kako vidjeti da leti
+#### 3.2.7 Kako vidjeti da leti
 
 U Gazebo-u treba vidjeti da standard VTOL:
 
@@ -604,7 +679,7 @@ Ako koristis RViz, korisni topic-i su:
 /px4_mpc/standard_vtol/reference_marker
 ```
 
-#### 3.2.7 Korisni topic-i za standard VTOL offboard
+#### 3.2.8 Korisni topic-i za standard VTOL offboard
 
 ```text
 /fmu/out/vehicle_status
@@ -622,7 +697,7 @@ Vazno: `ros2 launch px4_mpc mpc_quadrotor_launch.py` pokrece quadrotor
 controller, ne standard VTOL controller. Za standard VTOL koristi
 `mpc_standard_vtol_launch.py`.
 
-#### 3.2.8 Ako ne poleti
+#### 3.2.9 Ako ne poleti
 
 Ako QGroundControl pise `Not Ready` ili `Health issues`, nemoj forsirati arm.
 Novi `standard_vtol_commander` po defaultu ceka da PX4 objavi:
@@ -764,4 +839,18 @@ Ako ROS launch pokusava pisati u `~/.ros` a okruzenje to blokira, koristi:
 ```bash
 mkdir -p .ros/log
 export ROS_LOG_DIR=$PWD/.ros/log
+```
+
+Ako zapne letjelica, moze se resetovati px4 i Gazebo ili uraditi sljedece:
+U PX4 shell-u prvo:
+```bash
+commander disarm
+```
+Onda u novom terminalu, za standard VTOL u forest worldu:
+```bash
+gz service -s /world/forest/set_pose \
+  --reqtype gz.msgs.Pose \
+  --reptype gz.msgs.Boolean \
+  --timeout 1000 \
+  --req 'name: "standard_vtol_0", position: {x: 0, y: 0, z: 0.6}, orientation: {w: 1}'
 ```

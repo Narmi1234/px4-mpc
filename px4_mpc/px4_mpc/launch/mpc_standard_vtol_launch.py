@@ -14,9 +14,24 @@ def generate_launch_description():
     altitude = LaunchConfiguration("altitude")
     forward_speed = LaunchConfiguration("forward_speed")
     profile = LaunchConfiguration("profile")
+    transition_delay = LaunchConfiguration("transition_delay")
+    speed_ramp_time = LaunchConfiguration("speed_ramp_time")
+    lookahead_time = LaunchConfiguration("lookahead_time")
+    min_lookahead = LaunchConfiguration("min_lookahead")
     control_dt = LaunchConfiguration("control_dt")
     horizon_steps = LaunchConfiguration("horizon_steps")
     max_ipopt_iter = LaunchConfiguration("max_ipopt_iter")
+    rate_setpoint_limit = LaunchConfiguration("rate_setpoint_limit")
+    nmpc_max_body_rate = LaunchConfiguration("nmpc_max_body_rate")
+    max_safe_speed = LaunchConfiguration("max_safe_speed")
+    max_safe_tilt_deg = LaunchConfiguration("max_safe_tilt_deg")
+    max_odometry_position_norm = LaunchConfiguration(
+        "max_odometry_position_norm"
+    )
+    fallback_hover_thrust = LaunchConfiguration("fallback_hover_thrust")
+    fallback_altitude_gain = LaunchConfiguration("fallback_altitude_gain")
+    fallback_min_thrust = LaunchConfiguration("fallback_min_thrust")
+    fallback_max_thrust = LaunchConfiguration("fallback_max_thrust")
     auto_start = LaunchConfiguration("auto_start")
 
     return LaunchDescription(
@@ -25,9 +40,25 @@ def generate_launch_description():
             DeclareLaunchArgument("altitude", default_value="20.0"),
             DeclareLaunchArgument("forward_speed", default_value="16.0"),
             DeclareLaunchArgument("profile", default_value="transition"),
-            DeclareLaunchArgument("control_dt", default_value="0.15"),
+            DeclareLaunchArgument("transition_delay", default_value="5.0"),
+            DeclareLaunchArgument("speed_ramp_time", default_value="8.0"),
+            DeclareLaunchArgument("lookahead_time", default_value="2.7"),
+            DeclareLaunchArgument("min_lookahead", default_value="10.0"),
+            DeclareLaunchArgument("control_dt", default_value="0.05"),
             DeclareLaunchArgument("horizon_steps", default_value="8"),
             DeclareLaunchArgument("max_ipopt_iter", default_value="80"),
+            DeclareLaunchArgument("rate_setpoint_limit", default_value="0.7"),
+            DeclareLaunchArgument("nmpc_max_body_rate", default_value="2.0"),
+            DeclareLaunchArgument("max_safe_speed", default_value="15.0"),
+            DeclareLaunchArgument("max_safe_tilt_deg", default_value="95.0"),
+            DeclareLaunchArgument(
+                "max_odometry_position_norm",
+                default_value="1000.0",
+            ),
+            DeclareLaunchArgument("fallback_hover_thrust", default_value="0.38"),
+            DeclareLaunchArgument("fallback_altitude_gain", default_value="0.08"),
+            DeclareLaunchArgument("fallback_min_thrust", default_value="0.15"),
+            DeclareLaunchArgument("fallback_max_thrust", default_value="0.55"),
             DeclareLaunchArgument("auto_start", default_value="false"),
             Node(
                 package="px4_mpc",
@@ -49,6 +80,42 @@ def generate_launch_description():
                         "max_ipopt_iter": ParameterValue(
                             max_ipopt_iter,
                             value_type=int,
+                        ),
+                        "rate_setpoint_limit": ParameterValue(
+                            rate_setpoint_limit,
+                            value_type=float,
+                        ),
+                        "nmpc_max_body_rate": ParameterValue(
+                            nmpc_max_body_rate,
+                            value_type=float,
+                        ),
+                        "max_safe_speed": ParameterValue(
+                            max_safe_speed,
+                            value_type=float,
+                        ),
+                        "max_safe_tilt_deg": ParameterValue(
+                            max_safe_tilt_deg,
+                            value_type=float,
+                        ),
+                        "max_odometry_position_norm": ParameterValue(
+                            max_odometry_position_norm,
+                            value_type=float,
+                        ),
+                        "fallback_hover_thrust": ParameterValue(
+                            fallback_hover_thrust,
+                            value_type=float,
+                        ),
+                        "fallback_altitude_gain": ParameterValue(
+                            fallback_altitude_gain,
+                            value_type=float,
+                        ),
+                        "fallback_min_thrust": ParameterValue(
+                            fallback_min_thrust,
+                            value_type=float,
+                        ),
+                        "fallback_max_thrust": ParameterValue(
+                            fallback_max_thrust,
+                            value_type=float,
                         ),
                         "reference_altitude": ParameterValue(
                             altitude,
@@ -73,6 +140,26 @@ def generate_launch_description():
                         ),
                         "forward_speed": ParameterValue(
                             forward_speed,
+                            value_type=float,
+                        ),
+                        "transition_delay": ParameterValue(
+                            transition_delay,
+                            value_type=float,
+                        ),
+                        "speed_ramp_time": ParameterValue(
+                            speed_ramp_time,
+                            value_type=float,
+                        ),
+                        "lookahead_time": ParameterValue(
+                            lookahead_time,
+                            value_type=float,
+                        ),
+                        "min_lookahead": ParameterValue(
+                            min_lookahead,
+                            value_type=float,
+                        ),
+                        "max_odometry_position_norm": ParameterValue(
+                            max_odometry_position_norm,
                             value_type=float,
                         ),
                     }
