@@ -56,48 +56,6 @@ In order to launch the mpc quadrotor in a ros2 launchfile,
 ros2 launch px4_mpc mpc_quadrotor_launch.py 
 ```
 
-### Standard VTOL manual thrust test
-For standard VTOL hover debugging, `mpc_standard_vtol_launch.py` can bypass the
-NMPC and publish a constant `VehicleRatesSetpoint` directly. This is useful for
-checking PX4 thrust scaling before tuning the optimizer.
-
-```bash
-colcon build --symlink-install --packages-select px4_mpc
-source install/setup.bash
-ros2 launch px4_mpc mpc_standard_vtol_launch.py \
-  control_mode:=manual_rates \
-  manual_lift:=0.30 \
-  manual_pusher:=0.0 \
-  manual_roll_rate:=0.0 \
-  manual_pitch_rate:=0.0 \
-  manual_yaw_rate:=0.0 \
-  auto_start:=false
-```
-
-`manual_lift` is normalized from `0.0` to `1.0` and is published as negative
-body-z thrust on `/fmu/in/vehicle_rates_setpoint`. Start with a low value and
-increase it gradually while watching:
-
-```bash
-ros2 topic hz /fmu/in/vehicle_rates_setpoint
-ros2 topic echo /fmu/in/vehicle_rates_setpoint
-```
-
-After finding the approximate hover thrust, use the simple altitude PD test
-mode to close the vertical loop without the NMPC:
-
-```bash
-ros2 launch px4_mpc mpc_standard_vtol_launch.py \
-  control_mode:=altitude_hold \
-  altitude:=2.0 \
-  altitude_hold_hover_thrust:=0.5195 \
-  altitude_hold_gain:=0.02 \
-  altitude_hold_velocity_gain:=0.08 \
-  altitude_hold_min_thrust:=0.45 \
-  altitude_hold_max_thrust:=0.60 \
-  auto_start:=false
-```
-
 The mpc_spacecraft_launch.py file includes optional arguments:
 
 - **mode**: Control mode (wrench by default). Options: wrench, rate, direct_allocation.  

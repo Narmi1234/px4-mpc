@@ -679,7 +679,50 @@ Ako koristis RViz, korisni topic-i su:
 /px4_mpc/standard_vtol/reference_marker
 ```
 
-#### 3.2.8 Korisni topic-i za standard VTOL offboard
+#### 3.2.8 Manualni hover debug bez NMPC-a
+
+Za standard VTOL hover debugging, `mpc_standard_vtol_launch.py` moze zaobici
+NMPC i direktno objavljivati konstantan `VehicleRatesSetpoint`. Ovo je korisno
+da prvo provjeris PX4 thrust scaling prije tuninga optimizatora.
+
+```bash
+colcon build --symlink-install --packages-select px4_mpc
+source install/setup.bash
+ros2 launch px4_mpc mpc_standard_vtol_launch.py \
+  control_mode:=manual_rates \
+  manual_lift:=0.30 \
+  manual_pusher:=0.0 \
+  manual_roll_rate:=0.0 \
+  manual_pitch_rate:=0.0 \
+  manual_yaw_rate:=0.0 \
+  auto_start:=false
+```
+
+`manual_lift` je normalizovan od `0.0` do `1.0` i salje se kao negativan
+body-z thrust na `/fmu/in/vehicle_rates_setpoint`. Kreni sa malom vrijednoscu i
+postepeno je povecavaj dok gledas:
+
+```bash
+ros2 topic hz /fmu/in/vehicle_rates_setpoint
+ros2 topic echo /fmu/in/vehicle_rates_setpoint
+```
+
+Nakon sto nadjes priblizni hover thrust, koristi jednostavni altitude PD test
+mod da zatvoris vertikalnu petlju bez NMPC-a:
+
+```bash
+ros2 launch px4_mpc mpc_standard_vtol_launch.py \
+  control_mode:=altitude_hold \
+  altitude:=2.0 \
+  altitude_hold_hover_thrust:=0.5195 \
+  altitude_hold_gain:=0.02 \
+  altitude_hold_velocity_gain:=0.08 \
+  altitude_hold_min_thrust:=0.45 \
+  altitude_hold_max_thrust:=0.60 \
+  auto_start:=false
+```
+
+#### 3.2.9 Korisni topic-i za standard VTOL offboard
 
 ```text
 /fmu/out/vehicle_status
@@ -697,7 +740,7 @@ Vazno: `ros2 launch px4_mpc mpc_quadrotor_launch.py` pokrece quadrotor
 controller, ne standard VTOL controller. Za standard VTOL koristi
 `mpc_standard_vtol_launch.py`.
 
-#### 3.2.9 Ako ne poleti
+#### 3.2.10 Ako ne poleti
 
 Ako QGroundControl pise `Not Ready` ili `Health issues`, nemoj forsirati arm.
 Novi `standard_vtol_commander` po defaultu ceka da PX4 objavi:
