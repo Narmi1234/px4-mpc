@@ -83,6 +83,21 @@ ros2 topic hz /fmu/in/vehicle_rates_setpoint
 ros2 topic echo /fmu/in/vehicle_rates_setpoint
 ```
 
+After finding the approximate hover thrust, use the simple altitude PD test
+mode to close the vertical loop without the NMPC:
+
+```bash
+ros2 launch px4_mpc mpc_standard_vtol_launch.py \
+  control_mode:=altitude_hold \
+  altitude:=2.0 \
+  altitude_hold_hover_thrust:=0.5195 \
+  altitude_hold_gain:=0.02 \
+  altitude_hold_velocity_gain:=0.08 \
+  altitude_hold_min_thrust:=0.45 \
+  altitude_hold_max_thrust:=0.60 \
+  auto_start:=false
+```
+
 The mpc_spacecraft_launch.py file includes optional arguments:
 
 - **mode**: Control mode (wrench by default). Options: wrench, rate, direct_allocation.  

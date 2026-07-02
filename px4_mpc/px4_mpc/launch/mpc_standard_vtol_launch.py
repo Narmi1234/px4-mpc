@@ -24,6 +24,15 @@ def generate_launch_description():
     manual_roll_rate = LaunchConfiguration("manual_roll_rate")
     manual_pitch_rate = LaunchConfiguration("manual_pitch_rate")
     manual_yaw_rate = LaunchConfiguration("manual_yaw_rate")
+    altitude_hold_hover_thrust = LaunchConfiguration(
+        "altitude_hold_hover_thrust"
+    )
+    altitude_hold_gain = LaunchConfiguration("altitude_hold_gain")
+    altitude_hold_velocity_gain = LaunchConfiguration(
+        "altitude_hold_velocity_gain"
+    )
+    altitude_hold_min_thrust = LaunchConfiguration("altitude_hold_min_thrust")
+    altitude_hold_max_thrust = LaunchConfiguration("altitude_hold_max_thrust")
     control_dt = LaunchConfiguration("control_dt")
     horizon_steps = LaunchConfiguration("horizon_steps")
     max_ipopt_iter = LaunchConfiguration("max_ipopt_iter")
@@ -61,6 +70,17 @@ def generate_launch_description():
             DeclareLaunchArgument("manual_roll_rate", default_value="0.0"),
             DeclareLaunchArgument("manual_pitch_rate", default_value="0.0"),
             DeclareLaunchArgument("manual_yaw_rate", default_value="0.0"),
+            DeclareLaunchArgument(
+                "altitude_hold_hover_thrust",
+                default_value="0.5195",
+            ),
+            DeclareLaunchArgument("altitude_hold_gain", default_value="0.02"),
+            DeclareLaunchArgument(
+                "altitude_hold_velocity_gain",
+                default_value="0.08",
+            ),
+            DeclareLaunchArgument("altitude_hold_min_thrust", default_value="0.45"),
+            DeclareLaunchArgument("altitude_hold_max_thrust", default_value="0.60"),
             DeclareLaunchArgument("control_dt", default_value="0.05"),
             DeclareLaunchArgument("horizon_steps", default_value="8"),
             DeclareLaunchArgument("max_ipopt_iter", default_value="80"),
@@ -114,6 +134,26 @@ def generate_launch_description():
                         ),
                         "manual_yaw_rate": ParameterValue(
                             manual_yaw_rate,
+                            value_type=float,
+                        ),
+                        "altitude_hold_hover_thrust": ParameterValue(
+                            altitude_hold_hover_thrust,
+                            value_type=float,
+                        ),
+                        "altitude_hold_gain": ParameterValue(
+                            altitude_hold_gain,
+                            value_type=float,
+                        ),
+                        "altitude_hold_velocity_gain": ParameterValue(
+                            altitude_hold_velocity_gain,
+                            value_type=float,
+                        ),
+                        "altitude_hold_min_thrust": ParameterValue(
+                            altitude_hold_min_thrust,
+                            value_type=float,
+                        ),
+                        "altitude_hold_max_thrust": ParameterValue(
+                            altitude_hold_max_thrust,
                             value_type=float,
                         ),
                         "control_dt": ParameterValue(

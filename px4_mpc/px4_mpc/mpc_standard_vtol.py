@@ -121,6 +121,21 @@ class StandardVtolMPC(Node):
         self.manual_yaw_rate = float(
             self.declare_parameter("manual_yaw_rate", 0.0).value
         )
+        self.altitude_hold_hover_thrust = float(
+            self.declare_parameter("altitude_hold_hover_thrust", 0.5195).value
+        )
+        self.altitude_hold_gain = float(
+            self.declare_parameter("altitude_hold_gain", 0.02).value
+        )
+        self.altitude_hold_velocity_gain = float(
+            self.declare_parameter("altitude_hold_velocity_gain", 0.08).value
+        )
+        self.altitude_hold_min_thrust = float(
+            self.declare_parameter("altitude_hold_min_thrust", 0.45).value
+        )
+        self.altitude_hold_max_thrust = float(
+            self.declare_parameter("altitude_hold_max_thrust", 0.60).value
+        )
         self.reference_altitude = float(
             self.declare_parameter("reference_altitude", 20.0).value
         )
@@ -305,6 +320,16 @@ class StandardVtolMPC(Node):
                 f"{self.manual_pitch_rate:.3f}, "
                 f"{self.manual_yaw_rate:.3f}] rad/s"
             )
+        elif self.control_mode == "altitude_hold":
+            self.get_logger().warn(
+                "altitude hold test mode active: "
+                f"target={self.reference_altitude:.2f} m, "
+                f"hover={self.altitude_hold_hover_thrust:.4f}, "
+                f"kp={self.altitude_hold_gain:.3f}, "
+                f"kd={self.altitude_hold_velocity_gain:.3f}, "
+                f"limits=[{self.altitude_hold_min_thrust:.3f}, "
+                f"{self.altitude_hold_max_thrust:.3f}]"
+            )
 
     def vehicle_status_callback(self, msg: VehicleStatus) -> None:
         self.nav_state = msg.nav_state
@@ -453,6 +478,13 @@ class StandardVtolMPC(Node):
                 self.publish_manual_rate_setpoint()
             return
 
+        if self.control_mode == "altitude_hold":
+            if not self._state_ready():
+                return
+            if self._should_publish_setpoint():
+                self.publish_altitude_hold_setpoint()
+            return
+
         if not self._state_ready():
             return
 
@@ -513,6 +545,35 @@ class StandardVtolMPC(Node):
         msg.thrust_body[0] = self._clip01(self.manual_pusher)
         msg.thrust_body[1] = 0.0
         msg.thrust_body[2] = -self._clip01(self.manual_lift)
+        msg.reset_integral = False
+        self.rates_setpoint_pub.publish(msg)
+
+    def publish_altitude_hold_setpoint(self) -> None:
+        altitude_error = (
+            self.reference_altitude - float(self.vehicle_local_position[2])
+        )
+        vertical_velocity = float(self.vehicle_local_velocity[2])
+        lift = self.altitude_hold_hover_thrust + (
+            self.altitude_hold_gain * altitude_error
+        ) - (
+            self.altitude_hold_velocity_gain * vertical_velocity
+        )
+        lift = float(
+            np.clip(
+                lift,
+                self.altitude_hold_min_thrust,
+                self.altitude_hold_max_thrust,
+            )
+        )
+
+        msg = VehicleRatesSetpoint()
+        msg.timestamp = _timestamp_us(self)
+        msg.roll = 0.0
+        msg.pitch = 0.0
+        msg.yaw = 0.0
+        msg.thrust_body[0] = self._clip01(self.manual_pusher)
+        msg.thrust_body[1] = 0.0
+        msg.thrust_body[2] = -self._clip01(lift)
         msg.reset_integral = False
         self.rates_setpoint_pub.publish(msg)
 
