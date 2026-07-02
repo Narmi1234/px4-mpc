@@ -18,18 +18,29 @@ def generate_launch_description():
     speed_ramp_time = LaunchConfiguration("speed_ramp_time")
     lookahead_time = LaunchConfiguration("lookahead_time")
     min_lookahead = LaunchConfiguration("min_lookahead")
+    control_mode = LaunchConfiguration("control_mode")
+    manual_lift = LaunchConfiguration("manual_lift")
+    manual_pusher = LaunchConfiguration("manual_pusher")
+    manual_roll_rate = LaunchConfiguration("manual_roll_rate")
+    manual_pitch_rate = LaunchConfiguration("manual_pitch_rate")
+    manual_yaw_rate = LaunchConfiguration("manual_yaw_rate")
     control_dt = LaunchConfiguration("control_dt")
     horizon_steps = LaunchConfiguration("horizon_steps")
     max_ipopt_iter = LaunchConfiguration("max_ipopt_iter")
     rate_setpoint_limit = LaunchConfiguration("rate_setpoint_limit")
     nmpc_max_body_rate = LaunchConfiguration("nmpc_max_body_rate")
     max_safe_speed = LaunchConfiguration("max_safe_speed")
+    speed_safety_min_altitude = LaunchConfiguration("speed_safety_min_altitude")
     max_safe_tilt_deg = LaunchConfiguration("max_safe_tilt_deg")
     max_odometry_position_norm = LaunchConfiguration(
         "max_odometry_position_norm"
     )
     fallback_hover_thrust = LaunchConfiguration("fallback_hover_thrust")
     fallback_altitude_gain = LaunchConfiguration("fallback_altitude_gain")
+    fallback_vertical_velocity_gain = LaunchConfiguration(
+        "fallback_vertical_velocity_gain"
+    )
+    fallback_attitude_gain = LaunchConfiguration("fallback_attitude_gain")
     fallback_min_thrust = LaunchConfiguration("fallback_min_thrust")
     fallback_max_thrust = LaunchConfiguration("fallback_max_thrust")
     auto_start = LaunchConfiguration("auto_start")
@@ -44,21 +55,36 @@ def generate_launch_description():
             DeclareLaunchArgument("speed_ramp_time", default_value="8.0"),
             DeclareLaunchArgument("lookahead_time", default_value="2.7"),
             DeclareLaunchArgument("min_lookahead", default_value="10.0"),
+            DeclareLaunchArgument("control_mode", default_value="nmpc"),
+            DeclareLaunchArgument("manual_lift", default_value="0.0"),
+            DeclareLaunchArgument("manual_pusher", default_value="0.0"),
+            DeclareLaunchArgument("manual_roll_rate", default_value="0.0"),
+            DeclareLaunchArgument("manual_pitch_rate", default_value="0.0"),
+            DeclareLaunchArgument("manual_yaw_rate", default_value="0.0"),
             DeclareLaunchArgument("control_dt", default_value="0.05"),
             DeclareLaunchArgument("horizon_steps", default_value="8"),
             DeclareLaunchArgument("max_ipopt_iter", default_value="80"),
             DeclareLaunchArgument("rate_setpoint_limit", default_value="0.7"),
             DeclareLaunchArgument("nmpc_max_body_rate", default_value="2.0"),
             DeclareLaunchArgument("max_safe_speed", default_value="15.0"),
+            DeclareLaunchArgument(
+                "speed_safety_min_altitude",
+                default_value="1.0",
+            ),
             DeclareLaunchArgument("max_safe_tilt_deg", default_value="95.0"),
             DeclareLaunchArgument(
                 "max_odometry_position_norm",
                 default_value="1000.0",
             ),
-            DeclareLaunchArgument("fallback_hover_thrust", default_value="0.38"),
-            DeclareLaunchArgument("fallback_altitude_gain", default_value="0.08"),
+            DeclareLaunchArgument("fallback_hover_thrust", default_value="0.56"),
+            DeclareLaunchArgument("fallback_altitude_gain", default_value="0.03"),
+            DeclareLaunchArgument(
+                "fallback_vertical_velocity_gain",
+                default_value="0.12",
+            ),
+            DeclareLaunchArgument("fallback_attitude_gain", default_value="1.8"),
             DeclareLaunchArgument("fallback_min_thrust", default_value="0.15"),
-            DeclareLaunchArgument("fallback_max_thrust", default_value="0.55"),
+            DeclareLaunchArgument("fallback_max_thrust", default_value="0.75"),
             DeclareLaunchArgument("auto_start", default_value="false"),
             Node(
                 package="px4_mpc",
@@ -69,6 +95,27 @@ def generate_launch_description():
                 parameters=[
                     {
                         "namespace": namespace,
+                        "control_mode": control_mode,
+                        "manual_lift": ParameterValue(
+                            manual_lift,
+                            value_type=float,
+                        ),
+                        "manual_pusher": ParameterValue(
+                            manual_pusher,
+                            value_type=float,
+                        ),
+                        "manual_roll_rate": ParameterValue(
+                            manual_roll_rate,
+                            value_type=float,
+                        ),
+                        "manual_pitch_rate": ParameterValue(
+                            manual_pitch_rate,
+                            value_type=float,
+                        ),
+                        "manual_yaw_rate": ParameterValue(
+                            manual_yaw_rate,
+                            value_type=float,
+                        ),
                         "control_dt": ParameterValue(
                             control_dt,
                             value_type=float,
@@ -93,6 +140,10 @@ def generate_launch_description():
                             max_safe_speed,
                             value_type=float,
                         ),
+                        "speed_safety_min_altitude": ParameterValue(
+                            speed_safety_min_altitude,
+                            value_type=float,
+                        ),
                         "max_safe_tilt_deg": ParameterValue(
                             max_safe_tilt_deg,
                             value_type=float,
@@ -107,6 +158,14 @@ def generate_launch_description():
                         ),
                         "fallback_altitude_gain": ParameterValue(
                             fallback_altitude_gain,
+                            value_type=float,
+                        ),
+                        "fallback_vertical_velocity_gain": ParameterValue(
+                            fallback_vertical_velocity_gain,
+                            value_type=float,
+                        ),
+                        "fallback_attitude_gain": ParameterValue(
+                            fallback_attitude_gain,
                             value_type=float,
                         ),
                         "fallback_min_thrust": ParameterValue(

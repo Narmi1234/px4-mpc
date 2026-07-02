@@ -151,10 +151,10 @@ class StandardVtolNMPC:
             )
             opti.subject_to(body_z_world_z >= min_body_z_world_z)
 
-        opti.subject_to(opti.bounded(-8.0, X[4, :], 8.0))
-        opti.subject_to(opti.bounded(-6.0, X[5, :], 6.0))
+        opti.subject_to(opti.bounded(-8.0, X[4, 1:], 8.0))
+        opti.subject_to(opti.bounded(-6.0, X[5, 1:], 6.0))
         for idx in range(10, 13):
-            opti.subject_to(opti.bounded(-cfg.max_body_rate, X[idx, :], cfg.max_body_rate))
+            opti.subject_to(opti.bounded(-cfg.max_body_rate, X[idx, 1:], cfg.max_body_rate))
 
         opti.minimize(objective)
         opts = {

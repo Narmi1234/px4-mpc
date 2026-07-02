@@ -103,6 +103,24 @@ class StandardVtolMPC(Node):
         self.publish_before_offboard = bool(
             self.declare_parameter("publish_before_offboard", True).value
         )
+        self.control_mode = str(
+            self.declare_parameter("control_mode", "nmpc").value
+        ).strip().lower()
+        self.manual_lift = float(
+            self.declare_parameter("manual_lift", 0.0).value
+        )
+        self.manual_pusher = float(
+            self.declare_parameter("manual_pusher", 0.0).value
+        )
+        self.manual_roll_rate = float(
+            self.declare_parameter("manual_roll_rate", 0.0).value
+        )
+        self.manual_pitch_rate = float(
+            self.declare_parameter("manual_pitch_rate", 0.0).value
+        )
+        self.manual_yaw_rate = float(
+            self.declare_parameter("manual_yaw_rate", 0.0).value
+        )
         self.reference_altitude = float(
             self.declare_parameter("reference_altitude", 20.0).value
         )
@@ -121,6 +139,9 @@ class StandardVtolMPC(Node):
         self.max_safe_speed = float(
             self.declare_parameter("max_safe_speed", 15.0).value
         )
+        self.speed_safety_min_altitude = float(
+            self.declare_parameter("speed_safety_min_altitude", 1.0).value
+        )
         self.max_safe_tilt_deg = float(
             self.declare_parameter("max_safe_tilt_deg", 95.0).value
         )
@@ -128,16 +149,25 @@ class StandardVtolMPC(Node):
             self.declare_parameter("max_odometry_position_norm", 1000.0).value
         )
         self.fallback_hover_thrust = float(
-            self.declare_parameter("fallback_hover_thrust", 0.38).value
+            self.declare_parameter("fallback_hover_thrust", 0.56).value
         )
         self.fallback_altitude_gain = float(
-            self.declare_parameter("fallback_altitude_gain", 0.08).value
+            self.declare_parameter("fallback_altitude_gain", 0.03).value
+        )
+        self.fallback_vertical_velocity_gain = float(
+            self.declare_parameter(
+                "fallback_vertical_velocity_gain",
+                0.12,
+            ).value
+        )
+        self.fallback_attitude_gain = float(
+            self.declare_parameter("fallback_attitude_gain", 1.8).value
         )
         self.fallback_min_thrust = float(
             self.declare_parameter("fallback_min_thrust", 0.15).value
         )
         self.fallback_max_thrust = float(
-            self.declare_parameter("fallback_max_thrust", 0.55).value
+            self.declare_parameter("fallback_max_thrust", 0.75).value
         )
         self.reference_topic = self.declare_parameter(
             "reference_topic", "px4_mpc/standard_vtol/reference"
@@ -261,10 +291,20 @@ class StandardVtolMPC(Node):
 
         self.get_logger().info(
             "standard VTOL NMPC ready: "
+            f"mode={self.control_mode}, "
             f"dt={self.control_dt:.3f}s, horizon={mpc_config.horizon_steps}, "
             f"reference="
             f"{_px4_topic(self.namespace, self.reference_topic)}"
         )
+        if self.control_mode == "manual_rates":
+            self.get_logger().warn(
+                "manual rate/thrust test mode active: "
+                f"lift={self.manual_lift:.3f}, "
+                f"pusher={self.manual_pusher:.3f}, "
+                f"rates=[{self.manual_roll_rate:.3f}, "
+                f"{self.manual_pitch_rate:.3f}, "
+                f"{self.manual_yaw_rate:.3f}] rad/s"
+            )
 
     def vehicle_status_callback(self, msg: VehicleStatus) -> None:
         self.nav_state = msg.nav_state
@@ -408,6 +448,11 @@ class StandardVtolMPC(Node):
         self.offboard_mode_pub.publish(msg)
 
     def control_loop(self) -> None:
+        if self.control_mode == "manual_rates":
+            if self._should_publish_setpoint():
+                self.publish_manual_rate_setpoint()
+            return
+
         if not self._state_ready():
             return
 
@@ -450,12 +495,26 @@ class StandardVtolMPC(Node):
 
         self.publish_reference_marker(x_ref)
 
-        should_publish_setpoint = (
+        if self._should_publish_setpoint():
+            self.publish_rate_setpoint(u0)
+
+    def _should_publish_setpoint(self) -> bool:
+        return (
             self.publish_before_offboard
             or self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD
         )
-        if should_publish_setpoint:
-            self.publish_rate_setpoint(u0)
+
+    def publish_manual_rate_setpoint(self) -> None:
+        msg = VehicleRatesSetpoint()
+        msg.timestamp = _timestamp_us(self)
+        msg.roll = float(self.manual_roll_rate)
+        msg.pitch = float(self.manual_pitch_rate)
+        msg.yaw = float(self.manual_yaw_rate)
+        msg.thrust_body[0] = self._clip01(self.manual_pusher)
+        msg.thrust_body[1] = 0.0
+        msg.thrust_body[2] = -self._clip01(self.manual_lift)
+        msg.reset_integral = False
+        self.rates_setpoint_pub.publish(msg)
 
     def publish_rate_setpoint(self, u: np.ndarray) -> None:
         params = self.model.params
@@ -492,6 +551,9 @@ class StandardVtolMPC(Node):
         )
         normalized_lift = self.fallback_hover_thrust + (
             self.fallback_altitude_gain * altitude_error
+        ) - (
+            self.fallback_vertical_velocity_gain
+            * float(self.vehicle_local_velocity[2])
         )
         normalized_lift = float(
             np.clip(
@@ -501,22 +563,60 @@ class StandardVtolMPC(Node):
             )
         )
         fallback[0] = normalized_lift * self.model.params.max_lift_thrust
-        fallback[1:] = 0.0
+        fallback[1] = 0.0
+        fallback[2:5] = self._leveling_moments()
         return fallback
 
-    def _unsafe_for_nmpc(self) -> bool:
-        return (
-            self._speed() > self.max_safe_speed
-            or self._tilt_deg() > self.max_safe_tilt_deg
+    def _leveling_moments(self) -> np.ndarray:
+        params = self.model.params
+        if self.rate_setpoint_limit <= 0.0:
+            return np.zeros(3, dtype=float)
+
+        roll, pitch, _ = self.model.quaternion_to_euler(self.vehicle_attitude)
+        desired_rates = np.array(
+            [
+                -self.fallback_attitude_gain * roll,
+                -self.fallback_attitude_gain * pitch,
+                0.0,
+            ],
+            dtype=float,
         )
+        desired_rates = np.clip(
+            desired_rates,
+            -self.rate_setpoint_limit,
+            self.rate_setpoint_limit,
+        )
+        return np.array(
+            [
+                desired_rates[0] / self.rate_setpoint_limit
+                * params.max_roll_moment,
+                desired_rates[1] / self.rate_setpoint_limit
+                * params.max_pitch_moment,
+                desired_rates[2] / self.rate_setpoint_limit
+                * params.max_yaw_moment,
+            ],
+            dtype=float,
+        )
+
+    def _unsafe_for_nmpc(self) -> bool:
+        speed_safety_active = (
+            self.vehicle_local_position[2] > self.speed_safety_min_altitude
+        )
+        speed_unsafe = speed_safety_active and self._speed() > self.max_safe_speed
+        tilt_unsafe = self._tilt_deg() > self.max_safe_tilt_deg
+        return speed_unsafe or tilt_unsafe
 
     def _safety_fallback_message(self) -> str:
         return (
             "NMPC safety fallback active; "
             f"tilt={self._tilt_deg():.1f}/{self.max_safe_tilt_deg:.1f} deg, "
             f"speed={self._speed():.1f}/{self.max_safe_speed:.1f} m/s, "
+            f"velocity=[{self.vehicle_local_velocity[0]:.1f}, "
+            f"{self.vehicle_local_velocity[1]:.1f}, "
+            f"{self.vehicle_local_velocity[2]:.1f}] m/s, "
             f"altitude={self.vehicle_local_position[2]:.1f}/"
-            f"{self.reference_state[2]:.1f} m"
+            f"{self.reference_state[2]:.1f} m, "
+            f"speed_safety_min_altitude={self.speed_safety_min_altitude:.1f} m"
         )
 
     def _solver_failure_message(self) -> str:
