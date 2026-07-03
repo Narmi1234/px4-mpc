@@ -33,6 +33,14 @@ def generate_launch_description():
     )
     altitude_hold_min_thrust = LaunchConfiguration("altitude_hold_min_thrust")
     altitude_hold_max_thrust = LaunchConfiguration("altitude_hold_max_thrust")
+    altitude_hold_attitude_gain = LaunchConfiguration(
+        "altitude_hold_attitude_gain"
+    )
+    altitude_hold_max_rate = LaunchConfiguration("altitude_hold_max_rate")
+    altitude_hold_thrust_slew_rate = LaunchConfiguration(
+        "altitude_hold_thrust_slew_rate"
+    )
+    shadow_solve_interval = LaunchConfiguration("shadow_solve_interval")
     control_dt = LaunchConfiguration("control_dt")
     horizon_steps = LaunchConfiguration("horizon_steps")
     max_ipopt_iter = LaunchConfiguration("max_ipopt_iter")
@@ -81,6 +89,16 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("altitude_hold_min_thrust", default_value="0.45"),
             DeclareLaunchArgument("altitude_hold_max_thrust", default_value="0.60"),
+            DeclareLaunchArgument(
+                "altitude_hold_attitude_gain",
+                default_value="1.2",
+            ),
+            DeclareLaunchArgument("altitude_hold_max_rate", default_value="0.35"),
+            DeclareLaunchArgument(
+                "altitude_hold_thrust_slew_rate",
+                default_value="0.25",
+            ),
+            DeclareLaunchArgument("shadow_solve_interval", default_value="0.5"),
             DeclareLaunchArgument("control_dt", default_value="0.05"),
             DeclareLaunchArgument("horizon_steps", default_value="8"),
             DeclareLaunchArgument("max_ipopt_iter", default_value="80"),
@@ -154,6 +172,22 @@ def generate_launch_description():
                         ),
                         "altitude_hold_max_thrust": ParameterValue(
                             altitude_hold_max_thrust,
+                            value_type=float,
+                        ),
+                        "altitude_hold_attitude_gain": ParameterValue(
+                            altitude_hold_attitude_gain,
+                            value_type=float,
+                        ),
+                        "altitude_hold_max_rate": ParameterValue(
+                            altitude_hold_max_rate,
+                            value_type=float,
+                        ),
+                        "altitude_hold_thrust_slew_rate": ParameterValue(
+                            altitude_hold_thrust_slew_rate,
+                            value_type=float,
+                        ),
+                        "shadow_solve_interval": ParameterValue(
+                            shadow_solve_interval,
                             value_type=float,
                         ),
                         "control_dt": ParameterValue(

@@ -114,8 +114,7 @@ class StandardVtolNMPC:
         r_weights = np.diag([0.012, 0.035, 0.09, 0.11, 0.08])
         du_weights = np.diag([0.05, 0.03, 0.14, 0.16, 0.11])
 
-        hover_u = ca.DM(self.model.hover_control)
-        forward_trim_u = ca.DM(self.model.forward_trim_control)
+        hover_trim_u = ca.DM(self.model.hover_control)
 
         opti.subject_to(X[:, 0] == x0_param)
         for k in range(n):
@@ -126,8 +125,7 @@ class StandardVtolNMPC:
             scheduled_ref = self._scheduled_reference(x0_param, x_ref_param, progress)
             objective += self._state_tracking_cost(X[:, k], scheduled_ref, weights)
 
-            control_ref = (1.0 - progress) * hover_u + progress * forward_trim_u
-            control_error = U[:, k] - control_ref
+            control_error = U[:, k] - hover_trim_u
             objective += ca.mtimes([control_error.T, r_weights, control_error])
             if k > 0:
                 delta_u = U[:, k] - U[:, k - 1]
@@ -241,12 +239,7 @@ class StandardVtolNMPC:
             guess_x = self.model.interpolate_state(x0, x_ref, progress)
             self.opti.set_initial(self.X[:, k], guess_x)
         for k in range(n):
-            progress = (k + 1) / n
-            guess_u = (
-                (1.0 - progress) * self.model.hover_control
-                + progress * self.model.forward_trim_control
-            )
-            self.opti.set_initial(self.U[:, k], guess_u)
+            self.opti.set_initial(self.U[:, k], self.model.hover_control)
 
     def _warm_start(self, previous_solution: dict[str, np.ndarray]) -> None:
         x_prev = previous_solution["x_pred"]

@@ -690,7 +690,7 @@ colcon build --symlink-install --packages-select px4_mpc
 source install/setup.bash
 ros2 launch px4_mpc mpc_standard_vtol_launch.py \
   control_mode:=manual_rates \
-  manual_lift:=0.30 \
+  manual_lift:=0.5195 \
   manual_pusher:=0.0 \
   manual_roll_rate:=0.0 \
   manual_pitch_rate:=0.0 \
@@ -720,6 +720,35 @@ ros2 launch px4_mpc mpc_standard_vtol_launch.py \
   altitude_hold_min_thrust:=0.45 \
   altitude_hold_max_thrust:=0.60 \
   auto_start:=false
+```
+
+Kad altitude hold radi dovoljno stabilno, pokreni NMPC u shadow modu. U ovom
+modu altitude hold i dalje salje komande PX4-u, a NMPC se racuna u pozadini i
+loguje svoj `u0` izlaz:
+
+```bash
+ros2 launch px4_mpc mpc_standard_vtol_launch.py \
+  control_mode:=nmpc_shadow \
+  profile:=hover \
+  altitude:=2.0 \
+  forward_speed:=0.0 \
+  altitude_hold_hover_thrust:=0.5195 \
+  altitude_hold_gain:=0.03 \
+  altitude_hold_velocity_gain:=0.02 \
+  altitude_hold_min_thrust:=0.48 \
+  altitude_hold_max_thrust:=0.57 \
+  altitude_hold_attitude_gain:=1.2 \
+  altitude_hold_max_rate:=0.35 \
+  altitude_hold_thrust_slew_rate:=0.30 \
+  shadow_solve_interval:=0.5 \
+  auto_start:=false
+```
+
+U logu gledaj linije:
+
+```text
+altitude_hold: ...
+nmpc_shadow: status=..., u=[...], px4=[...]
 ```
 
 #### 3.2.9 Korisni topic-i za standard VTOL offboard

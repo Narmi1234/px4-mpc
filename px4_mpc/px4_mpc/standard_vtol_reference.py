@@ -133,7 +133,7 @@ class StandardVtolReference(Node):
                 return
             self.current_position[0] = local_position[0]
             self.current_position[1] = -local_position[1]
-            self.current_position[2] = -local_position[2]
+            self.current_position[2] = -position[2]
             self.have_position = True
 
         attitude = np.asarray(msg.q, dtype=float)

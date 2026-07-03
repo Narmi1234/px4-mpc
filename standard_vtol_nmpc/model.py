@@ -40,7 +40,7 @@ class StandardVtolParams:
     angular_damping_x: float = 0.08
     angular_damping_y: float = 0.10
     angular_damping_z: float = 0.06
-    max_lift_thrust: float = 70.0
+    max_lift_thrust: float = 75.5
     max_pusher_thrust: float = 30.0
     max_roll_moment: float = 4.5
     max_pitch_moment: float = 6.0
