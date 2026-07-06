@@ -751,6 +751,41 @@ altitude_hold: ...
 nmpc_shadow: status=..., u=[...], px4=[...]
 ```
 
+Kad `nmpc_shadow` uredno daje `Solve_Succeeded` i komande izgledaju razumne,
+mozes probati pravi NMPC hover. Ovaj mod vise ne koristi altitude hold za
+komandu, nego direktno salje NMPC izlaz na PX4:
+
+```bash
+ros2 launch px4_mpc mpc_standard_vtol_launch.py \
+  control_mode:=nmpc \
+  profile:=hover \
+  altitude:=2.0 \
+  forward_speed:=0.0 \
+  control_dt:=0.10 \
+  horizon_steps:=8 \
+  max_ipopt_iter:=120 \
+  rate_setpoint_limit:=0.35 \
+  nmpc_max_body_rate:=0.8 \
+  fallback_hover_thrust:=0.5195 \
+  fallback_altitude_gain:=0.03 \
+  fallback_vertical_velocity_gain:=0.02 \
+  fallback_min_thrust:=0.48 \
+  fallback_max_thrust:=0.57 \
+  auto_start:=false
+```
+
+Za ovaj test opet pokreni commander rucno tek kad vidis da controller stabilno
+objavljuje setpoint-e. U posebnom terminalu prati:
+
+```bash
+ros2 topic hz /fmu/in/vehicle_rates_setpoint
+ros2 topic echo /fmu/in/vehicle_rates_setpoint
+```
+
+Ako se pojave `Maximum_Iterations_Exceeded`, `Infeasible_Problem_Detected` ili
+`NMPC safety fallback active`, vrati se na `nmpc_shadow` i uporedi NMPC `px4`
+izlaz sa altitude hold komandom prije novog pokusaja.
+
 #### 3.2.9 Korisni topic-i za standard VTOL offboard
 
 ```text

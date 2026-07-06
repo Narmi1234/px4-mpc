@@ -95,7 +95,7 @@ class StandardVtolMPC(Node):
 
         self.namespace = self.declare_parameter("namespace", "").value
         self.control_dt = float(
-            self.declare_parameter("control_dt", 0.05).value
+            self.declare_parameter("control_dt", 0.10).value
         )
         self.heartbeat_dt = float(
             self.declare_parameter("heartbeat_dt", 0.05).value

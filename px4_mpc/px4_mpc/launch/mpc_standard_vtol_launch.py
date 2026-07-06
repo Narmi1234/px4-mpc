@@ -99,7 +99,7 @@ def generate_launch_description():
                 default_value="0.25",
             ),
             DeclareLaunchArgument("shadow_solve_interval", default_value="0.5"),
-            DeclareLaunchArgument("control_dt", default_value="0.05"),
+            DeclareLaunchArgument("control_dt", default_value="0.10"),
             DeclareLaunchArgument("horizon_steps", default_value="8"),
             DeclareLaunchArgument("max_ipopt_iter", default_value="80"),
             DeclareLaunchArgument("rate_setpoint_limit", default_value="0.7"),
