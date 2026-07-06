@@ -25,10 +25,11 @@ except ModuleNotFoundError:  # pragma: no cover - handled at runtime by callers
 
 @dataclass(frozen=True)
 class StandardVtolParams:
-    mass: float = 4.0
-    ixx: float = 0.24
-    iyy: float = 0.35
-    izz: float = 0.48
+    # Matches PX4 Gazebo standard_vtol inertial properties.
+    mass: float = 5.025
+    ixx: float = 0.4804
+    iyy: float = 0.3451
+    izz: float = 0.8169
     gravity: float = 9.81
     rho: float = 1.225
     wing_area: float = 0.55
@@ -40,7 +41,7 @@ class StandardVtolParams:
     angular_damping_x: float = 0.08
     angular_damping_y: float = 0.10
     angular_damping_z: float = 0.06
-    max_lift_thrust: float = 75.5
+    max_lift_thrust: float = 94.9
     max_pusher_thrust: float = 30.0
     max_roll_moment: float = 4.5
     max_pitch_moment: float = 6.0
