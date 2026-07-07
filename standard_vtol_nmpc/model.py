@@ -47,6 +47,7 @@ class StandardVtolParams:
     max_pitch_moment: float = 6.0
     max_yaw_moment: float = 3.0
     min_speed_for_aero: float = 0.5
+    use_aero: bool = True
 
 
 class StandardVtolModel:
@@ -300,6 +301,9 @@ class StandardVtolModel:
 
     def _aerodynamic_force_body(self, vel_body, symbolic: bool = False):
         p = self.params
+        if not p.use_aero:
+            return self._vector(0.0, 0.0, 0.0, symbolic=symbolic)
+
         if symbolic:
             speed = ca.sqrt(ca.sumsqr(vel_body) + p.min_speed_for_aero**2)
             alpha = -ca.atan2(vel_body[2], vel_body[0] + 1e-3)

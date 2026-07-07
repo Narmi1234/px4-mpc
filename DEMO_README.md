@@ -751,6 +751,128 @@ altitude_hold: ...
 nmpc_shadow: status=..., u=[...], px4=[...]
 ```
 
+Prvi NMPC debug eksperiment je da se iskljuce hard state constraints u solveru,
+a da sve ostalo ostane isto. Ovo ne mijenja PX4 komandu jer je i dalje
+`nmpc_shadow`; samo gledas da li solver cesce daje `Solve_Succeeded`:
+
+```bash
+ros2 launch px4_mpc mpc_standard_vtol_launch.py \
+  control_mode:=nmpc_shadow \
+  profile:=hover \
+  altitude:=2.0 \
+  forward_speed:=0.0 \
+  control_dt:=0.10 \
+  horizon_steps:=6 \
+  max_ipopt_iter:=25 \
+  rate_setpoint_limit:=0.25 \
+  nmpc_max_body_rate:=0.4 \
+  relax_nmpc_state_constraints:=true \
+  altitude_hold_hover_thrust:=0.5195 \
+  altitude_hold_gain:=0.03 \
+  altitude_hold_velocity_gain:=0.02 \
+  altitude_hold_min_thrust:=0.48 \
+  altitude_hold_max_thrust:=0.57 \
+  altitude_hold_attitude_gain:=1.2 \
+  altitude_hold_max_rate:=0.35 \
+  altitude_hold_thrust_slew_rate:=0.30 \
+  shadow_solve_interval:=1.0 \
+  auto_start:=false
+```
+
+Ako ovo smanji `Infeasible_Problem_Detected` i `Maximum_Iterations_Exceeded`,
+problem je vjerovatno u hard constraint formulaciji. Ako ne pomogne, sljedeci
+eksperiment je jednostavniji model ili jednostavnija diskretizacija.
+
+Drugi eksperiment je isti shadow test, ali sa jednostavnom Euler
+diskretizacijom umjesto RK4. Ovo smanjuje CasADi/Ipopt problem i moze pomoci
+ako solver zapinje zbog kompleksnosti grafa:
+
+```bash
+ros2 launch px4_mpc mpc_standard_vtol_launch.py \
+  control_mode:=nmpc_shadow \
+  profile:=hover \
+  altitude:=2.0 \
+  forward_speed:=0.0 \
+  control_dt:=0.10 \
+  horizon_steps:=6 \
+  max_ipopt_iter:=25 \
+  rate_setpoint_limit:=0.25 \
+  nmpc_max_body_rate:=0.4 \
+  relax_nmpc_state_constraints:=true \
+  nmpc_integration_method:=euler \
+  altitude_hold_hover_thrust:=0.5195 \
+  altitude_hold_gain:=0.03 \
+  altitude_hold_velocity_gain:=0.02 \
+  altitude_hold_min_thrust:=0.48 \
+  altitude_hold_max_thrust:=0.57 \
+  altitude_hold_attitude_gain:=1.2 \
+  altitude_hold_max_rate:=0.35 \
+  altitude_hold_thrust_slew_rate:=0.30 \
+  shadow_solve_interval:=1.0 \
+  auto_start:=false
+```
+
+Ako Euler bude losiji, vrati RK4 i probaj treci eksperiment: ugasi
+aerodinamiku/drag u NMPC modelu. Ovo zadrzava rigid-body dinamiku, thrust,
+momente i gravitaciju, ali `aero_body` postaje nula:
+
+```bash
+ros2 launch px4_mpc mpc_standard_vtol_launch.py \
+  control_mode:=nmpc_shadow \
+  profile:=hover \
+  altitude:=2.0 \
+  forward_speed:=0.0 \
+  control_dt:=0.10 \
+  horizon_steps:=6 \
+  max_ipopt_iter:=25 \
+  rate_setpoint_limit:=0.25 \
+  nmpc_max_body_rate:=0.4 \
+  relax_nmpc_state_constraints:=true \
+  nmpc_integration_method:=rk4 \
+  disable_aero:=true \
+  altitude_hold_hover_thrust:=0.5195 \
+  altitude_hold_gain:=0.03 \
+  altitude_hold_velocity_gain:=0.02 \
+  altitude_hold_min_thrust:=0.48 \
+  altitude_hold_max_thrust:=0.57 \
+  altitude_hold_attitude_gain:=1.2 \
+  altitude_hold_max_rate:=0.35 \
+  altitude_hold_thrust_slew_rate:=0.30 \
+  shadow_solve_interval:=1.0 \
+  auto_start:=false
+```
+
+Ako i dalje vidis da `moments=(4.50, ...)` ili drugi momenti stalno idu u
+saturaciju, povecaj cijenu momenata u cost funkciji. Ovo je cetvrti izolovani
+eksperiment:
+
+```bash
+ros2 launch px4_mpc mpc_standard_vtol_launch.py \
+  control_mode:=nmpc_shadow \
+  profile:=hover \
+  altitude:=2.0 \
+  forward_speed:=0.0 \
+  control_dt:=0.10 \
+  horizon_steps:=6 \
+  max_ipopt_iter:=25 \
+  rate_setpoint_limit:=0.25 \
+  nmpc_max_body_rate:=0.4 \
+  relax_nmpc_state_constraints:=true \
+  nmpc_integration_method:=rk4 \
+  disable_aero:=true \
+  nmpc_moment_weight_scale:=20.0 \
+  altitude_hold_hover_thrust:=0.5195 \
+  altitude_hold_gain:=0.03 \
+  altitude_hold_velocity_gain:=0.02 \
+  altitude_hold_min_thrust:=0.48 \
+  altitude_hold_max_thrust:=0.57 \
+  altitude_hold_attitude_gain:=1.2 \
+  altitude_hold_max_rate:=0.35 \
+  altitude_hold_thrust_slew_rate:=0.30 \
+  shadow_solve_interval:=1.0 \
+  auto_start:=false
+```
+
 Ako shadow izgleda razumno, ali jos ne zelis pustiti puni NMPC, koristi
 blend mod. U ovom modu NMPC se stvarno koristi za komandu, ali se lift jos
 mijesa sa altitude hold liftom. Sa `nmpc_blend_lift_weight:=0.30`, NMPC moze

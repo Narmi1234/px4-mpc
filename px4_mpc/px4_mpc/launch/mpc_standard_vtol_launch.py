@@ -56,6 +56,12 @@ def generate_launch_description():
     max_safe_speed = LaunchConfiguration("max_safe_speed")
     speed_safety_min_altitude = LaunchConfiguration("speed_safety_min_altitude")
     max_safe_tilt_deg = LaunchConfiguration("max_safe_tilt_deg")
+    relax_nmpc_state_constraints = LaunchConfiguration(
+        "relax_nmpc_state_constraints"
+    )
+    nmpc_integration_method = LaunchConfiguration("nmpc_integration_method")
+    disable_aero = LaunchConfiguration("disable_aero")
+    nmpc_moment_weight_scale = LaunchConfiguration("nmpc_moment_weight_scale")
     max_odometry_position_norm = LaunchConfiguration(
         "max_odometry_position_norm"
     )
@@ -125,6 +131,13 @@ def generate_launch_description():
                 default_value="1.0",
             ),
             DeclareLaunchArgument("max_safe_tilt_deg", default_value="95.0"),
+            DeclareLaunchArgument(
+                "relax_nmpc_state_constraints",
+                default_value="false",
+            ),
+            DeclareLaunchArgument("nmpc_integration_method", default_value="rk4"),
+            DeclareLaunchArgument("disable_aero", default_value="false"),
+            DeclareLaunchArgument("nmpc_moment_weight_scale", default_value="1.0"),
             DeclareLaunchArgument(
                 "max_odometry_position_norm",
                 default_value="1000.0",
@@ -255,6 +268,19 @@ def generate_launch_description():
                         ),
                         "max_safe_tilt_deg": ParameterValue(
                             max_safe_tilt_deg,
+                            value_type=float,
+                        ),
+                        "relax_nmpc_state_constraints": ParameterValue(
+                            relax_nmpc_state_constraints,
+                            value_type=bool,
+                        ),
+                        "nmpc_integration_method": nmpc_integration_method,
+                        "disable_aero": ParameterValue(
+                            disable_aero,
+                            value_type=bool,
+                        ),
+                        "nmpc_moment_weight_scale": ParameterValue(
+                            nmpc_moment_weight_scale,
                             value_type=float,
                         ),
                         "max_odometry_position_norm": ParameterValue(

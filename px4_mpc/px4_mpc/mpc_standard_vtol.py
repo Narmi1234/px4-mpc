@@ -28,7 +28,7 @@ from px4_msgs.msg import (
     VehicleRatesSetpoint,
     VehicleStatus,
 )
-from standard_vtol_nmpc.model import StandardVtolModel
+from standard_vtol_nmpc.model import StandardVtolModel, StandardVtolParams
 from standard_vtol_nmpc.mpc_casadi import MpcConfig, StandardVtolNMPC
 
 
@@ -190,6 +190,18 @@ class StandardVtolMPC(Node):
         self.max_safe_tilt_deg = float(
             self.declare_parameter("max_safe_tilt_deg", 95.0).value
         )
+        self.relax_nmpc_state_constraints = bool(
+            self.declare_parameter("relax_nmpc_state_constraints", False).value
+        )
+        self.nmpc_integration_method = str(
+            self.declare_parameter("nmpc_integration_method", "rk4").value
+        ).strip().lower()
+        self.disable_aero = bool(
+            self.declare_parameter("disable_aero", False).value
+        )
+        self.nmpc_moment_weight_scale = float(
+            self.declare_parameter("nmpc_moment_weight_scale", 1.0).value
+        )
         self.max_odometry_position_norm = float(
             self.declare_parameter("max_odometry_position_norm", 1000.0).value
         )
@@ -228,9 +240,14 @@ class StandardVtolMPC(Node):
             ),
             max_tilt_deg=self.max_tilt_deg,
             max_body_rate=self.nmpc_max_body_rate,
+            enforce_state_constraints=not self.relax_nmpc_state_constraints,
+            integration_method=self.nmpc_integration_method,
+            moment_weight_scale=self.nmpc_moment_weight_scale,
         )
 
-        self.model = StandardVtolModel()
+        self.model = StandardVtolModel(
+            StandardVtolParams(use_aero=not self.disable_aero)
+        )
         self.mpc = StandardVtolNMPC(self.model, mpc_config)
         self.previous_solution: dict[str, np.ndarray] | None = None
         self.odometry_origin: np.ndarray | None = None
@@ -342,6 +359,11 @@ class StandardVtolMPC(Node):
             "standard VTOL NMPC ready: "
             f"mode={self.control_mode}, "
             f"dt={self.control_dt:.3f}s, horizon={mpc_config.horizon_steps}, "
+            f"state_constraints="
+            f"{'relaxed' if self.relax_nmpc_state_constraints else 'hard'}, "
+            f"integration={mpc_config.integration_method}, "
+            f"aero={'off' if self.disable_aero else 'on'}, "
+            f"moment_weight_scale={self.nmpc_moment_weight_scale:.1f}, "
             f"reference="
             f"{_px4_topic(self.namespace, self.reference_topic)}"
         )

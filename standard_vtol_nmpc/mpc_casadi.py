@@ -24,6 +24,9 @@ class MpcConfig:
     max_ipopt_iter: int = 160
     max_tilt_deg: float = 70.0
     max_body_rate: float = 2.0
+    enforce_state_constraints: bool = True
+    integration_method: str = "rk4"
+    moment_weight_scale: float = 1.0
 
 
 class StandardVtolNMPC:
@@ -113,12 +116,15 @@ class StandardVtolNMPC:
         }
         r_weights = np.diag([0.012, 0.035, 0.09, 0.11, 0.08])
         du_weights = np.diag([0.05, 0.03, 0.14, 0.16, 0.11])
+        moment_weight_scale = max(float(cfg.moment_weight_scale), 0.0)
+        r_weights[2:5, 2:5] *= moment_weight_scale
+        du_weights[2:5, 2:5] *= moment_weight_scale
 
         hover_trim_u = ca.DM(self.model.hover_control)
 
         opti.subject_to(X[:, 0] == x0_param)
         for k in range(n):
-            x_next = self._rk4_symbolic(f, X[:, k], U[:, k], cfg.dt)
+            x_next = self._integrate_symbolic(f, X[:, k], U[:, k], cfg.dt)
             opti.subject_to(X[:, k + 1] == x_next)
 
             progress = (k + 1) / n
@@ -138,21 +144,28 @@ class StandardVtolNMPC:
         for idx in range(nu):
             opti.subject_to(opti.bounded(lb_u[idx], U[idx, :], ub_u[idx]))
 
-        min_body_z_world_z = np.cos(np.deg2rad(cfg.max_tilt_deg))
-        for k in range(n + 1):
-            quat = X[6:10, k]
-            opti.subject_to(opti.bounded(0.95, ca.sumsqr(quat), 1.05))
-            opti.subject_to(quat[0] >= 0.0)
-            quat_unit = self._quat_normalize(quat)
-            body_z_world_z = 1.0 - 2.0 * (
-                quat_unit[1] * quat_unit[1] + quat_unit[2] * quat_unit[2]
-            )
-            opti.subject_to(body_z_world_z >= min_body_z_world_z)
+        if cfg.enforce_state_constraints:
+            min_body_z_world_z = np.cos(np.deg2rad(cfg.max_tilt_deg))
+            for k in range(n + 1):
+                quat = X[6:10, k]
+                opti.subject_to(opti.bounded(0.95, ca.sumsqr(quat), 1.05))
+                opti.subject_to(quat[0] >= 0.0)
+                quat_unit = self._quat_normalize(quat)
+                body_z_world_z = 1.0 - 2.0 * (
+                    quat_unit[1] * quat_unit[1] + quat_unit[2] * quat_unit[2]
+                )
+                opti.subject_to(body_z_world_z >= min_body_z_world_z)
 
-        opti.subject_to(opti.bounded(-8.0, X[4, 1:], 8.0))
-        opti.subject_to(opti.bounded(-6.0, X[5, 1:], 6.0))
-        for idx in range(10, 13):
-            opti.subject_to(opti.bounded(-cfg.max_body_rate, X[idx, 1:], cfg.max_body_rate))
+            opti.subject_to(opti.bounded(-8.0, X[4, 1:], 8.0))
+            opti.subject_to(opti.bounded(-6.0, X[5, 1:], 6.0))
+            for idx in range(10, 13):
+                opti.subject_to(
+                    opti.bounded(
+                        -cfg.max_body_rate,
+                        X[idx, 1:],
+                        cfg.max_body_rate,
+                    )
+                )
 
         opti.minimize(objective)
         opts = {
@@ -231,6 +244,17 @@ class StandardVtolNMPC:
         k3 = f(x=x + 0.5 * dt * k2, u=u)["xdot"]
         k4 = f(x=x + dt * k3, u=u)["xdot"]
         return x + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+
+    def _euler_symbolic(self, f, x, u, dt: float):
+        return x + dt * f(x=x, u=u)["xdot"]
+
+    def _integrate_symbolic(self, f, x, u, dt: float):
+        method = self.config.integration_method.strip().lower()
+        if method == "euler":
+            return self._euler_symbolic(f, x, u, dt)
+        if method == "rk4":
+            return self._rk4_symbolic(f, x, u, dt)
+        raise ValueError(f"Unsupported NMPC integration method: {method}")
 
     def _set_initial_guess(self, x0: np.ndarray, x_ref: np.ndarray) -> None:
         n = self.config.horizon_steps
