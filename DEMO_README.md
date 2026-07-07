@@ -751,6 +751,51 @@ altitude_hold: ...
 nmpc_shadow: status=..., u=[...], px4=[...]
 ```
 
+Ako shadow izgleda razumno, ali jos ne zelis pustiti puni NMPC, koristi
+blend mod. U ovom modu NMPC se stvarno koristi za komandu, ali se lift jos
+mijesa sa altitude hold liftom. Sa `nmpc_blend_lift_weight:=0.30`, NMPC moze
+pomjeriti lift prema svom rjesenju, ali `nmpc_blend_lift_delta_limit:=0.02`
+sprjecava veliki skok od altitude hold komande. Rate komande su takodjer
+blendane. Za tranziciju mozes pustiti vise pusher autoriteta preko
+`nmpc_blend_pusher_weight`, bez povecavanja lift weight-a.
+
+```bash
+ros2 launch px4_mpc mpc_standard_vtol_launch.py \
+  control_mode:=nmpc_blend \
+  profile:=hover \
+  altitude:=2.0 \
+  forward_speed:=0.0 \
+  control_dt:=0.10 \
+  horizon_steps:=8 \
+  max_ipopt_iter:=40 \
+  rate_setpoint_limit:=0.25 \
+  nmpc_max_body_rate:=0.4 \
+  nmpc_blend_lift_weight:=0.30 \
+  nmpc_blend_rate_weight:=0.25 \
+  nmpc_blend_pusher_weight:=0.70 \
+  nmpc_blend_lift_delta_limit:=0.02 \
+  nmpc_blend_solve_interval:=0.5 \
+  altitude_hold_hover_thrust:=0.5195 \
+  altitude_hold_gain:=0.03 \
+  altitude_hold_velocity_gain:=0.02 \
+  altitude_hold_min_thrust:=0.48 \
+  altitude_hold_max_thrust:=0.57 \
+  altitude_hold_attitude_gain:=1.2 \
+  altitude_hold_max_rate:=0.35 \
+  altitude_hold_thrust_slew_rate:=0.30 \
+  max_safe_speed:=5.0 \
+  max_safe_tilt_deg:=45.0 \
+  auto_start:=false
+```
+
+U logu gledaj `nmpc_blend:` linije. Ako je stabilno, mozes prvo povecavati
+`nmpc_blend_rate_weight`, a tek kasnije `nmpc_blend_lift_weight` i
+`nmpc_blend_lift_delta_limit`. Ako `raw_blend` ode daleko od `out`, znaci da
+NMPC jos trazi preagresivan lift i clamp ga namjerno zaustavlja.
+Blend mod publikuje komande na `control_dt`, ali NMPC racuna samo svakih
+`nmpc_blend_solve_interval` sekundi i koristi zadnji uspjesni `u0`; ako solver
+ne uspije, vraca se na altitude hold.
+
 Kad `nmpc_shadow` uredno daje `Solve_Succeeded` i komande izgledaju razumne,
 mozes probati pravi NMPC hover. Ovaj mod vise ne koristi altitude hold za
 komandu, nego direktno salje NMPC izlaz na PX4:

@@ -151,6 +151,21 @@ class StandardVtolMPC(Node):
         self.shadow_solve_interval = float(
             self.declare_parameter("shadow_solve_interval", 0.5).value
         )
+        self.nmpc_blend_lift_weight = float(
+            self.declare_parameter("nmpc_blend_lift_weight", 0.30).value
+        )
+        self.nmpc_blend_rate_weight = float(
+            self.declare_parameter("nmpc_blend_rate_weight", 0.25).value
+        )
+        self.nmpc_blend_pusher_weight = float(
+            self.declare_parameter("nmpc_blend_pusher_weight", 0.30).value
+        )
+        self.nmpc_blend_lift_delta_limit = float(
+            self.declare_parameter("nmpc_blend_lift_delta_limit", 0.02).value
+        )
+        self.nmpc_blend_solve_interval = float(
+            self.declare_parameter("nmpc_blend_solve_interval", 0.5).value
+        )
         self.reference_altitude = float(
             self.declare_parameter("reference_altitude", 20.0).value
         )
@@ -238,6 +253,8 @@ class StandardVtolMPC(Node):
         self.last_solve_status = "not_started"
         self.last_altitude_hold_lift = self.altitude_hold_hover_thrust
         self.last_shadow_solve_time = self.get_clock().now()
+        self.last_blend_solve_time = self.get_clock().now()
+        self.last_blend_u0: np.ndarray | None = None
 
         pub_qos = _px4_qos(QoSDurabilityPolicy.TRANSIENT_LOCAL)
         sub_qos = _px4_qos(QoSDurabilityPolicy.VOLATILE)
@@ -355,6 +372,16 @@ class StandardVtolMPC(Node):
                 "NMPC shadow mode active: publishing altitude_hold commands "
                 "while solving and logging NMPC outputs; "
                 f"shadow_solve_interval={self.shadow_solve_interval:.2f}s"
+            )
+        elif self.control_mode == "nmpc_blend":
+            self.get_logger().warn(
+                "NMPC blend mode active: publishing blended altitude_hold/NMPC "
+                "commands; "
+                f"lift_weight={self.nmpc_blend_lift_weight:.2f}, "
+                f"rate_weight={self.nmpc_blend_rate_weight:.2f}, "
+                f"pusher_weight={self.nmpc_blend_pusher_weight:.2f}, "
+                f"lift_delta_limit={self.nmpc_blend_lift_delta_limit:.3f}, "
+                f"solve_interval={self.nmpc_blend_solve_interval:.2f}s"
             )
 
     def vehicle_status_callback(self, msg: VehicleStatus) -> None:
@@ -523,6 +550,54 @@ class StandardVtolMPC(Node):
                 self._solve_and_log_shadow_nmpc(x0, x_ref)
             return
 
+        if self.control_mode == "nmpc_blend":
+            if not self._state_ready():
+                return
+            x0 = self._current_state()
+            x_ref = self.reference_state.copy()
+            self.publish_reference_marker(x_ref)
+
+            if self._unsafe_for_nmpc():
+                self.previous_solution = None
+                self.last_blend_u0 = None
+                if self._should_publish_setpoint():
+                    self.publish_altitude_hold_setpoint()
+                self.get_logger().warn(
+                    self._safety_fallback_message(),
+                    throttle_duration_sec=1.0,
+                )
+                return
+
+            if self._should_publish_setpoint():
+                if self.last_blend_u0 is None:
+                    self.publish_altitude_hold_setpoint()
+                else:
+                    self.publish_blended_nmpc_setpoint(self.last_blend_u0)
+
+            if not self._blend_solve_due():
+                return
+
+            solution = self.mpc.solve(x0, x_ref, self.previous_solution)
+            self.last_solve_status = str(solution["status"])
+            solve_succeeded = self.last_solve_status == "Solve_Succeeded"
+
+            if solve_succeeded:
+                x_pred = np.asarray(solution["x_pred"], dtype=float)
+                self.previous_solution = {
+                    "x_pred": x_pred,
+                    "u_pred": np.asarray(solution["u_pred"], dtype=float),
+                }
+                self.publish_prediction(x_pred)
+                self.last_blend_u0 = np.asarray(solution["u0"], dtype=float)
+            else:
+                self.previous_solution = None
+                self.last_blend_u0 = None
+                self.get_logger().warn(
+                    self._solver_failure_message(),
+                    throttle_duration_sec=2.0,
+                )
+            return
+
         if not self._state_ready():
             return
 
@@ -579,6 +654,16 @@ class StandardVtolMPC(Node):
         if elapsed < max(self.shadow_solve_interval, self.control_dt):
             return False
         self.last_shadow_solve_time = now
+        return True
+
+    def _blend_solve_due(self) -> bool:
+        now = self.get_clock().now()
+        elapsed = (
+            now.nanoseconds - self.last_blend_solve_time.nanoseconds
+        ) * 1e-9
+        if elapsed < max(self.nmpc_blend_solve_interval, self.control_dt):
+            return False
+        self.last_blend_solve_time = now
         return True
 
     def _solve_and_log_shadow_nmpc(
@@ -659,6 +744,37 @@ class StandardVtolMPC(Node):
         self.rates_setpoint_pub.publish(msg)
 
     def publish_altitude_hold_setpoint(self) -> None:
+        (
+            lift,
+            raw_lift,
+            altitude_error,
+            vertical_velocity,
+            roll_rate,
+            pitch_rate,
+        ) = self._altitude_hold_command()
+
+        msg = VehicleRatesSetpoint()
+        msg.timestamp = _timestamp_us(self)
+        msg.roll = float(roll_rate)
+        msg.pitch = float(pitch_rate)
+        msg.yaw = 0.0
+        msg.thrust_body[0] = self._clip01(self.manual_pusher)
+        msg.thrust_body[1] = 0.0
+        msg.thrust_body[2] = -self._clip01(lift)
+        msg.reset_integral = False
+        self.rates_setpoint_pub.publish(msg)
+        self._log_altitude_hold_debug(
+            altitude_error,
+            vertical_velocity,
+            raw_lift,
+            lift,
+            roll_rate,
+            pitch_rate,
+        )
+
+    def _altitude_hold_command(
+        self,
+    ) -> tuple[float, float, float, float, float, float]:
         altitude_error = (
             self.reference_altitude - float(self.vehicle_local_position[2])
         )
@@ -677,22 +793,11 @@ class StandardVtolMPC(Node):
         )
         lift = self._slew_limited_lift(clipped_lift)
         roll_rate, pitch_rate = self._altitude_hold_level_rates()
-
-        msg = VehicleRatesSetpoint()
-        msg.timestamp = _timestamp_us(self)
-        msg.roll = float(roll_rate)
-        msg.pitch = float(pitch_rate)
-        msg.yaw = 0.0
-        msg.thrust_body[0] = self._clip01(self.manual_pusher)
-        msg.thrust_body[1] = 0.0
-        msg.thrust_body[2] = -self._clip01(lift)
-        msg.reset_integral = False
-        self.rates_setpoint_pub.publish(msg)
-        self._log_altitude_hold_debug(
+        return (
+            lift,
+            raw_lift,
             altitude_error,
             vertical_velocity,
-            raw_lift,
-            lift,
             roll_rate,
             pitch_rate,
         )
@@ -772,6 +877,97 @@ class StandardVtolMPC(Node):
         msg.thrust_body[2] = float(-lift)
         msg.reset_integral = False
         self.rates_setpoint_pub.publish(msg)
+
+    def publish_blended_nmpc_setpoint(self, u: np.ndarray) -> None:
+        (
+            hold_lift,
+            raw_hold_lift,
+            altitude_error,
+            vertical_velocity,
+            hold_roll_rate,
+            hold_pitch_rate,
+        ) = self._altitude_hold_command()
+
+        params = self.model.params
+        nmpc_lift = self._clip01(u[0] / params.max_lift_thrust)
+        nmpc_pusher = self._clip01(u[1] / params.max_pusher_thrust)
+        nmpc_roll_rate = self._moment_to_rate(
+            u[2],
+            params.max_roll_moment,
+            sign=1.0,
+        )
+        nmpc_pitch_rate = self._moment_to_rate(
+            u[3],
+            params.max_pitch_moment,
+            sign=-1.0,
+        )
+        nmpc_yaw_rate = self._moment_to_rate(
+            u[4],
+            params.max_yaw_moment,
+            sign=-1.0,
+        )
+
+        lift_weight = self._clip01(self.nmpc_blend_lift_weight)
+        rate_weight = self._clip01(self.nmpc_blend_rate_weight)
+        pusher_weight = self._clip01(self.nmpc_blend_pusher_weight)
+        raw_blended_lift = ((1.0 - lift_weight) * hold_lift) + (
+            lift_weight * nmpc_lift
+        )
+        lift_delta_limit = max(self.nmpc_blend_lift_delta_limit, 0.0)
+        lift = float(
+            np.clip(
+                raw_blended_lift,
+                hold_lift - lift_delta_limit,
+                hold_lift + lift_delta_limit,
+            )
+        )
+        lift = float(
+            np.clip(
+                lift,
+                self.altitude_hold_min_thrust,
+                self.altitude_hold_max_thrust,
+            )
+        )
+        pusher = ((1.0 - pusher_weight) * self.manual_pusher) + (
+            pusher_weight * nmpc_pusher
+        )
+        roll_rate = ((1.0 - rate_weight) * hold_roll_rate) + (
+            rate_weight * nmpc_roll_rate
+        )
+        pitch_rate = ((1.0 - rate_weight) * hold_pitch_rate) + (
+            rate_weight * nmpc_pitch_rate
+        )
+        yaw_rate = rate_weight * nmpc_yaw_rate
+
+        msg = VehicleRatesSetpoint()
+        msg.timestamp = _timestamp_us(self)
+        msg.roll = float(roll_rate)
+        msg.pitch = float(pitch_rate)
+        msg.yaw = float(yaw_rate)
+        msg.thrust_body[0] = self._clip01(pusher)
+        msg.thrust_body[1] = 0.0
+        msg.thrust_body[2] = -self._clip01(lift)
+        msg.reset_integral = False
+        self.rates_setpoint_pub.publish(msg)
+
+        self.get_logger().info(
+            "nmpc_blend: "
+            f"status={self.last_solve_status}, "
+            f"lift hold/nmpc/out={hold_lift:.4f}/"
+            f"{nmpc_lift:.4f}/{lift:.4f}, "
+            f"pusher nmpc/out={nmpc_pusher:.4f}/{pusher:.4f}, "
+            f"raw_blend={raw_blended_lift:.4f}, "
+            f"raw_hold={raw_hold_lift:.4f}, "
+            f"rates hold/nmpc/out=["
+            f"{hold_roll_rate:.3f},{hold_pitch_rate:.3f},0.000]/["
+            f"{nmpc_roll_rate:.3f},{nmpc_pitch_rate:.3f},"
+            f"{nmpc_yaw_rate:.3f}]/["
+            f"{roll_rate:.3f},{pitch_rate:.3f},{yaw_rate:.3f}], "
+            f"altitude={self.vehicle_local_position[2]:.2f}/"
+            f"{self.reference_altitude:.2f} m, "
+            f"error={altitude_error:.2f} m, vz={vertical_velocity:.2f} m/s",
+            throttle_duration_sec=1.0,
+        )
 
     def _hover_fallback_control(self) -> np.ndarray:
         fallback = np.zeros(self.model.nu, dtype=float)

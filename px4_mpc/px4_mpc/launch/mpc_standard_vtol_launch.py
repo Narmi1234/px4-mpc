@@ -41,6 +41,13 @@ def generate_launch_description():
         "altitude_hold_thrust_slew_rate"
     )
     shadow_solve_interval = LaunchConfiguration("shadow_solve_interval")
+    nmpc_blend_lift_weight = LaunchConfiguration("nmpc_blend_lift_weight")
+    nmpc_blend_rate_weight = LaunchConfiguration("nmpc_blend_rate_weight")
+    nmpc_blend_pusher_weight = LaunchConfiguration("nmpc_blend_pusher_weight")
+    nmpc_blend_lift_delta_limit = LaunchConfiguration(
+        "nmpc_blend_lift_delta_limit"
+    )
+    nmpc_blend_solve_interval = LaunchConfiguration("nmpc_blend_solve_interval")
     control_dt = LaunchConfiguration("control_dt")
     horizon_steps = LaunchConfiguration("horizon_steps")
     max_ipopt_iter = LaunchConfiguration("max_ipopt_iter")
@@ -99,6 +106,14 @@ def generate_launch_description():
                 default_value="0.25",
             ),
             DeclareLaunchArgument("shadow_solve_interval", default_value="0.5"),
+            DeclareLaunchArgument("nmpc_blend_lift_weight", default_value="0.30"),
+            DeclareLaunchArgument("nmpc_blend_rate_weight", default_value="0.25"),
+            DeclareLaunchArgument("nmpc_blend_pusher_weight", default_value="0.30"),
+            DeclareLaunchArgument(
+                "nmpc_blend_lift_delta_limit",
+                default_value="0.02",
+            ),
+            DeclareLaunchArgument("nmpc_blend_solve_interval", default_value="0.5"),
             DeclareLaunchArgument("control_dt", default_value="0.10"),
             DeclareLaunchArgument("horizon_steps", default_value="8"),
             DeclareLaunchArgument("max_ipopt_iter", default_value="80"),
@@ -188,6 +203,26 @@ def generate_launch_description():
                         ),
                         "shadow_solve_interval": ParameterValue(
                             shadow_solve_interval,
+                            value_type=float,
+                        ),
+                        "nmpc_blend_lift_weight": ParameterValue(
+                            nmpc_blend_lift_weight,
+                            value_type=float,
+                        ),
+                        "nmpc_blend_rate_weight": ParameterValue(
+                            nmpc_blend_rate_weight,
+                            value_type=float,
+                        ),
+                        "nmpc_blend_pusher_weight": ParameterValue(
+                            nmpc_blend_pusher_weight,
+                            value_type=float,
+                        ),
+                        "nmpc_blend_lift_delta_limit": ParameterValue(
+                            nmpc_blend_lift_delta_limit,
+                            value_type=float,
+                        ),
+                        "nmpc_blend_solve_interval": ParameterValue(
+                            nmpc_blend_solve_interval,
                             value_type=float,
                         ),
                         "control_dt": ParameterValue(
