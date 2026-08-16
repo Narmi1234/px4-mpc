@@ -3,6 +3,40 @@ This package contains an MPC integrated with with [PX4 Autopilot](https://px4.io
 
 The MPC uses the [acados framework](https://github.com/acados/acados)
 
+## Standard VTOL hover-to-forward-flight rad
+
+Standard VTOL plant, trim corridor, CasADi/acados OCP i zaštićeni ROS 2
+hover-Offboard node su implementirani. Hover je potvrđen u SITL-u kroz 30
+sekundi; kontrolisana horizontalna akceleracija i VTOL tranzicija još nisu
+odobrene. Za rad idi ovim redoslijedom:
+
+1. [`STANDARD_VTOL_PLANT_VALIDATION.md`](STANDARD_VTOL_PLANT_VALIDATION.md) —
+   tačne PX4/QGroundControl komande, testni let, ULog i poređenje s modelom;
+2. [`STANDARD_VTOL_TRANSITION_NMPC.md`](STANDARD_VTOL_TRANSITION_NMPC.md) —
+   jednačine, razlika između punog 18-state planta i 10-state NMPC modela, te
+   kompletan implementation path.
+3. [`STANDARD_VTOL_REIDENTIFICATION.md`](STANDARD_VTOL_REIDENTIFICATION.md) —
+   train/validation podjela ULogova, dodatni letovi na 12 i 18 m/s i fit
+   reduciranih aerodinamičkih koeficijenata.
+4. [`STANDARD_VTOL_TRIM_CORRIDOR.md`](STANDARD_VTOL_TRIM_CORRIDOR.md) — kako se
+   ravnotežne tačke računaju i kako regenerisati 0–22 m/s corridor.
+5. [`STANDARD_VTOL_OFFBOARD_RUNBOOK.md`](STANDARD_VTOL_OFFBOARD_RUNBOOK.md) —
+   tačan postupak za zaštićeni hover-only Offboard regression test;
+6. [`STANDARD_VTOL_HOVER_RESULTS.md`](STANDARD_VTOL_HOVER_RESULTS.md) — dokazani
+   hover rezultati, aktivne zaštite i granica ovog checkpointa.
+
+Za plant validaciju se ne koristi Offboard i ne šalju se direktne motorne
+komande. PX4 upravlja Gazebo letjelicom, a `tools/validate_standard_vtol_ulog.py`
+nakon leta samo čita ULog.
+
+Trenutna sigurna provjera (bez PX4-a i bez novog leta) je:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+PYTHONPATH=px4_mpc .venv/bin/python -m unittest discover \
+  -s px4_mpc/test -p 'test_*.py'
+```
+
 ![px4-mpc](https://github.com/user-attachments/assets/6713b8e6-815f-42fe-b3a0-51708d3416e5)
 
 ## Paper

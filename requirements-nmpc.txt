@@ -1,0 +1,7 @@
+# Python dependencies used by the local acados_template interface.
+casadi
+numpy
+scipy
+matplotlib
+cython
+Deprecated

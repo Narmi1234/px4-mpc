@@ -18,3 +18,16 @@ venv.bak/
 
 *c_generated_code*
 *.json
+
+# Local PX4/ROS dependencies and runtime data
+/.python_deps/
+/.ros/
+/Micro-XRCE-DDS-Agent/
+/acados/
+/bags/
+/results/
+/validation_logs/
+/microxrce_agent_install/
+/px4-offboard/
+/px4_msgs/
+/standard_vtol_nmpc/
