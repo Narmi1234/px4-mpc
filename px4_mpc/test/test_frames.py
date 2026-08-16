@@ -6,6 +6,7 @@ import numpy as np
 
 from px4_mpc.models.frames import (
     enu_to_ned,
+    enu_yaw_to_ned,
     flu_to_frd,
     frd_to_flu,
     ned_to_enu,
@@ -22,6 +23,10 @@ class TestFrames(unittest.TestCase):
     def test_body_vector_round_trip(self):
         vector = np.array([1.0, -2.0, 3.0])
         np.testing.assert_allclose(flu_to_frd(frd_to_flu(vector)), vector)
+
+    def test_yaw_conversion_preserves_cardinal_heading(self):
+        self.assertAlmostEqual(enu_yaw_to_ned(0.0), np.pi / 2.0)
+        self.assertAlmostEqual(enu_yaw_to_ned(np.pi / 2.0), 0.0)
 
     def test_level_north_facing_attitude(self):
         q_enu_flu = px4_quaternion_to_gazebo(np.array([1.0, 0.0, 0.0, 0.0]))

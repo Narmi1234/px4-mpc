@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 
@@ -40,3 +42,22 @@ def vertical_hover_lift(plant, altitude_error: float, vertical_speed: float) -> 
     )
     desired_acceleration = -float(altitude_error) - 2.0 * float(vertical_speed)
     return float(hover + desired_acceleration / acceleration_per_command)
+
+
+def expected_px4_pusher_assist(
+    forward_acceleration: float,
+    gravity: float = 9.80665,
+    pitch_min_degrees: float = -5.0,
+    thrust_scale: float = 0.7,
+) -> float:
+    """Mirror PX4's MC pusher-assist law for a level forward acceleration.
+
+    This is a prediction/check only. The ROS node does not send this value to
+    an actuator; PX4 computes and applies the real pusher command.
+    """
+    pitch_setpoint = -math.atan2(max(0.0, forward_acceleration), gravity)
+    pitch_min = math.radians(pitch_min_degrees)
+    if pitch_setpoint >= pitch_min:
+        return 0.0
+    command = (math.sin(pitch_min) - math.sin(pitch_setpoint)) * thrust_scale
+    return float(np.clip(command, 0.0, 0.9))

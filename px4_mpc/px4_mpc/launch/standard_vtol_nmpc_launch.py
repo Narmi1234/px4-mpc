@@ -14,6 +14,12 @@ def generate_launch_description():
     forward_acceleration = LaunchConfiguration("mc_forward_acceleration")
     forward_hold_seconds = LaunchConfiguration("mc_forward_hold_seconds")
     forward_start_delay = LaunchConfiguration("mc_forward_start_delay_seconds")
+    allow_pusher_assist = LaunchConfiguration("allow_pusher_assist_output")
+    pusher_test_seconds = LaunchConfiguration("pusher_assist_test_max_seconds")
+    pusher_target_speed = LaunchConfiguration("pusher_assist_target_speed")
+    pusher_acceleration = LaunchConfiguration("pusher_assist_acceleration")
+    pusher_hold_seconds = LaunchConfiguration("pusher_assist_hold_seconds")
+    pusher_start_delay = LaunchConfiguration("pusher_assist_start_delay_seconds")
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -51,6 +57,36 @@ def generate_launch_description():
                 default_value="2.0",
                 description="Stationary NMPC warm-up before MC acceleration",
             ),
+            DeclareLaunchArgument(
+                "allow_pusher_assist_output",
+                default_value="false",
+                description="Allow the explicit PX4 MC pusher-assist gate",
+            ),
+            DeclareLaunchArgument(
+                "pusher_assist_test_max_seconds",
+                default_value="13.0",
+                description="Automatic Position fallback for pusher-assist gate",
+            ),
+            DeclareLaunchArgument(
+                "pusher_assist_target_speed",
+                default_value="3.0",
+                description="First pusher-assist gate peak speed in m/s",
+            ),
+            DeclareLaunchArgument(
+                "pusher_assist_acceleration",
+                default_value="1.5",
+                description="Smooth pusher-assist acceleration magnitude",
+            ),
+            DeclareLaunchArgument(
+                "pusher_assist_hold_seconds",
+                default_value="1.0",
+                description="Time at pusher-assist peak speed",
+            ),
+            DeclareLaunchArgument(
+                "pusher_assist_start_delay_seconds",
+                default_value="2.0",
+                description="Stationary delay before pusher-assist acceleration",
+            ),
             Node(
                 package="px4_mpc",
                 executable="standard_vtol_nmpc",
@@ -65,6 +101,12 @@ def generate_launch_description():
                         "mc_forward_acceleration": forward_acceleration,
                         "mc_forward_hold_seconds": forward_hold_seconds,
                         "mc_forward_start_delay_seconds": forward_start_delay,
+                        "allow_pusher_assist_output": allow_pusher_assist,
+                        "pusher_assist_test_max_seconds": pusher_test_seconds,
+                        "pusher_assist_target_speed": pusher_target_speed,
+                        "pusher_assist_acceleration": pusher_acceleration,
+                        "pusher_assist_hold_seconds": pusher_hold_seconds,
+                        "pusher_assist_start_delay_seconds": pusher_start_delay,
                     }
                 ],
             ),

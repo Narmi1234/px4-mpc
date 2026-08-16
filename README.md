@@ -29,7 +29,10 @@ Za rad idi ovim redoslijedom:
    — ponovljivi 2 m/s gate u MC režimu, bez tranzicije i bez pushera;
 8. [`STANDARD_VTOL_MC_FORWARD_RESULTS.md`](STANDARD_VTOL_MC_FORWARD_RESULTS.md)
    — prihvaćeni live rezultat i tačna granica sljedećeg implementacijskog
-   koraka.
+   koraka;
+9. [`STANDARD_VTOL_PUSHER_ASSIST_RUNBOOK.md`](STANDARD_VTOL_PUSHER_ASSIST_RUNBOOK.md)
+   — naredni executable gate: PX4 pusher assist do 3 m/s uz NMPC shadow,
+   obaveznu ULog potvrdu i bez VTOL transition komande.
 
 Za plant validaciju se ne koristi Offboard i ne šalju se direktne motorne
 komande. PX4 upravlja Gazebo letjelicom, a `tools/validate_standard_vtol_ulog.py`

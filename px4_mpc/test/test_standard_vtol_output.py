@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 
 from px4_mpc.controllers.standard_vtol_output import (
+    expected_px4_pusher_assist,
     limit_mc_command,
     vertical_hover_lift,
 )
@@ -12,6 +13,14 @@ from px4_mpc.models.standard_vtol_gz_model import StandardVtolGazeboModel
 
 
 class TestStandardVtolOutput(unittest.TestCase):
+    def test_px4_pusher_assist_is_zero_below_pitch_limit(self):
+        self.assertEqual(expected_px4_pusher_assist(0.5), 0.0)
+
+    def test_px4_pusher_assist_is_small_and_positive_for_first_gate(self):
+        command = expected_px4_pusher_assist(1.5)
+        self.assertGreater(command, 0.04)
+        self.assertLess(command, 0.05)
+
     def test_limiter_forces_pusher_zero_and_applies_slew(self):
         previous = np.array([0.52, 0.0, 0.0, 0.0, 0.0])
         requested = np.array([0.65, 1.0, 1.0, -1.0, 1.0])

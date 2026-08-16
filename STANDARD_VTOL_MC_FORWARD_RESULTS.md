@@ -63,9 +63,9 @@ above 2 m/s, or a PX4 VTOL transition command.
 
 ## Next implementation gate
 
-The next software increment is a separately guarded low-speed transition-entry
-test. It must introduce the pusher and trim-corridor lift schedule gradually
-while PX4 remains in MC mode, then brake and return to hover. Only after that
-gate passes may the node issue a PX4 VTOL transition command. Do not reuse the
-2 m/s service with manually changed launch parameters; the node intentionally
-rejects such a configuration.
+The next software increment is a separately guarded 3 m/s PX4 pusher-assist
+test while the vehicle remains in MC mode. PX4 owns its position loop and
+internal pusher law while NMPC runs shadow; the ULog must prove that motor 5
+actually engaged. Only after that gate passes do we design the partial PX4
+transition interface. Do not reuse the 2 m/s service with manually changed
+launch parameters; the node intentionally rejects such a configuration.
