@@ -6,9 +6,10 @@ The MPC uses the [acados framework](https://github.com/acados/acados)
 ## Standard VTOL hover-to-forward-flight rad
 
 Standard VTOL plant, trim corridor, CasADi/acados OCP i zaštićeni ROS 2
-hover-Offboard node su implementirani. Hover je potvrđen u SITL-u kroz 30
-sekundi; kontrolisana horizontalna akceleracija i VTOL tranzicija još nisu
-odobrene. Za rad idi ovim redoslijedom:
+Offboard node su implementirani. Hover je potvrđen kroz 30 sekundi, a
+kontrolisana MC horizontalna akceleracija, kočenje i zaustavljanje kroz
+15-sekundni gate do `2.018 m/s`. Pusher i VTOL tranzicija još nisu odobreni.
+Za rad idi ovim redoslijedom:
 
 1. [`STANDARD_VTOL_PLANT_VALIDATION.md`](STANDARD_VTOL_PLANT_VALIDATION.md) —
    tačne PX4/QGroundControl komande, testni let, ULog i poređenje s modelom;
@@ -23,7 +24,12 @@ odobrene. Za rad idi ovim redoslijedom:
 5. [`STANDARD_VTOL_OFFBOARD_RUNBOOK.md`](STANDARD_VTOL_OFFBOARD_RUNBOOK.md) —
    tačan postupak za zaštićeni hover-only Offboard regression test;
 6. [`STANDARD_VTOL_HOVER_RESULTS.md`](STANDARD_VTOL_HOVER_RESULTS.md) — dokazani
-   hover rezultati, aktivne zaštite i granica ovog checkpointa.
+   hover rezultati, aktivne zaštite i granica tog checkpointa;
+7. [`STANDARD_VTOL_MC_FORWARD_RUNBOOK.md`](STANDARD_VTOL_MC_FORWARD_RUNBOOK.md)
+   — ponovljivi 2 m/s gate u MC režimu, bez tranzicije i bez pushera;
+8. [`STANDARD_VTOL_MC_FORWARD_RESULTS.md`](STANDARD_VTOL_MC_FORWARD_RESULTS.md)
+   — prihvaćeni live rezultat i tačna granica sljedećeg implementacijskog
+   koraka.
 
 Za plant validaciju se ne koristi Offboard i ne šalju se direktne motorne
 komande. PX4 upravlja Gazebo letjelicom, a `tools/validate_standard_vtol_ulog.py`

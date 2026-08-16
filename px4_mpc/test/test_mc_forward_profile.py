@@ -1,0 +1,70 @@
+"""Tests for the bounded multicopter forward experiment profile."""
+
+import unittest
+
+import numpy as np
+
+from px4_mpc.models.mc_forward_profile import (
+    McForwardProfile,
+    mc_forward_reference_state,
+)
+
+
+class TestMcForwardProfile(unittest.TestCase):
+    def setUp(self):
+        self.profile = McForwardProfile(
+            target_speed=2.0,
+            acceleration=1.0,
+            hold_seconds=1.0,
+        )
+
+    def test_timing_and_distance(self):
+        self.assertAlmostEqual(self.profile.acceleration_seconds, np.pi)
+        self.assertAlmostEqual(self.profile.motion_seconds, 2.0 * np.pi + 1.0)
+        self.assertAlmostEqual(self.profile.profile_seconds, 2.0 * np.pi + 3.0)
+        self.assertAlmostEqual(self.profile.final_distance, 2.0 * np.pi + 2.0)
+
+    def test_profile_boundaries_are_continuous(self):
+        ramp = self.profile.acceleration_seconds
+        final_distance = self.profile.final_distance
+        expected = (
+            (0.0, 0.0, 0.0, "initial_hover"),
+            (2.0, 0.0, 0.0, "accelerate"),
+            (2.0 + ramp, ramp, 2.0, "hold_speed"),
+            (3.0 + ramp, ramp + 2.0, 2.0, "brake"),
+            (3.0 + 2.0 * ramp, final_distance, 0.0, "settle_hover"),
+            (20.0, final_distance, 0.0, "settle_hover"),
+        )
+        for time_seconds, distance, speed, phase in expected:
+            with self.subTest(time_seconds=time_seconds):
+                sample = self.profile.sample(time_seconds)
+                self.assertAlmostEqual(sample.distance, distance)
+                self.assertAlmostEqual(sample.speed, speed)
+                self.assertEqual(sample.phase, phase)
+
+    def test_invalid_profile_is_rejected(self):
+        with self.assertRaises(ValueError):
+            McForwardProfile(target_speed=0.0)
+        with self.assertRaises(ValueError):
+            McForwardProfile(acceleration=-1.0)
+        with self.assertRaises(ValueError):
+            McForwardProfile(hold_seconds=-0.1)
+        with self.assertRaises(ValueError):
+            McForwardProfile(start_delay_seconds=-0.1)
+
+    def test_reference_follows_heading_and_feedforward_pitch(self):
+        hold = np.zeros(10)
+        hold[6:10] = [np.sqrt(0.5), 0.0, 0.0, np.sqrt(0.5)]
+        sample = self.profile.sample(3.0)
+        reference = mc_forward_reference_state(
+            hold, np.array([0.0, 1.0]), sample, gravity=9.80665
+        )
+        self.assertAlmostEqual(reference[0], 0.0)
+        self.assertGreater(reference[1], 0.0)
+        self.assertAlmostEqual(reference[3], 0.0)
+        self.assertGreater(reference[4], 0.0)
+        self.assertAlmostEqual(np.linalg.norm(reference[6:10]), 1.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

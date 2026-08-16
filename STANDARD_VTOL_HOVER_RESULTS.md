@@ -62,5 +62,7 @@ ignorisanom `validation_logs/` direktoriju.
 Potvrđeno je stabilno zadržavanje hovera, ali nije potvrđeno praćenje pokretne
 horizontalne reference niti VTOL mode switching. Sljedeći korak je poseban,
 vremenski ograničen `2 m/s` MC horizontalni gate sa pusherom i dalje na nuli,
-kontrolisanim ubrzanjem i obaveznim kočenjem nazad u hover. Tek nakon toga se
-uvodi koordinisana PX4 VTOL transition komanda i trim raspored za 5–18 m/s.
+kontrolisanim ubrzanjem i obaveznim kočenjem nazad u hover. Implementacija i
+upute su u `STANDARD_VTOL_MC_FORWARD_RUNBOOK.md`; live gate još nije potvrđen.
+Tek nakon toga se uvodi koordinisana PX4 VTOL transition komanda i trim raspored
+za 5–18 m/s.

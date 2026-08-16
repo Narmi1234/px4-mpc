@@ -104,6 +104,6 @@ Corridor nije:
 
 Najveći trenutni translacijski rezidual kroz svih 23 tačke je ispod
 `1e-8 m/s²`. CasADi 10-state model, acados OCP i zaštićeni hover-Offboard su
-naknadno implementirani, a 30-sekundni hover gate je prošao. Sljedeći korak je
-koristiti početak ovog corridora za ograničenu MC horizontalnu referencu od
-`2 m/s`, prije izdavanja bilo kakve PX4 VTOL transition komande.
+naknadno implementirani. Prošli su 30-sekundni hover gate i ograničena MC
+horizontalna referenca od `2 m/s`. Sljedeći gate uvodi pusher i početak lift
+schedulea pri maloj brzini, još uvijek prije PX4 VTOL transition komande.

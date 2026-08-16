@@ -169,7 +169,7 @@ Prvi start može trajati oko 15 sekundi zbog generisanja acados C solvera.
 Sljedeći startovi koriste već kompajlirani solver. Poruka mora završiti sa:
 
 ```text
-Standard VTOL NMPC started in armed-capable hover mode
+Standard VTOL NMPC started in armed-capable guarded MC mode
 ```
 
 Node još ništa ne šalje letjelici. Samo računa proposed control na:

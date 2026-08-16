@@ -2,6 +2,7 @@
 
 import unittest
 
+import casadi as cs
 import numpy as np
 
 from px4_mpc.models.standard_vtol_casadi_model import (
@@ -41,6 +42,24 @@ class TestStandardVtolTransitionCasadiModel(unittest.TestCase):
             control = np.array([lift, pusher, *rates])
             with self.subTest(speed=speed):
                 self.compare(state, control, np.asarray(wind), elevator)
+
+    def test_level_forward_flight_jacobian_is_finite(self):
+        state, control, parameters, dynamics = self.symbolic.symbolic_dynamics()
+        jacobian = cs.Function(
+            "level_flight_jacobian",
+            [state, control, parameters],
+            [cs.jacobian(dynamics, state)],
+        )
+        level_state = self.numeric.hover_state()
+        level_state[3] = 2.0
+        actual = np.asarray(
+            jacobian(
+                level_state,
+                self.numeric.hover_control(),
+                np.zeros(4),
+            )
+        )
+        self.assertTrue(np.all(np.isfinite(actual)))
 
 
 if __name__ == "__main__":

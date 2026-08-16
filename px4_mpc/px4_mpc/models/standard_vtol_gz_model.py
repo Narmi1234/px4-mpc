@@ -346,9 +346,12 @@ class StandardVtolGazeboModel:
 
         drag_direction = -velocity_plane / speed_plane
         lift_direction = _unit(np.cross(spanwise, velocity_plane))
-        cos_alpha = float(np.clip(np.dot(lift_direction, upward), -1.0, 1.0))
-        angle = math.acos(cos_alpha)
-        alpha = surface.alpha_zero + angle if np.dot(lift_direction, forward) >= 0.0 else surface.alpha_zero - angle
+        # Signed atan2 is equivalent to the Gazebo acos + sign construction,
+        # but remains differentiable at alpha=0 for the CasADi counterpart.
+        alpha = surface.alpha_zero + math.atan2(
+            float(np.dot(lift_direction, forward)),
+            float(np.dot(lift_direction, upward)),
+        )
         while abs(alpha) > 0.5 * math.pi:
             alpha = alpha - math.pi if alpha > 0.0 else alpha + math.pi
 

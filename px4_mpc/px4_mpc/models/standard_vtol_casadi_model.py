@@ -97,12 +97,11 @@ class StandardVtolTransitionCasadiModel:
         speed_plane = cs.sqrt(cs.dot(velocity_plane, velocity_plane) + 1.0e-24)
         drag_direction = -velocity_plane / speed_plane
         lift_direction = _safe_unit(cs.cross(spanwise, velocity_plane))
-        cos_alpha = cs.fmin(1.0, cs.fmax(-1.0, cs.dot(lift_direction, upward)))
-        angle = cs.acos(cos_alpha)
-        alpha = cs.if_else(
-            cs.dot(lift_direction, forward) >= 0.0,
-            surface.alpha_zero + angle,
-            surface.alpha_zero - angle,
+        # This signed angle matches the Gazebo acos + sign construction while
+        # avoiding acos' singular derivative at level flight (alpha=0).
+        alpha = surface.alpha_zero + cs.atan2(
+            cs.dot(lift_direction, forward),
+            cs.dot(lift_direction, upward),
         )
         alpha = cs.if_else(
             alpha > 0.5 * np.pi,
@@ -138,7 +137,6 @@ class StandardVtolTransitionCasadiModel:
         parameters = cs.MX.sym("parameters", self.parameter_size)
         wind_world = parameters[0:3]
         elevator_trim = parameters[3]
-        position = state[0:3]
         velocity_world = state[3:6]
         quaternion = state[6:10]
         body_rates = control[2:5]
