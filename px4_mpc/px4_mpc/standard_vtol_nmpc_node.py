@@ -8,7 +8,6 @@ import numpy as np
 import rclpy
 from px4_msgs.msg import (
     OffboardControlMode,
-    TrajectorySetpoint,
     VehicleCommand,
     VehicleCommandAck,
     VehicleOdometry,
@@ -28,15 +27,12 @@ from std_srvs.srv import Trigger
 
 from px4_mpc.controllers.standard_vtol_nmpc import StandardVtolNmpc
 from px4_mpc.controllers.standard_vtol_output import (
+    limit_external_pusher_command,
     limit_mc_command,
     vertical_hover_lift,
 )
-from px4_mpc.models.frames import (
-    enu_to_ned,
-    enu_yaw_to_ned,
-    ned_to_enu,
-    px4_quaternion_to_gazebo,
-)
+from px4_mpc.models.external_pusher_profile import ExternalPusherProfile
+from px4_mpc.models.frames import ned_to_enu, px4_quaternion_to_gazebo
 from px4_mpc.models.mc_forward_profile import (
     McForwardProfile,
     mc_forward_reference_state,
@@ -72,12 +68,12 @@ class StandardVtolNmpcNode(Node):
         self.declare_parameter("mc_forward_acceleration", 1.0)
         self.declare_parameter("mc_forward_hold_seconds", 1.0)
         self.declare_parameter("mc_forward_start_delay_seconds", 2.0)
-        self.declare_parameter("allow_pusher_assist_output", False)
-        self.declare_parameter("pusher_assist_test_max_seconds", 13.0)
-        self.declare_parameter("pusher_assist_target_speed", 3.0)
-        self.declare_parameter("pusher_assist_acceleration", 1.5)
-        self.declare_parameter("pusher_assist_hold_seconds", 1.0)
-        self.declare_parameter("pusher_assist_start_delay_seconds", 2.0)
+        self.declare_parameter("allow_external_pusher_output", False)
+        self.declare_parameter("external_pusher_test_max_seconds", 12.0)
+        self.declare_parameter("external_pusher_peak", 0.05)
+        self.declare_parameter("external_pusher_slew", 0.02)
+        self.declare_parameter("external_pusher_hold_seconds", 2.0)
+        self.declare_parameter("external_pusher_start_delay_seconds", 2.0)
         self.allow_output = bool(self.get_parameter("allow_offboard_output").value)
         self.max_offboard_seconds = float(
             self.get_parameter("hover_offboard_max_seconds").value
@@ -99,24 +95,20 @@ class StandardVtolNmpcNode(Node):
                 self.get_parameter("mc_forward_start_delay_seconds").value
             ),
         )
-        self.allow_pusher_assist = bool(
-            self.get_parameter("allow_pusher_assist_output").value
+        self.allow_external_pusher = bool(
+            self.get_parameter("allow_external_pusher_output").value
         )
-        self.pusher_assist_test_max_seconds = float(
-            self.get_parameter("pusher_assist_test_max_seconds").value
+        self.external_pusher_test_max_seconds = float(
+            self.get_parameter("external_pusher_test_max_seconds").value
         )
-        self.pusher_assist_profile = McForwardProfile(
-            target_speed=float(
-                self.get_parameter("pusher_assist_target_speed").value
-            ),
-            acceleration=float(
-                self.get_parameter("pusher_assist_acceleration").value
-            ),
+        self.external_pusher_profile = ExternalPusherProfile(
+            peak_command=float(self.get_parameter("external_pusher_peak").value),
+            slew_per_second=float(self.get_parameter("external_pusher_slew").value),
             hold_seconds=float(
-                self.get_parameter("pusher_assist_hold_seconds").value
+                self.get_parameter("external_pusher_hold_seconds").value
             ),
             start_delay_seconds=float(
-                self.get_parameter("pusher_assist_start_delay_seconds").value
+                self.get_parameter("external_pusher_start_delay_seconds").value
             ),
         )
         self.controller = StandardVtolNmpc()
@@ -148,6 +140,7 @@ class StandardVtolNmpcNode(Node):
         self.max_horizontal_tracking_error = 0.0
         self.max_altitude_error = 0.0
         self.max_tilt_degrees = 0.0
+        self.max_commanded_pusher = 0.0
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -191,9 +184,6 @@ class StandardVtolNmpcNode(Node):
         self.command_publisher = self.create_publisher(
             VehicleCommand, "/fmu/in/vehicle_command", qos
         )
-        self.trajectory_publisher = self.create_publisher(
-            TrajectorySetpoint, "/fmu/in/trajectory_setpoint", qos
-        )
         self.diagnostic_publisher = self.create_publisher(
             Float64MultiArray, "/standard_vtol_nmpc/proposed_control", 10
         )
@@ -209,8 +199,8 @@ class StandardVtolNmpcNode(Node):
         )
         self.create_service(
             Trigger,
-            "/standard_vtol_nmpc/enable_pusher_assist_test",
-            self._enable_pusher_assist,
+            "/standard_vtol_nmpc/enable_external_pusher_test",
+            self._enable_external_pusher,
         )
         self.create_service(
             Trigger,
@@ -225,8 +215,8 @@ class StandardVtolNmpcNode(Node):
         )
         self.create_timer(0.05, self._update)
         mode = "armed-capable guarded MC" if self.allow_output else "shadow-only"
-        if self.allow_pusher_assist:
-            mode += " plus guarded PX4 pusher-assist"
+        if self.allow_external_pusher:
+            mode += " plus guarded external pusher"
         self.get_logger().info(f"Standard VTOL NMPC started in {mode} mode")
 
     def _odometry(self, message: VehicleOdometry) -> None:
@@ -346,6 +336,7 @@ class StandardVtolNmpcNode(Node):
         self.max_horizontal_tracking_error = 0.0
         self.max_altitude_error = 0.0
         self.max_tilt_degrees = 0.0
+        self.max_commanded_pusher = 0.0
 
     def _enable_hover(self, _request, response):
         if not self.allow_output:
@@ -392,35 +383,36 @@ class StandardVtolNmpcNode(Node):
         )
         return response
 
-    def _enable_pusher_assist(self, _request, response):
-        if not self.allow_output or not self.allow_pusher_assist:
+    def _enable_external_pusher(self, _request, response):
+        if not self.allow_output or not self.allow_external_pusher:
             response.success = False
             response.message = (
                 "launch with allow_offboard_output:=true and "
-                "allow_pusher_assist_output:=true first"
+                "allow_external_pusher_output:=true first"
             )
             return response
+        profile = self.external_pusher_profile
         first_gate_configuration = (
-            np.isclose(self.pusher_assist_profile.target_speed, 3.0)
-            and np.isclose(self.pusher_assist_profile.acceleration, 1.5)
-            and np.isclose(self.pusher_assist_profile.hold_seconds, 1.0)
-            and np.isclose(self.pusher_assist_profile.start_delay_seconds, 2.0)
-            and np.isclose(self.pusher_assist_test_max_seconds, 13.0)
+            np.isclose(profile.peak_command, 0.05)
+            and np.isclose(profile.slew_per_second, 0.02)
+            and np.isclose(profile.hold_seconds, 2.0)
+            and np.isclose(profile.start_delay_seconds, 2.0)
+            and np.isclose(self.external_pusher_test_max_seconds, 12.0)
         )
         if not first_gate_configuration:
             response.success = False
-            response.message = "pusher_assist_profile_not_first_gate_configuration"
+            response.message = "external_pusher_profile_not_first_gate_configuration"
             return response
         ready, reason = self._ready_for_hover()
         if not ready:
             response.success = False
             response.message = reason
             return response
-        self._start_output("pusher_assist")
+        self._start_output("external_pusher")
         response.success = True
         response.message = (
-            "3.0 m/s PX4 position-interface prestream started; PX4 VTOL "
-            "pusher assist, not direct NMPC pusher output, follows after 1 s"
+            "external pusher 0->0.05->0 pulse prestream started; "
+            "PX4 Offboard follows after 1 s"
         )
         return response
 
@@ -447,8 +439,8 @@ class StandardVtolNmpcNode(Node):
         return response
 
     def _active_timeout(self) -> float:
-        if self.test_mode == "pusher_assist":
-            return self.pusher_assist_test_max_seconds
+        if self.test_mode == "external_pusher":
+            return self.external_pusher_test_max_seconds
         if self.test_mode == "mc_forward":
             return self.forward_test_max_seconds
         return self.max_offboard_seconds
@@ -479,8 +471,9 @@ class StandardVtolNmpcNode(Node):
             f"solver_failures={self.solver_failures}, abort_reason={self.abort_reason}"
             f", test_mode={self.test_mode}, profile_phase={self.profile_phase}"
             f", configured_timeout={self._active_timeout():.1f}s"
-            f", active_profile={self._active_profile_summary()}"
-            f", output_interface={self._output_interface()}"
+            f", forward_profile=[speed={self.forward_profile.target_speed:.1f},"
+            f"accel={self.forward_profile.acceleration:.1f},"
+            f"hold={self.forward_profile.hold_seconds:.1f}]"
             f", last_offboard_duration={self.last_offboard_duration:.2f}s"
             f", last_command_ack={self.last_command_ack}"
             f", control={np.round(self.last_command, 4).tolist()}"
@@ -491,25 +484,10 @@ class StandardVtolNmpcNode(Node):
             f"cross_track={self.max_cross_track_error:.3f},"
             f"horizontal_tracking={self.max_horizontal_tracking_error:.3f},"
             f"altitude={self.max_altitude_error:.3f},"
-            f"tilt_deg={self.max_tilt_degrees:.2f}]"
+            f"tilt_deg={self.max_tilt_degrees:.2f},"
+            f"commanded_pusher={self.max_commanded_pusher:.3f}]"
         )
         return response
-
-    def _active_profile_summary(self) -> str:
-        profile = (
-            self.pusher_assist_profile
-            if self.test_mode == "pusher_assist"
-            else self.forward_profile
-        )
-        return (
-            f"[speed={profile.target_speed:.1f},accel={profile.acceleration:.1f},"
-            f"hold={profile.hold_seconds:.1f}]"
-        )
-
-    def _output_interface(self) -> str:
-        if self.test_mode == "pusher_assist":
-            return "px4_position_with_vtol_pusher_assist"
-        return "nmpc_body_rate"
 
     def _reference_at_profile_time(self, profile_time: float) -> np.ndarray:
         reference = self.state.copy() if self.hold_state is None else self.hold_state
@@ -517,13 +495,8 @@ class StandardVtolNmpcNode(Node):
             reference[3:6] = 0.0
             return reference
         reference = reference.copy()
-        if self.test_mode in ("mc_forward", "pusher_assist"):
-            profile = (
-                self.pusher_assist_profile
-                if self.test_mode == "pusher_assist"
-                else self.forward_profile
-            )
-            sample = profile.sample(profile_time)
+        if self.test_mode == "mc_forward":
+            sample = self.forward_profile.sample(profile_time)
             reference = mc_forward_reference_state(
                 self.hold_state,
                 self.forward_direction,
@@ -541,17 +514,21 @@ class StandardVtolNmpcNode(Node):
             ]
         )
         self.current_reference = self._reference_at_profile_time(base_time)
-        if self.test_mode in ("mc_forward", "pusher_assist"):
-            profile = (
-                self.pusher_assist_profile
-                if self.test_mode == "pusher_assist"
-                else self.forward_profile
-            )
-            self.profile_phase = profile.sample(base_time).phase
+        if self.test_mode == "mc_forward":
+            self.profile_phase = self.forward_profile.sample(base_time).phase
+        elif self.test_mode == "external_pusher":
+            self.profile_phase = self.external_pusher_profile.sample(base_time).phase
         elif self.output_requested:
             self.profile_phase = "stationary_hover"
         u_ref = np.zeros((self.controller.N, 5))
         u_ref[:, 0] = self.controller.model.plant.hover_command
+        if self.test_mode == "external_pusher":
+            u_ref[:, 1] = [
+                self.external_pusher_profile.sample(
+                    base_time + stage * self.controller.dt
+                ).command
+                for stage in range(self.controller.N)
+            ]
         parameters = np.zeros((self.controller.N + 1, 4))
         return x_ref, u_ref, parameters
 
@@ -621,27 +598,22 @@ class StandardVtolNmpcNode(Node):
             return "altitude_error"
         if abs(self.state[5]) > 0.75:
             return "vertical_speed_limit"
-        if self.test_mode == "pusher_assist":
-            horizontal_speed_limit = 3.8
-        elif self.test_mode == "mc_forward":
+        if self.test_mode == "mc_forward":
             horizontal_speed_limit = 2.7
+        elif self.test_mode == "external_pusher":
+            horizontal_speed_limit = 1.5
         else:
             horizontal_speed_limit = 2.0
         if np.linalg.norm(self.state[3:5]) > horizontal_speed_limit:
             return "horizontal_speed_limit"
         delta_xy = self.state[0:2] - self.hold_state[0:2]
-        if self.test_mode in ("mc_forward", "pusher_assist"):
-            profile = (
-                self.pusher_assist_profile
-                if self.test_mode == "pusher_assist"
-                else self.forward_profile
-            )
+        if self.test_mode == "mc_forward":
             normal = np.array(
                 [-self.forward_direction[1], self.forward_direction[0]]
             )
             along_track = float(np.dot(delta_xy, self.forward_direction))
             cross_track = abs(float(np.dot(delta_xy, normal)))
-            if along_track < -1.0 or along_track > profile.final_distance + 2.0:
+            if along_track < -1.0 or along_track > self.forward_profile.final_distance + 2.0:
                 return "forward_geofence"
             if cross_track > 1.5:
                 return "cross_track_limit"
@@ -651,6 +623,8 @@ class StandardVtolNmpcNode(Node):
                 > 1.5
             ):
                 return "horizontal_tracking_error"
+        elif self.test_mode == "external_pusher" and np.linalg.norm(delta_xy) > 3.0:
+            return "external_pusher_geofence"
         elif np.linalg.norm(delta_xy) > 5.0:
             return "horizontal_geofence"
         if self._tilt_degrees() > 25.0:
@@ -663,9 +637,8 @@ class StandardVtolNmpcNode(Node):
             and self.offboard_entered_ns > 0
             and self._offboard_elapsed() >= self._active_timeout()
         ):
-            if self.test_mode in ("mc_forward", "pusher_assist"):
-                minimum_speed = 2.5 if self.test_mode == "pusher_assist" else 1.6
-                if self.max_forward_speed < minimum_speed:
+            if self.test_mode == "mc_forward":
+                if self.max_forward_speed < 1.6:
                     return "forward_speed_not_reached"
                 if np.linalg.norm(self.state[3:5]) > 0.35:
                     return "forward_test_not_stopped"
@@ -677,9 +650,11 @@ class StandardVtolNmpcNode(Node):
                     > 0.75
                 ):
                     return "forward_test_final_position_error"
-                if self.test_mode == "pusher_assist":
-                    return "pusher_assist_test_timeout"
                 return "mc_forward_test_timeout"
+            if self.test_mode == "external_pusher":
+                if abs(self.last_command[1]) > 0.002:
+                    return "external_pusher_not_zero_at_end"
+                return "external_pusher_test_timeout"
             return "hover_test_timeout"
         return None
 
@@ -696,35 +671,6 @@ class StandardVtolNmpcNode(Node):
         message.yaw = float(-command[4])
         message.thrust_body = [float(command[1]), 0.0, float(-command[0])]
         self.rates_publisher.publish(message)
-
-    def _publish_position_setpoint(self) -> None:
-        """Let PX4 track the bounded trajectory and own its MC pusher assist."""
-        timestamp = self.get_clock().now().nanoseconds // 1000
-        mode = OffboardControlMode()
-        mode.timestamp = timestamp
-        mode.position = True
-        self.offboard_publisher.publish(mode)
-
-        reference = (
-            self.state.copy()
-            if self.current_reference is None
-            else self.current_reference
-        )
-        message = TrajectorySetpoint()
-        message.timestamp = timestamp
-        message.position = enu_to_ned(reference[0:3]).astype(float).tolist()
-        message.velocity = enu_to_ned(reference[3:6]).astype(float).tolist()
-        sample = self.pusher_assist_profile.sample(self._profile_elapsed())
-        acceleration_enu = np.r_[
-            self.forward_direction * sample.acceleration,
-            0.0,
-        ]
-        message.acceleration = enu_to_ned(acceleration_enu).astype(float).tolist()
-        message.jerk = [math.nan, math.nan, math.nan]
-        yaw_enu = self._yaw_from_quaternion(self.hold_state[6:10])
-        message.yaw = enu_yaw_to_ned(yaw_enu)
-        message.yawspeed = 0.0
-        self.trajectory_publisher.publish(message)
 
     def _request_nav_state(self, nav_state: int) -> None:
         message = VehicleCommand()
@@ -778,7 +724,8 @@ class StandardVtolNmpcNode(Node):
                 f"cross_track={self.max_cross_track_error:.3f}, "
                 f"horizontal_tracking={self.max_horizontal_tracking_error:.3f}, "
                 f"altitude={self.max_altitude_error:.3f}, "
-                f"tilt_deg={self.max_tilt_degrees:.2f}], "
+                f"tilt_deg={self.max_tilt_degrees:.2f}, "
+                f"commanded_pusher={self.max_commanded_pusher:.3f}], "
                 f"control={np.round(self.last_command, 4).tolist()}; "
                 "Position mode requested"
             )
@@ -805,7 +752,22 @@ class StandardVtolNmpcNode(Node):
             self.last_raw_control = solution.control.copy()
             requested_control = solution.control.copy()
             requested_control[0] = self._vertical_hover_lift()
-            self.last_command = limit_mc_command(self.last_command, requested_control)
+            if self.test_mode == "external_pusher":
+                pusher_sample = self.external_pusher_profile.sample(
+                    self._profile_elapsed()
+                )
+                self.last_command = limit_external_pusher_command(
+                    self.last_command,
+                    requested_control,
+                    pusher_sample.command,
+                )
+                self.max_commanded_pusher = max(
+                    self.max_commanded_pusher, self.last_command[1]
+                )
+            else:
+                self.last_command = limit_mc_command(
+                    self.last_command, requested_control
+                )
         diagnostic = Float64MultiArray()
         diagnostic.data = [
             *self.last_command.tolist(),
@@ -843,10 +805,7 @@ class StandardVtolNmpcNode(Node):
             )
             handover_command = self.last_command
         # PX4 requires a stream of setpoints before accepting Offboard.
-        if self.test_mode == "pusher_assist":
-            self._publish_position_setpoint()
-        else:
-            self._publish_setpoint(handover_command)
+        self._publish_setpoint(handover_command)
         self.prestream_count += 1
         if (
             20 <= self.prestream_count <= 50

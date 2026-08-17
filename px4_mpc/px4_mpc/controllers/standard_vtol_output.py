@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 
@@ -28,6 +26,22 @@ def limit_mc_command(previous, requested, dt: float = 0.05) -> np.ndarray:
     return limited
 
 
+def limit_external_pusher_command(
+    previous,
+    requested,
+    pusher_command: float,
+    dt: float = 0.05,
+) -> np.ndarray:
+    """Apply MC limits while allowing only the first 0.05 pusher pulse."""
+    previous = np.asarray(previous, dtype=float)
+    limited = limit_mc_command(previous, requested, dt)
+    target = float(np.clip(pusher_command, 0.0, 0.05))
+    limited[1] = previous[1] + np.clip(
+        target - previous[1], -0.02 * dt, 0.02 * dt
+    )
+    return limited
+
+
 def vertical_hover_lift(plant, altitude_error: float, vertical_speed: float) -> float:
     """Return the critically damped hover lift command used by the live node."""
     motor = plant.motors[0]
@@ -42,22 +56,3 @@ def vertical_hover_lift(plant, altitude_error: float, vertical_speed: float) -> 
     )
     desired_acceleration = -float(altitude_error) - 2.0 * float(vertical_speed)
     return float(hover + desired_acceleration / acceleration_per_command)
-
-
-def expected_px4_pusher_assist(
-    forward_acceleration: float,
-    gravity: float = 9.80665,
-    pitch_min_degrees: float = -5.0,
-    thrust_scale: float = 0.7,
-) -> float:
-    """Mirror PX4's MC pusher-assist law for a level forward acceleration.
-
-    This is a prediction/check only. The ROS node does not send this value to
-    an actuator; PX4 computes and applies the real pusher command.
-    """
-    pitch_setpoint = -math.atan2(max(0.0, forward_acceleration), gravity)
-    pitch_min = math.radians(pitch_min_degrees)
-    if pitch_setpoint >= pitch_min:
-        return 0.0
-    command = (math.sin(pitch_min) - math.sin(pitch_setpoint)) * thrust_scale
-    return float(np.clip(command, 0.0, 0.9))

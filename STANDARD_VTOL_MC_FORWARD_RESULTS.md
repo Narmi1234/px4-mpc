@@ -63,9 +63,8 @@ above 2 m/s, or a PX4 VTOL transition command.
 
 ## Next implementation gate
 
-The next software increment is a separately guarded 3 m/s PX4 pusher-assist
-test while the vehicle remains in MC mode. PX4 owns its position loop and
-internal pusher law while NMPC runs shadow; the ULog must prove that motor 5
-actually engaged. Only after that gate passes do we design the partial PX4
-transition interface. Do not reuse the 2 m/s service with manually changed
-launch parameters; the node intentionally rejects such a configuration.
+The next software increment is the custom PX4 external-pusher interface gate.
+It first validates a bounded `0 -> 0.05 -> 0` pusher pulse while NMPC retains
+collective-lift and body-rate control. Only after ULog confirms motor 5 follows
+that command do we add pusher feedback to the 3 m/s forward-speed gate. Do not
+reuse the 2 m/s service with manually changed launch parameters.

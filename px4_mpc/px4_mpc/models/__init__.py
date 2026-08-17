@@ -1,5 +1,7 @@
 """Dynamic models used by px4_mpc."""
 
+from px4_mpc.models.external_pusher_profile import ExternalPusherProfile
+from px4_mpc.models.external_pusher_profile import ExternalPusherSample
 from px4_mpc.models.mc_forward_profile import McForwardProfile
 from px4_mpc.models.mc_forward_profile import McForwardSample
 from px4_mpc.models.mc_forward_profile import mc_forward_reference_state
@@ -15,6 +17,8 @@ except ImportError:  # CasADi is optional for plant validation utilities.
     StandardVtolTransitionCasadiModel = None
 
 __all__ = [
+    "ExternalPusherProfile",
+    "ExternalPusherSample",
     "McForwardProfile",
     "McForwardSample",
     "mc_forward_reference_state",

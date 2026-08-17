@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 from px4_mpc.models.standard_vtol_gz_model import quaternion_to_rotation
@@ -21,11 +19,6 @@ def ned_to_enu(vector_ned: np.ndarray) -> np.ndarray:
 def enu_to_ned(vector_enu: np.ndarray) -> np.ndarray:
     """Convert one vector, or an array of row vectors, from ENU to NED."""
     return np.asarray(vector_enu, dtype=float) @ NED_TO_ENU.T
-
-
-def enu_yaw_to_ned(yaw_enu: float) -> float:
-    """Convert ENU yaw (zero East, CCW) to PX4 NED yaw (zero North, CW)."""
-    return math.atan2(math.cos(yaw_enu), math.sin(yaw_enu))
 
 
 def frd_to_flu(vector_frd: np.ndarray) -> np.ndarray:
