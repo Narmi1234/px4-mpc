@@ -129,6 +129,16 @@ Sačekati i ostaviti terminal otvoren:
 Standard VTOL NMPC started in armed-capable guarded MC plus guarded external pusher mode
 ```
 
+Ako se ovaj terminal zatvori, padne ili se prekine sa `Ctrl+C`, servis ne
+postoji i Terminal 4 ne može pokrenuti test. Provjera prije armiranja:
+
+```bash
+ros2 service list | grep standard_vtol_nmpc
+```
+
+Mora prikazati najmanje `/standard_vtol_nmpc/status` i
+`/standard_vtol_nmpc/enable_external_pusher_test`.
+
 ## 4. QGroundControl
 
 1. Ostaviti vozilo u MC konfiguraciji i Position modeu.
@@ -143,6 +153,10 @@ Standard VTOL NMPC started in armed-capable guarded MC plus guarded external pus
 cd /home/imran/Repositories/px4-mpc
 bash scripts/run_external_pusher_gate.bash
 ```
+
+Skripta prvo provjerava da Terminal 3 zaista radi. Poruka `NMPC node is not
+available` znači da treba ponovo pokrenuti i ostaviti otvoren Terminal 3; tada
+nikakav Offboard ni pusher setpoint nije poslan.
 
 Uspješan završni status mora sadržavati:
 
@@ -186,6 +200,12 @@ altitude_span=PASS
 mc_only=PASS
 ulog_gate=PASS
 ```
+
+Napomena: NMPC trenutno mjeri ovaj gate u ROS wall vremenu, a PX4 ULog koristi
+Gazebo simulation time. Ako Gazebo radi sporije od realnog vremena, 12.0 s koje
+prijavi NMPC može u ULogu biti kraće; analyzer zato prihvata najmanje 10.0 s,
+ali i dalje nezavisno zahtijeva dostignut pusher peak, povratak na nulu, sigurne
+brzinu i visinu te MC stanje tokom cijelog intervala.
 
 Nakon testa, u sljedećem PX4 pokretanju ponovo ugasiti eksperimentalni
 interfejs dok ne bude potreban:
