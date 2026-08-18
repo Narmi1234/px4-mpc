@@ -214,6 +214,7 @@ interfejs dok ne bude potreban:
 param set VT_EXT_PUSH_EN 0
 ```
 
-Ako ovaj gate prođe, sljedeći korak je zatvoreni NMPC forward-speed gate do
-`3 m/s` u kojem NMPC, a ne PX4 pusher-assist, istovremeno komanduje collective
-liftom, pusherom i body rateovima.
+Ovaj gate je prošao. Naredni korak i svi kriteriji do pune tranzicije definisani
+su u [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md). Prvo se
+implementira zatvoreni 3 m/s pusher-feedback gate u MC režimu; još se ne šalje
+PX4 VTOL transition komanda.

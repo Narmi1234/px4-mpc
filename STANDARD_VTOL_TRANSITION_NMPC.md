@@ -542,9 +542,13 @@ Implementation checklist:
 6. [x] a ROS 2 node that starts in mandatory shadow mode;
 7. [x] pass the five-second live SITL hover-only Offboard acceptance test;
 8. [x] pass the 30-second hover-hold Offboard acceptance test;
-9. [ ] pass the implemented bounded 2 m/s multicopter horizontal-speed gate
+9. [x] pass the implemented bounded 2 m/s multicopter horizontal-speed gate
    documented in `STANDARD_VTOL_MC_FORWARD_RUNBOOK.md`;
-10. [ ] add coordinated incremental PX4 transition tests.
+10. [x] validate the custom PX4 pusher path with a bounded `0 -> 0.05 -> 0`
+    motor-5 ULog gate;
+11. [ ] implement and pass the 3 m/s MC pusher-feedback gate defined in
+    `STANDARD_VTOL_NMPC_ROADMAP.md`;
+12. [ ] add coordinated incremental PX4 transition tests.
 
 The old open-loop identification launch must not be used as a prerequisite for
 this controller.
