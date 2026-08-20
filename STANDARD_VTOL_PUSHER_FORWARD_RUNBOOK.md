@@ -22,6 +22,11 @@ najmanje 3.0 s završni hover
 20.5 s ukupni Offboard timeout
 ```
 
+Profil i timeout koriste prevedeni `VehicleStatus.timestamp`. Dodatna zaštita
+odbacuje boot-relative event timestamp ako nije u istoj vremenskoj domeni. Time
+se sprječava trenutni skok profila i lažni `horizontal_tracking_error` odmah
+nakon ulaska u Offboard.
+
 Nominalni put je `24.85 m`. Potrebno je najmanje `40 m` slobodnog prostora
 ispred nosa.
 

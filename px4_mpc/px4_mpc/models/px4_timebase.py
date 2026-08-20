@@ -21,12 +21,21 @@ class Px4Timebase:
         if timestamp_us > 0 and timestamp_us >= self.latest_px4_us:
             self.latest_px4_us = timestamp_us
 
-    def start_offboard(self, transition_px4_us: int, wall_ns: int) -> None:
-        """Start timing from PX4's exact nav-state transition timestamp."""
-        transition_px4_us = int(transition_px4_us)
-        if transition_px4_us <= 0:
-            transition_px4_us = self.latest_px4_us
-        self.offboard_start_px4_us = transition_px4_us
+    def start_offboard(self, observed_px4_us: int, wall_ns: int) -> None:
+        """Start timing from a timestamp in the active PX4 message domain.
+
+        Some PX4 message fields contain boot-relative event timestamps while
+        the ROS bridge translates the message ``timestamp`` field. Reject an
+        event timestamp more than five seconds from the latest observed PX4
+        clock so those domains cannot create a huge false elapsed time.
+        """
+        observed_px4_us = int(observed_px4_us)
+        if observed_px4_us <= 0 or (
+            self.latest_px4_us > 0
+            and abs(self.latest_px4_us - observed_px4_us) > 5_000_000
+        ):
+            observed_px4_us = self.latest_px4_us
+        self.offboard_start_px4_us = observed_px4_us
         self.offboard_start_wall_ns = int(wall_ns)
         self.last_px4_elapsed = 0.0
         self.last_wall_elapsed = 0.0

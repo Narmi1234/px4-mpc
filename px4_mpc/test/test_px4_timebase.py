@@ -18,10 +18,23 @@ class TestPx4Timebase(unittest.TestCase):
         self.assertAlmostEqual(timebase.wall_elapsed(22_000_000_000), 12.0)
         self.assertAlmostEqual(timebase.realtime_factor(22_000_000_000), 0.8)
 
-    def test_nav_transition_timestamp_is_used_instead_of_callback_time(self):
+    def test_same_domain_event_timestamp_preserves_callback_delay(self):
         timebase = Px4Timebase()
         timebase.update_px4_timestamp(8_500_000)
         timebase.start_offboard(8_000_000, 100)
+        self.assertAlmostEqual(timebase.px4_elapsed(), 0.5)
+
+    def test_mixed_timestamp_domain_falls_back_to_latest_px4_clock(self):
+        timebase = Px4Timebase()
+        epoch_timestamp = 1_787_207_600_000_000
+        boot_relative_timestamp = 224_348_000
+        timebase.update_px4_timestamp(epoch_timestamp)
+
+        timebase.start_offboard(boot_relative_timestamp, 100)
+
+        self.assertEqual(timebase.offboard_start_px4_us, epoch_timestamp)
+        self.assertAlmostEqual(timebase.px4_elapsed(), 0.0)
+        timebase.update_px4_timestamp(epoch_timestamp + 500_000)
         self.assertAlmostEqual(timebase.px4_elapsed(), 0.5)
 
     def test_stop_retains_final_durations(self):

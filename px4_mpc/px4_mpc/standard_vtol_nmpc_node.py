@@ -302,8 +302,11 @@ class StandardVtolNmpcNode(Node):
             message.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD
         )
         if self.offboard_active and not was_offboard:
+            # Use the translated message timestamp, not nav_state_timestamp.
+            # The latter can remain boot-relative while uXRCE-DDS publishes
+            # message timestamps in the synchronized epoch domain.
             self.px4_timebase.start_offboard(
-                message.nav_state_timestamp,
+                message.timestamp,
                 self.get_clock().now().nanoseconds,
             )
         self.ever_offboard = self.ever_offboard or self.offboard_active
