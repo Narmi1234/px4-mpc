@@ -215,6 +215,7 @@ param set VT_EXT_PUSH_EN 0
 ```
 
 Ovaj gate je prošao. Naredni korak i svi kriteriji do pune tranzicije definisani
-su u [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md). Prvo se
-implementira zatvoreni 3 m/s pusher-feedback gate u MC režimu; još se ne šalje
-PX4 VTOL transition komanda.
+su u [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md). Sada se
+izvodi zatvoreni 3 m/s pusher-feedback gate po
+[`STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md`](STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md);
+još se ne šalje PX4 VTOL transition komanda.

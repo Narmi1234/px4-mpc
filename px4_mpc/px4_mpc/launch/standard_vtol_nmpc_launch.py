@@ -20,6 +20,18 @@ def generate_launch_description():
     pusher_slew = LaunchConfiguration("external_pusher_slew")
     pusher_hold = LaunchConfiguration("external_pusher_hold_seconds")
     pusher_delay = LaunchConfiguration("external_pusher_start_delay_seconds")
+    allow_pusher_forward = LaunchConfiguration("allow_pusher_forward_output")
+    pusher_forward_seconds = LaunchConfiguration(
+        "pusher_forward_test_max_seconds"
+    )
+    pusher_forward_speed = LaunchConfiguration("pusher_forward_target_speed")
+    pusher_forward_acceleration = LaunchConfiguration(
+        "pusher_forward_acceleration"
+    )
+    pusher_forward_hold = LaunchConfiguration("pusher_forward_hold_seconds")
+    pusher_forward_delay = LaunchConfiguration(
+        "pusher_forward_start_delay_seconds"
+    )
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -87,6 +99,36 @@ def generate_launch_description():
                 default_value="2.0",
                 description="Stationary delay before external pusher ramp",
             ),
+            DeclareLaunchArgument(
+                "allow_pusher_forward_output",
+                default_value="false",
+                description="Allow the guarded Gate A pusher-feedback test",
+            ),
+            DeclareLaunchArgument(
+                "pusher_forward_test_max_seconds",
+                default_value="20.5",
+                description="PX4-time timeout for the Gate A profile",
+            ),
+            DeclareLaunchArgument(
+                "pusher_forward_target_speed",
+                default_value="3.0",
+                description="Gate A forward-speed reference in m/s",
+            ),
+            DeclareLaunchArgument(
+                "pusher_forward_acceleration",
+                default_value="0.75",
+                description="Gate A reference acceleration in m/s^2",
+            ),
+            DeclareLaunchArgument(
+                "pusher_forward_hold_seconds",
+                default_value="2.0",
+                description="Gate A hold time at peak speed",
+            ),
+            DeclareLaunchArgument(
+                "pusher_forward_start_delay_seconds",
+                default_value="2.0",
+                description="Gate A stationary warm-up before acceleration",
+            ),
             Node(
                 package="px4_mpc",
                 executable="standard_vtol_nmpc",
@@ -107,6 +149,12 @@ def generate_launch_description():
                         "external_pusher_slew": pusher_slew,
                         "external_pusher_hold_seconds": pusher_hold,
                         "external_pusher_start_delay_seconds": pusher_delay,
+                        "allow_pusher_forward_output": allow_pusher_forward,
+                        "pusher_forward_test_max_seconds": pusher_forward_seconds,
+                        "pusher_forward_target_speed": pusher_forward_speed,
+                        "pusher_forward_acceleration": pusher_forward_acceleration,
+                        "pusher_forward_hold_seconds": pusher_forward_hold,
+                        "pusher_forward_start_delay_seconds": pusher_forward_delay,
                     }
                 ],
             ),

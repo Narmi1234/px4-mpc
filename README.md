@@ -14,6 +14,8 @@ odobrena. Za nastavak rada prvo čitaj:
 1. [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md) — trenutno
    stanje, vlasništvo komandi, neposredni 3 m/s pusher-feedback gate i svi
    naredni acceptance gateovi do pune tranzicije.
+2. [`STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md`](STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md)
+   — tačne offline, build, PX4, DDS, QGC, live i ULog komande za Gate A.
 
 Pozadinski dokumenti su:
 
@@ -47,8 +49,9 @@ Trenutna sigurna provjera (bez PX4-a i bez novog leta) je:
 
 ```bash
 cd /home/imran/Repositories/px4-mpc
-PYTHONPATH=px4_mpc .venv/bin/python -m unittest discover \
-  -s px4_mpc/test -p 'test_*.py'
+source scripts/source_ros2_nmpc.bash
+PYTHONPATH="px4_mpc:.venv/lib/python3.12/site-packages:${PYTHONPATH}" \
+  /usr/bin/python3 -m pytest -q px4_mpc/test
 ```
 
 ![px4-mpc](https://github.com/user-attachments/assets/6713b8e6-815f-42fe-b3a0-51708d3416e5)

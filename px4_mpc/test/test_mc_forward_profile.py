@@ -5,9 +5,12 @@ import unittest
 import numpy as np
 
 from px4_mpc.models.mc_forward_profile import (
-    McForwardProfile,
     mc_forward_reference_state,
+    McForwardProfile,
+    pusher_forward_feedforward,
+    pusher_forward_reference_state,
 )
+from px4_mpc.models.standard_vtol_gz_model import StandardVtolGazeboModel
 
 
 class TestMcForwardProfile(unittest.TestCase):
@@ -64,6 +67,26 @@ class TestMcForwardProfile(unittest.TestCase):
         self.assertAlmostEqual(reference[3], 0.0)
         self.assertGreater(reference[4], 0.0)
         self.assertAlmostEqual(np.linalg.norm(reference[6:10]), 1.0)
+
+    def test_pusher_reference_moves_without_feedforward_pitch(self):
+        hold = np.zeros(10)
+        hold[6:10] = [np.sqrt(0.5), 0.0, 0.0, np.sqrt(0.5)]
+        sample = self.profile.sample(3.0)
+        reference = pusher_forward_reference_state(
+            hold, np.array([0.0, 1.0]), sample
+        )
+        self.assertGreater(reference[1], 0.0)
+        self.assertGreater(reference[4], 0.0)
+        np.testing.assert_allclose(reference[6:10], hold[6:10])
+
+    def test_pusher_feedforward_is_bounded_and_reduces_for_braking(self):
+        plant = StandardVtolGazeboModel()
+        accelerate = pusher_forward_feedforward(plant, 2.0, 0.75)
+        hold = pusher_forward_feedforward(plant, 2.0, 0.0)
+        brake = pusher_forward_feedforward(plant, 2.0, -0.75)
+        self.assertAlmostEqual(accelerate, 0.10)
+        self.assertGreater(hold, brake)
+        self.assertGreaterEqual(brake, 0.0)
 
 
 if __name__ == "__main__":

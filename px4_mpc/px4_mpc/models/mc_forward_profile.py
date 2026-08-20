@@ -145,3 +145,45 @@ def mc_forward_reference_state(
     cp, sp = np.cos(0.5 * pitch), np.sin(0.5 * pitch)
     reference[6:10] = [cy * cp, -sy * sp, cy * sp, sy * cp]
     return reference
+
+
+def pusher_forward_reference_state(
+    hold_state: np.ndarray,
+    forward_direction: np.ndarray,
+    sample: McForwardSample,
+) -> np.ndarray:
+    """Map a moving profile to a level-attitude pusher test reference."""
+    hold_state = np.asarray(hold_state, dtype=float)
+    direction = np.asarray(forward_direction, dtype=float)
+    if hold_state.shape != (10,):
+        raise ValueError("hold_state must have shape (10,)")
+    if direction.shape != (2,) or not np.isclose(np.linalg.norm(direction), 1.0):
+        raise ValueError("forward_direction must be a unit 2-vector")
+    reference = hold_state.copy()
+    reference[0:2] += direction * sample.distance
+    reference[3:5] = direction * sample.speed
+    # hold_state is levelled when the gate is captured. Keeping this attitude
+    # reference makes the optimizer use pusher thrust instead of reproducing
+    # the earlier tilt-only MC acceleration test.
+    reference[6:10] = hold_state[6:10]
+    return reference
+
+
+def pusher_forward_feedforward(
+    plant,
+    speed: float,
+    acceleration: float,
+    command_limit: float = 0.10,
+) -> float:
+    """Return bounded level-flight pusher feedforward for one profile sample."""
+    speed = max(0.0, float(speed))
+    acceleration = float(acceleration)
+    pusher = plant.motors[4]
+    trim = plant.nominal_level_flight_trim(speed)
+    trim_speed = pusher.target_speed(trim.pusher_command)
+    trim_thrust = pusher.motor_constant * trim_speed**2
+    required_thrust = max(0.0, trim_thrust + plant.mass * acceleration)
+    required_speed = np.sqrt(required_thrust / pusher.motor_constant)
+    return float(
+        np.clip(pusher.normalized_command(required_speed), 0.0, command_limit)
+    )

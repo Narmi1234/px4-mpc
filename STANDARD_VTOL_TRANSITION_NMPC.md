@@ -546,8 +546,8 @@ Implementation checklist:
    documented in `STANDARD_VTOL_MC_FORWARD_RUNBOOK.md`;
 10. [x] validate the custom PX4 pusher path with a bounded `0 -> 0.05 -> 0`
     motor-5 ULog gate;
-11. [ ] implement and pass the 3 m/s MC pusher-feedback gate defined in
-    `STANDARD_VTOL_NMPC_ROADMAP.md`;
+11. [ ] pass the live 3 m/s MC pusher-feedback gate defined in
+    `STANDARD_VTOL_NMPC_ROADMAP.md` (software and offline gate are complete);
 12. [ ] add coordinated incremental PX4 transition tests.
 
 The old open-loop identification launch must not be used as a prerequisite for

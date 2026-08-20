@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections import deque
 import math
 
 import numpy as np
-import rclpy
 from px4_msgs.msg import (
+    AirspeedValidated,
     OffboardControlMode,
     VehicleCommand,
     VehicleCommandAck,
@@ -15,6 +16,7 @@ from px4_msgs.msg import (
     VehicleStatus,
     VtolVehicleStatus,
 )
+import rclpy
 from rclpy.node import Node
 from rclpy.qos import (
     QoSDurabilityPolicy,
@@ -22,21 +24,24 @@ from rclpy.qos import (
     QoSProfile,
     QoSReliabilityPolicy,
 )
-from std_msgs.msg import Float64MultiArray
-from std_srvs.srv import Trigger
-
 from px4_mpc.controllers.standard_vtol_nmpc import StandardVtolNmpc
 from px4_mpc.controllers.standard_vtol_output import (
     limit_external_pusher_command,
     limit_mc_command,
+    limit_pusher_forward_command,
     vertical_hover_lift,
 )
 from px4_mpc.models.external_pusher_profile import ExternalPusherProfile
 from px4_mpc.models.frames import ned_to_enu, px4_quaternion_to_gazebo
 from px4_mpc.models.mc_forward_profile import (
-    McForwardProfile,
     mc_forward_reference_state,
+    McForwardProfile,
+    pusher_forward_feedforward,
+    pusher_forward_reference_state,
 )
+from px4_mpc.models.px4_timebase import Px4Timebase
+from std_msgs.msg import Float64MultiArray
+from std_srvs.srv import Trigger
 
 
 def _status_tracking_values(
@@ -74,6 +79,12 @@ class StandardVtolNmpcNode(Node):
         self.declare_parameter("external_pusher_slew", 0.02)
         self.declare_parameter("external_pusher_hold_seconds", 2.0)
         self.declare_parameter("external_pusher_start_delay_seconds", 2.0)
+        self.declare_parameter("allow_pusher_forward_output", False)
+        self.declare_parameter("pusher_forward_test_max_seconds", 20.5)
+        self.declare_parameter("pusher_forward_target_speed", 3.0)
+        self.declare_parameter("pusher_forward_acceleration", 0.75)
+        self.declare_parameter("pusher_forward_hold_seconds", 2.0)
+        self.declare_parameter("pusher_forward_start_delay_seconds", 2.0)
         self.allow_output = bool(self.get_parameter("allow_offboard_output").value)
         self.max_offboard_seconds = float(
             self.get_parameter("hover_offboard_max_seconds").value
@@ -111,11 +122,35 @@ class StandardVtolNmpcNode(Node):
                 self.get_parameter("external_pusher_start_delay_seconds").value
             ),
         )
+        self.allow_pusher_forward = bool(
+            self.get_parameter("allow_pusher_forward_output").value
+        )
+        self.pusher_forward_test_max_seconds = float(
+            self.get_parameter("pusher_forward_test_max_seconds").value
+        )
+        self.pusher_forward_profile = McForwardProfile(
+            target_speed=float(
+                self.get_parameter("pusher_forward_target_speed").value
+            ),
+            acceleration=float(
+                self.get_parameter("pusher_forward_acceleration").value
+            ),
+            hold_seconds=float(
+                self.get_parameter("pusher_forward_hold_seconds").value
+            ),
+            start_delay_seconds=float(
+                self.get_parameter("pusher_forward_start_delay_seconds").value
+            ),
+        )
         self.controller = StandardVtolNmpc()
         self.state: np.ndarray | None = None
         self.state_received_ns = 0
+        self.px4_timebase = Px4Timebase()
+        self.last_control_px4_us = 0
         self.status: VehicleStatus | None = None
         self.vtol_status: VtolVehicleStatus | None = None
+        self.airspeed: AirspeedValidated | None = None
+        self.airspeed_received_ns = 0
         self.hold_state: np.ndarray | None = None
         self.current_reference: np.ndarray | None = None
         self.forward_direction = np.array([1.0, 0.0])
@@ -128,11 +163,12 @@ class StandardVtolNmpcNode(Node):
         self.output_requested = False
         self.offboard_active = False
         self.ever_offboard = False
-        self.offboard_entered_ns = 0
         self.last_offboard_duration = 0.0
+        self.last_wall_offboard_duration = 0.0
         self.prestream_count = 0
         self.solver_failures = 0
         self.last_solve_time = math.nan
+        self.solve_times_ms = deque(maxlen=5000)
         self.abort_reason = "none"
         self.last_command_ack = "none"
         self.max_forward_speed = 0.0
@@ -141,6 +177,8 @@ class StandardVtolNmpcNode(Node):
         self.max_altitude_error = 0.0
         self.max_tilt_degrees = 0.0
         self.max_commanded_pusher = 0.0
+        self.max_calibrated_airspeed = 0.0
+        self.max_abs_vertical_speed = 0.0
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -167,6 +205,12 @@ class StandardVtolNmpcNode(Node):
             VtolVehicleStatus,
             "/fmu/out/vtol_vehicle_status",
             self._vtol_vehicle_status,
+            qos,
+        )
+        self.create_subscription(
+            AirspeedValidated,
+            "/fmu/out/airspeed_validated_v1",
+            self._airspeed_validated,
             qos,
         )
         self.create_subscription(
@@ -204,6 +248,11 @@ class StandardVtolNmpcNode(Node):
         )
         self.create_service(
             Trigger,
+            "/standard_vtol_nmpc/enable_pusher_forward_test",
+            self._enable_pusher_forward,
+        )
+        self.create_service(
+            Trigger,
             "/standard_vtol_nmpc/capture_hover_reference",
             self._capture_hover_reference,
         )
@@ -217,6 +266,8 @@ class StandardVtolNmpcNode(Node):
         mode = "armed-capable guarded MC" if self.allow_output else "shadow-only"
         if self.allow_external_pusher:
             mode += " plus guarded external pusher"
+        if self.allow_pusher_forward:
+            mode += " plus guarded 3 m/s pusher feedback"
         self.get_logger().info(f"Standard VTOL NMPC started in {mode} mode")
 
     def _odometry(self, message: VehicleOdometry) -> None:
@@ -236,8 +287,10 @@ class StandardVtolNmpcNode(Node):
             px4_quaternion_to_gazebo(np.asarray(message.q)),
         ]
         self.state_received_ns = self.get_clock().now().nanoseconds
+        self.px4_timebase.update_px4_timestamp(message.timestamp)
 
     def _vehicle_status(self, message: VehicleStatus) -> None:
+        self.px4_timebase.update_px4_timestamp(message.timestamp)
         was_armed = (
             self.status is not None
             and self.status.arming_state == VehicleStatus.ARMING_STATE_ARMED
@@ -249,7 +302,10 @@ class StandardVtolNmpcNode(Node):
             message.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD
         )
         if self.offboard_active and not was_offboard:
-            self.offboard_entered_ns = self.get_clock().now().nanoseconds
+            self.px4_timebase.start_offboard(
+                message.nav_state_timestamp,
+                self.get_clock().now().nanoseconds,
+            )
         self.ever_offboard = self.ever_offboard or self.offboard_active
         if was_armed and not is_armed:
             self.output_requested = False
@@ -263,9 +319,16 @@ class StandardVtolNmpcNode(Node):
             )
             self.last_raw_control = self.last_command.copy()
             self.abort_reason = "reference_cleared_on_disarm"
+            self.px4_timebase.reset()
+            self.last_control_px4_us = 0
 
     def _vtol_vehicle_status(self, message: VtolVehicleStatus) -> None:
         self.vtol_status = message
+
+    def _airspeed_validated(self, message: AirspeedValidated) -> None:
+        self.airspeed = message
+        self.airspeed_received_ns = self.get_clock().now().nanoseconds
+        self.px4_timebase.update_px4_timestamp(message.timestamp)
 
     def _vehicle_command_ack(self, message: VehicleCommandAck) -> None:
         self.last_command_ack = f"command={message.command},result={message.result}"
@@ -274,6 +337,41 @@ class StandardVtolNmpcNode(Node):
         if not self.state_received_ns:
             return math.inf
         return (self.get_clock().now().nanoseconds - self.state_received_ns) * 1e-9
+
+    def _airspeed_age(self) -> float:
+        if not self.airspeed_received_ns:
+            return math.inf
+        return (
+            self.get_clock().now().nanoseconds - self.airspeed_received_ns
+        ) * 1e-9
+
+    def _calibrated_airspeed(self) -> float:
+        if self.airspeed is None:
+            return math.nan
+        return float(self.airspeed.calibrated_airspeed_m_s)
+
+    def _airspeed_is_valid(self) -> bool:
+        value = self._calibrated_airspeed()
+        return (
+            self.airspeed is not None
+            and self._airspeed_age() <= 0.5
+            and np.isfinite(value)
+            and value >= 0.0
+            and self.airspeed.airspeed_source
+            != AirspeedValidated.SOURCE_DISABLED
+        )
+
+    def _control_dt(self) -> float:
+        """Return the plant-time step used by command slew limiters."""
+        latest = self.px4_timebase.latest_px4_us
+        if latest <= 0:
+            return self.controller.dt
+        if self.last_control_px4_us <= 0:
+            self.last_control_px4_us = latest
+            return self.controller.dt
+        elapsed = max(0.0, (latest - self.last_control_px4_us) * 1.0e-6)
+        self.last_control_px4_us = latest
+        return min(elapsed, 0.10)
 
     @staticmethod
     def _yaw_from_quaternion(quaternion: np.ndarray) -> float:
@@ -323,20 +421,25 @@ class StandardVtolNmpcNode(Node):
         self.output_requested = True
         self.prestream_count = 0
         self.ever_offboard = False
-        self.offboard_entered_ns = 0
+        self.px4_timebase.reset()
+        self.last_control_px4_us = self.px4_timebase.latest_px4_us
         self.last_offboard_duration = 0.0
+        self.last_wall_offboard_duration = 0.0
         self.last_command = np.array(
             [self.controller.model.plant.hover_command, 0.0, 0.0, 0.0, 0.0]
         )
         self.last_raw_control = self.last_command.copy()
         self.abort_reason = "none"
         self.last_command_ack = "none"
+        self.solve_times_ms.clear()
         self.max_forward_speed = 0.0
         self.max_cross_track_error = 0.0
         self.max_horizontal_tracking_error = 0.0
         self.max_altitude_error = 0.0
         self.max_tilt_degrees = 0.0
         self.max_commanded_pusher = 0.0
+        self.max_calibrated_airspeed = 0.0
+        self.max_abs_vertical_speed = 0.0
 
     def _enable_hover(self, _request, response):
         if not self.allow_output:
@@ -416,6 +519,44 @@ class StandardVtolNmpcNode(Node):
         )
         return response
 
+    def _enable_pusher_forward(self, _request, response):
+        if (
+            not self.allow_output
+            or not self.allow_external_pusher
+            or not self.allow_pusher_forward
+        ):
+            response.success = False
+            response.message = (
+                "launch with allow_offboard_output:=true, "
+                "allow_external_pusher_output:=true and "
+                "allow_pusher_forward_output:=true first"
+            )
+            return response
+        profile = self.pusher_forward_profile
+        first_gate_configuration = (
+            np.isclose(profile.target_speed, 3.0)
+            and np.isclose(profile.acceleration, 0.75)
+            and np.isclose(profile.hold_seconds, 2.0)
+            and np.isclose(profile.start_delay_seconds, 2.0)
+            and np.isclose(self.pusher_forward_test_max_seconds, 20.5)
+        )
+        if not first_gate_configuration:
+            response.success = False
+            response.message = "pusher_forward_profile_not_gate_a_configuration"
+            return response
+        ready, reason = self._ready_for_hover()
+        if not ready:
+            response.success = False
+            response.message = reason
+            return response
+        self._start_output("pusher_forward")
+        response.success = True
+        response.message = (
+            "3.0 m/s MC pusher-feedback prestream started; "
+            "PX4 Offboard follows after 1 s"
+        )
+        return response
+
     def _capture_hover_reference(self, _request, response):
         ready, reason = self._ready_for_hover()
         if not ready:
@@ -439,6 +580,8 @@ class StandardVtolNmpcNode(Node):
         return response
 
     def _active_timeout(self) -> float:
+        if self.test_mode == "pusher_forward":
+            return self.pusher_forward_test_max_seconds
         if self.test_mode == "external_pusher":
             return self.external_pusher_test_max_seconds
         if self.test_mode == "mc_forward":
@@ -446,11 +589,12 @@ class StandardVtolNmpcNode(Node):
         return self.max_offboard_seconds
 
     def _offboard_elapsed(self) -> float:
-        if self.offboard_entered_ns <= 0:
-            return self.last_offboard_duration
-        return (
-            self.get_clock().now().nanoseconds - self.offboard_entered_ns
-        ) * 1e-9
+        return self.px4_timebase.px4_elapsed()
+
+    def _wall_offboard_elapsed(self) -> float:
+        return self.px4_timebase.wall_elapsed(
+            self.get_clock().now().nanoseconds
+        )
 
     def _profile_elapsed(self) -> float:
         return max(0.0, self._offboard_elapsed() - self.HANDOVER_FREEZE_SECONDS)
@@ -463,6 +607,17 @@ class StandardVtolNmpcNode(Node):
         tracking_error, displacement = _status_tracking_values(
             self.state, self.current_reference, self.hold_state
         )
+        airspeed = self._calibrated_airspeed()
+        airspeed_source = (
+            -99 if self.airspeed is None else int(self.airspeed.airspeed_source)
+        )
+        now_ns = self.get_clock().now().nanoseconds
+        realtime_factor = self.px4_timebase.realtime_factor(now_ns)
+        solve_time_p99 = (
+            float(np.percentile(self.solve_times_ms, 99))
+            if self.solve_times_ms
+            else math.nan
+        )
         response.success = self.solver_failures == 0 and self._state_age() <= 0.20
         response.message = (
             f"output_requested={self.output_requested}, offboard={self.offboard_active}, "
@@ -474,7 +629,17 @@ class StandardVtolNmpcNode(Node):
             f", forward_profile=[speed={self.forward_profile.target_speed:.1f},"
             f"accel={self.forward_profile.acceleration:.1f},"
             f"hold={self.forward_profile.hold_seconds:.1f}]"
+            f", pusher_forward_profile=[speed={self.pusher_forward_profile.target_speed:.1f},"
+            f"accel={self.pusher_forward_profile.acceleration:.2f},"
+            f"hold={self.pusher_forward_profile.hold_seconds:.1f}]"
             f", last_offboard_duration={self.last_offboard_duration:.2f}s"
+            f", last_wall_offboard_duration={self.last_wall_offboard_duration:.2f}s"
+            f", px4_elapsed={self._offboard_elapsed():.2f}s"
+            f", wall_elapsed={self._wall_offboard_elapsed():.2f}s"
+            f", realtime_factor={realtime_factor:.3f}"
+            f", airspeed=[cas={airspeed:.3f},source={airspeed_source},"
+            f"age={self._airspeed_age():.3f}s,valid={self._airspeed_is_valid()}]"
+            f", solve_time_p99={solve_time_p99:.2f}ms"
             f", last_command_ack={self.last_command_ack}"
             f", control={np.round(self.last_command, 4).tolist()}"
             f", raw_control={np.round(self.last_raw_control, 4).tolist()}"
@@ -485,6 +650,8 @@ class StandardVtolNmpcNode(Node):
             f"horizontal_tracking={self.max_horizontal_tracking_error:.3f},"
             f"altitude={self.max_altitude_error:.3f},"
             f"tilt_deg={self.max_tilt_degrees:.2f},"
+            f"vertical_speed={self.max_abs_vertical_speed:.3f},"
+            f"airspeed={self.max_calibrated_airspeed:.3f},"
             f"commanded_pusher={self.max_commanded_pusher:.3f}]"
         )
         return response
@@ -503,6 +670,13 @@ class StandardVtolNmpcNode(Node):
                 sample,
                 self.controller.model.plant.gravity,
             )
+        elif self.test_mode == "pusher_forward":
+            sample = self.pusher_forward_profile.sample(profile_time)
+            reference = pusher_forward_reference_state(
+                self.hold_state,
+                self.forward_direction,
+                sample,
+            )
         return reference
 
     def _references(self):
@@ -516,6 +690,10 @@ class StandardVtolNmpcNode(Node):
         self.current_reference = self._reference_at_profile_time(base_time)
         if self.test_mode == "mc_forward":
             self.profile_phase = self.forward_profile.sample(base_time).phase
+        elif self.test_mode == "pusher_forward":
+            self.profile_phase = self.pusher_forward_profile.sample(
+                base_time
+            ).phase
         elif self.test_mode == "external_pusher":
             self.profile_phase = self.external_pusher_profile.sample(base_time).phase
         elif self.output_requested:
@@ -527,6 +705,19 @@ class StandardVtolNmpcNode(Node):
                 self.external_pusher_profile.sample(
                     base_time + stage * self.controller.dt
                 ).command
+                for stage in range(self.controller.N)
+            ]
+        elif self.test_mode == "pusher_forward":
+            u_ref[:, 1] = [
+                pusher_forward_feedforward(
+                    self.controller.model.plant,
+                    self.pusher_forward_profile.sample(
+                        base_time + stage * self.controller.dt
+                    ).speed,
+                    self.pusher_forward_profile.sample(
+                        base_time + stage * self.controller.dt
+                    ).acceleration,
+                )
                 for stage in range(self.controller.N)
             ]
         parameters = np.zeros((self.controller.N + 1, 4))
@@ -572,6 +763,14 @@ class StandardVtolNmpcNode(Node):
             self.max_altitude_error, abs(float(self.state[2] - self.hold_state[2]))
         )
         self.max_tilt_degrees = max(self.max_tilt_degrees, self._tilt_degrees())
+        self.max_abs_vertical_speed = max(
+            self.max_abs_vertical_speed, abs(float(self.state[5]))
+        )
+        airspeed = self._calibrated_airspeed()
+        if np.isfinite(airspeed):
+            self.max_calibrated_airspeed = max(
+                self.max_calibrated_airspeed, airspeed
+            )
 
     def _safety_reason(self) -> str | None:
         # Active-flight limits differ from the stricter handover conditions:
@@ -594,12 +793,15 @@ class StandardVtolNmpcNode(Node):
             return "vehicle_not_in_mc_mode"
         if self.hold_state is None:
             return "hold_state_missing"
-        if abs(self.state[2] - self.hold_state[2]) > 0.5:
+        altitude_limit = 0.30 if self.test_mode == "pusher_forward" else 0.5
+        if abs(self.state[2] - self.hold_state[2]) > altitude_limit:
             return "altitude_error"
         if abs(self.state[5]) > 0.75:
             return "vertical_speed_limit"
         if self.test_mode == "mc_forward":
             horizontal_speed_limit = 2.7
+        elif self.test_mode == "pusher_forward":
+            horizontal_speed_limit = 3.5
         elif self.test_mode == "external_pusher":
             horizontal_speed_limit = 1.5
         else:
@@ -607,36 +809,69 @@ class StandardVtolNmpcNode(Node):
         if np.linalg.norm(self.state[3:5]) > horizontal_speed_limit:
             return "horizontal_speed_limit"
         delta_xy = self.state[0:2] - self.hold_state[0:2]
-        if self.test_mode == "mc_forward":
+        if self.test_mode in ("mc_forward", "pusher_forward"):
+            profile = (
+                self.pusher_forward_profile
+                if self.test_mode == "pusher_forward"
+                else self.forward_profile
+            )
             normal = np.array(
                 [-self.forward_direction[1], self.forward_direction[0]]
             )
             along_track = float(np.dot(delta_xy, self.forward_direction))
             cross_track = abs(float(np.dot(delta_xy, normal)))
-            if along_track < -1.0 or along_track > self.forward_profile.final_distance + 2.0:
+            end_margin = 3.0 if self.test_mode == "pusher_forward" else 2.0
+            if (
+                along_track < -1.0
+                or along_track > profile.final_distance + end_margin
+            ):
                 return "forward_geofence"
-            if cross_track > 1.5:
+            cross_track_limit = (
+                1.0 if self.test_mode == "pusher_forward" else 1.5
+            )
+            if cross_track > cross_track_limit:
                 return "cross_track_limit"
             if (
                 self.current_reference is not None
                 and np.linalg.norm(self.state[0:2] - self.current_reference[0:2])
-                > 1.5
+                > (2.0 if self.test_mode == "pusher_forward" else 1.5)
             ):
                 return "horizontal_tracking_error"
         elif self.test_mode == "external_pusher" and np.linalg.norm(delta_xy) > 3.0:
             return "external_pusher_geofence"
         elif np.linalg.norm(delta_xy) > 5.0:
             return "horizontal_geofence"
-        if self._tilt_degrees() > 25.0:
+        tilt_limit = 10.0 if self.test_mode == "pusher_forward" else 25.0
+        if self._tilt_degrees() > tilt_limit:
             return "tilt_limit"
         if self.solver_failures >= 3:
             return "three_solver_failures"
         if (
             self.offboard_active
             and self._active_timeout() > 0.0
-            and self.offboard_entered_ns > 0
+            and self.px4_timebase.active
             and self._offboard_elapsed() >= self._active_timeout()
         ):
+            if self.test_mode == "pusher_forward":
+                if self.max_forward_speed < 2.5:
+                    return "pusher_forward_speed_not_reached"
+                if self.max_forward_speed > 3.5:
+                    return "pusher_forward_speed_overshoot"
+                if np.linalg.norm(self.state[3:5]) > 0.35:
+                    return "pusher_forward_test_not_stopped"
+                if self.max_commanded_pusher < 0.05:
+                    return "pusher_forward_command_not_reached"
+                if abs(self.last_command[1]) > 0.005:
+                    return "pusher_forward_not_zero_at_end"
+                if (
+                    self.current_reference is None
+                    or np.linalg.norm(
+                        self.state[0:2] - self.current_reference[0:2]
+                    )
+                    > 1.0
+                ):
+                    return "pusher_forward_final_position_error"
+                return "pusher_forward_test_timeout"
             if self.test_mode == "mc_forward":
                 if self.max_forward_speed < 1.6:
                     return "forward_speed_not_reached"
@@ -699,11 +934,7 @@ class StandardVtolNmpcNode(Node):
     def _abort(self, reason: str) -> None:
         was_requested = self.output_requested or self.offboard_active
         now_ns = self.get_clock().now().nanoseconds
-        elapsed = (
-            (now_ns - self.offboard_entered_ns) * 1e-9
-            if self.offboard_entered_ns > 0
-            else 0.0
-        )
+        elapsed, wall_elapsed = self.px4_timebase.stop_offboard(now_ns)
         tracking_error = (
             self.state[0:6] - self.current_reference[0:6]
             if self.state is not None and self.current_reference is not None
@@ -712,12 +943,13 @@ class StandardVtolNmpcNode(Node):
         self.output_requested = False
         self.prestream_count = 0
         self.last_offboard_duration = elapsed
-        self.offboard_entered_ns = 0
+        self.last_wall_offboard_duration = wall_elapsed
         self.abort_reason = reason
         if was_requested:
             self._request_nav_state(VehicleStatus.NAVIGATION_STATE_POSCTL)
             self.get_logger().error(
-                f"NMPC stopped: reason={reason}, offboard_elapsed={elapsed:.2f}s, "
+                f"NMPC stopped: reason={reason}, px4_elapsed={elapsed:.2f}s, "
+                f"wall_elapsed={wall_elapsed:.2f}s, "
                 f"mode={self.test_mode}, phase={self.profile_phase}, "
                 f"tracking_error_pv={np.round(tracking_error, 3).tolist()}, "
                 f"maxima=[forward_speed={self.max_forward_speed:.3f}, "
@@ -745,6 +977,7 @@ class StandardVtolNmpcNode(Node):
                 self._abort("three_solver_exceptions")
             return
         self.last_solve_time = solution.solve_time
+        self.solve_times_ms.append(1000.0 * solution.solve_time)
         if solution.status != 0 or not np.all(np.isfinite(solution.control)):
             self.solver_failures += 1
         else:
@@ -752,6 +985,7 @@ class StandardVtolNmpcNode(Node):
             self.last_raw_control = solution.control.copy()
             requested_control = solution.control.copy()
             requested_control[0] = self._vertical_hover_lift()
+            control_dt = self._control_dt()
             if self.test_mode == "external_pusher":
                 pusher_sample = self.external_pusher_profile.sample(
                     self._profile_elapsed()
@@ -760,13 +994,23 @@ class StandardVtolNmpcNode(Node):
                     self.last_command,
                     requested_control,
                     pusher_sample.command,
+                    control_dt,
+                )
+                self.max_commanded_pusher = max(
+                    self.max_commanded_pusher, self.last_command[1]
+                )
+            elif self.test_mode == "pusher_forward":
+                self.last_command = limit_pusher_forward_command(
+                    self.last_command,
+                    requested_control,
+                    control_dt,
                 )
                 self.max_commanded_pusher = max(
                     self.max_commanded_pusher, self.last_command[1]
                 )
             else:
                 self.last_command = limit_mc_command(
-                    self.last_command, requested_control
+                    self.last_command, requested_control, control_dt
                 )
         diagnostic = Float64MultiArray()
         diagnostic.data = [
@@ -793,11 +1037,8 @@ class StandardVtolNmpcNode(Node):
         freeze_handover = False
         if not self.offboard_active:
             freeze_handover = True
-        elif self.offboard_entered_ns > 0:
-            offboard_elapsed = (
-                self.get_clock().now().nanoseconds - self.offboard_entered_ns
-            ) * 1e-9
-            if offboard_elapsed < self.HANDOVER_FREEZE_SECONDS:
+        elif self.px4_timebase.active:
+            if self._offboard_elapsed() < self.HANDOVER_FREEZE_SECONDS:
                 freeze_handover = True
         if freeze_handover:
             self.last_command = np.array(

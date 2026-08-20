@@ -7,6 +7,7 @@ import numpy as np
 from px4_mpc.controllers.standard_vtol_output import (
     limit_external_pusher_command,
     limit_mc_command,
+    limit_pusher_forward_command,
     vertical_hover_lift,
 )
 from px4_mpc.models.standard_vtol_gz_model import StandardVtolGazeboModel
@@ -36,6 +37,21 @@ class TestStandardVtolOutput(unittest.TestCase):
             [0.525, 0.0, 0.015, -0.015, 0.01],
             atol=1.0e-12,
         )
+
+    def test_pusher_forward_limiter_uses_separate_bounded_envelope(self):
+        previous = np.array([0.52, 0.0, 0.0, 0.0, 0.0])
+        requested = np.array([0.65, 0.8, 1.0, -1.0, 1.0])
+        actual = limit_pusher_forward_command(previous, requested, dt=0.05)
+        np.testing.assert_allclose(
+            actual,
+            [0.525, 0.0015, 0.015, -0.015, 0.01],
+            atol=1.0e-12,
+        )
+        current = actual
+        for _ in range(100):
+            current = limit_pusher_forward_command(current, requested, dt=0.05)
+        self.assertAlmostEqual(current[1], 0.10)
+        self.assertLessEqual(current[0], 0.56)
 
     def test_vertical_law_is_neutral_at_hover(self):
         plant = StandardVtolGazeboModel()

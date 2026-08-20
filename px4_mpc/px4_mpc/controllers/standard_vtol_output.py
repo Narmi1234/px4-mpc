@@ -42,6 +42,29 @@ def limit_external_pusher_command(
     return limited
 
 
+def limit_pusher_forward_command(
+    previous,
+    requested,
+    dt: float = 0.05,
+) -> np.ndarray:
+    """Apply the first 3 m/s MC pusher-feedback envelope."""
+    previous = np.asarray(previous, dtype=float)
+    requested = np.asarray(requested, dtype=float).copy()
+    requested[0] = np.clip(requested[0], 0.48, 0.56)
+    requested[1] = np.clip(requested[1], 0.0, 0.10)
+    requested[2:5] = np.clip(
+        0.5 * requested[2:5],
+        [-0.20, -0.20, -0.15],
+        [0.20, 0.20, 0.15],
+    )
+    slew_per_second = np.array([0.10, 0.03, 0.30, 0.30, 0.20])
+    return previous + np.clip(
+        requested - previous,
+        -slew_per_second * dt,
+        slew_per_second * dt,
+    )
+
+
 def vertical_hover_lift(plant, altitude_error: float, vertical_speed: float) -> float:
     """Return the critically damped hover lift command used by the live node."""
     motor = plant.motors[0]

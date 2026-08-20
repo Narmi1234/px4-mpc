@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Verify Gate A from the actual PX4 actuator and flight-state ULog data."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import numpy as np
+from pyulog import ULog
+
+
+OFFBOARD_NAV_STATE = 14
+MC_VTOL_STATE = 3
+
+
+def get_data(ulog: ULog, name: str):
+    """Return the first required dataset by name."""
+    matches = [item.data for item in ulog.data_list if item.name == name]
+    if not matches:
+        raise RuntimeError(f"ULog is missing {name}")
+    return matches[0]
+
+
+def optional_data(ulog: ULog, name: str):
+    """Return an optional dataset or None."""
+    matches = [item.data for item in ulog.data_list if item.name == name]
+    return matches[0] if matches else None
+
+
+def last_offboard_interval(status) -> tuple[int, int]:
+    """Return exact PX4 timestamps for the latest completed Offboard interval."""
+    timestamps = np.asarray(status["timestamp"], dtype=np.int64)
+    nav_timestamps = np.asarray(
+        status.get("nav_state_timestamp", timestamps), dtype=np.int64
+    )
+    states = np.asarray(status["nav_state"], dtype=int)
+    indices = np.flatnonzero(states == OFFBOARD_NAV_STATE)
+    if not len(indices):
+        raise RuntimeError("ULog contains no Offboard interval")
+    first_index = int(indices[0])
+    for index in indices[1:]:
+        if int(index) > first_index and states[int(index) - 1] != OFFBOARD_NAV_STATE:
+            first_index = int(index)
+    end_index = int(indices[-1])
+    exits = np.flatnonzero(
+        (np.arange(len(states)) > end_index) & (states != OFFBOARD_NAV_STATE)
+    )
+    if not len(exits):
+        raise RuntimeError("latest Offboard interval has no recorded exit")
+    exit_index = int(exits[0])
+    return int(nav_timestamps[first_index]), int(nav_timestamps[exit_index])
+
+
+def quaternion_angles(quaternion: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return PX4 NED/FRD roll, pitch and yaw arrays."""
+    qw, qx, qy, qz = quaternion.T
+    roll = np.arctan2(
+        2.0 * (qw * qx + qy * qz),
+        1.0 - 2.0 * (qx * qx + qy * qy),
+    )
+    pitch = np.arcsin(np.clip(2.0 * (qw * qy - qz * qx), -1.0, 1.0))
+    yaw = np.arctan2(
+        2.0 * (qw * qz + qx * qy),
+        1.0 - 2.0 * (qy * qy + qz * qz),
+    )
+    return roll, pitch, yaw
+
+
+def main() -> None:
+    """Calculate Gate A metrics and print a strict PASS/FAIL decision."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("ulog", type=Path)
+    args = parser.parse_args()
+    ulog = ULog(
+        str(args.ulog),
+        message_name_filter_list=[
+            "actuator_motors",
+            "airspeed_validated",
+            "vehicle_attitude",
+            "vehicle_local_position",
+            "vehicle_status",
+            "vtol_vehicle_status",
+        ],
+    )
+    status = get_data(ulog, "vehicle_status")
+    motors = get_data(ulog, "actuator_motors")
+    position = get_data(ulog, "vehicle_local_position")
+    attitude = get_data(ulog, "vehicle_attitude")
+    vtol = get_data(ulog, "vtol_vehicle_status")
+    airspeed = optional_data(ulog, "airspeed_validated")
+    start, end = last_offboard_interval(status)
+
+    motor_time = np.asarray(motors["timestamp"], dtype=np.int64)
+    motor_mask = (motor_time >= start) & (motor_time <= end)
+    pusher = np.asarray(motors["control[4]"], dtype=float)[motor_mask]
+    finite_pusher = pusher[np.isfinite(pusher)]
+    final_pusher = np.asarray(motors["control[4]"], dtype=float)[
+        (motor_time >= end - 1_000_000) & (motor_time <= end)
+    ]
+    finite_final_pusher = final_pusher[np.isfinite(final_pusher)]
+
+    position_time = np.asarray(position["timestamp"], dtype=np.int64)
+    position_mask = (position_time >= start) & (position_time <= end)
+    x = np.asarray(position["x"], dtype=float)[position_mask]
+    y = np.asarray(position["y"], dtype=float)[position_mask]
+    z = np.asarray(position["z"], dtype=float)[position_mask]
+    vx = np.asarray(position["vx"], dtype=float)[position_mask]
+    vy = np.asarray(position["vy"], dtype=float)[position_mask]
+    vz = np.asarray(position["vz"], dtype=float)[position_mask]
+
+    attitude_time = np.asarray(attitude["timestamp"], dtype=np.int64)
+    attitude_mask = (attitude_time >= start) & (attitude_time <= end)
+    quaternion = np.column_stack(
+        [
+            np.asarray(attitude[f"q[{index}]"], dtype=float)[attitude_mask]
+            for index in range(4)
+        ]
+    )
+    roll, pitch, yaw = quaternion_angles(quaternion)
+    start_yaw = float(yaw[0])
+    forward = np.array([np.cos(start_yaw), np.sin(start_yaw)])
+    normal = np.array([-forward[1], forward[0]])
+    velocity_xy = np.column_stack([vx, vy])
+    displacement_xy = np.column_stack([x - x[0], y - y[0]])
+    forward_speed = velocity_xy @ forward
+    cross_track = np.abs(displacement_xy @ normal)
+
+    vtol_time = np.asarray(vtol["timestamp"], dtype=np.int64)
+    before = np.flatnonzero(vtol_time <= start)
+    during = np.flatnonzero((vtol_time >= start) & (vtol_time <= end))
+    relevant = np.unique(np.r_[before[-1:] if len(before) else [], during]).astype(int)
+    vtol_states = np.asarray(vtol["vehicle_vtol_state"], dtype=int)[relevant]
+
+    peak_airspeed = float("nan")
+    if airspeed is not None:
+        airspeed_time = np.asarray(airspeed["timestamp"], dtype=np.int64)
+        airspeed_mask = (airspeed_time >= start) & (airspeed_time <= end)
+        calibrated = np.asarray(airspeed["calibrated_airspeed_m_s"], dtype=float)[
+            airspeed_mask
+        ]
+        calibrated = calibrated[np.isfinite(calibrated)]
+        if len(calibrated):
+            peak_airspeed = float(np.max(calibrated))
+
+    if not len(x) or not len(quaternion) or not len(finite_pusher):
+        raise RuntimeError("Offboard interval is missing required flight samples")
+    duration = (end - start) * 1.0e-6
+    peak_pusher = float(np.max(finite_pusher))
+    final_pusher_value = (
+        float(np.max(np.abs(finite_final_pusher)))
+        if len(finite_final_pusher)
+        # PX4 logs an inactive non-reversible motor channel as NaN. In the
+        # final window that is equivalent to a stopped pusher, not an unknown
+        # positive command.
+        else 0.0
+    )
+    peak_forward_speed = float(np.max(forward_speed))
+    final_horizontal_speed = float(np.hypot(vx[-1], vy[-1]))
+    max_altitude_error = float(np.max(np.abs(z - z[0])))
+    max_vertical_speed = float(np.max(np.abs(vz)))
+    max_tilt = float(
+        np.degrees(np.max(np.maximum(np.abs(roll), np.abs(pitch))))
+    )
+    max_cross_track = float(np.max(cross_track))
+    checks = {
+        "duration": duration >= 20.0,
+        "forward_speed": 2.5 <= peak_forward_speed <= 3.5,
+        "final_speed": final_horizontal_speed <= 0.35,
+        "pusher_peak": 0.049 <= peak_pusher <= 0.105,
+        "pusher_returned_zero": final_pusher_value <= 0.005,
+        "altitude": max_altitude_error <= 0.30,
+        "vertical_speed": max_vertical_speed <= 0.75,
+        "tilt": max_tilt <= 10.0,
+        "cross_track": max_cross_track <= 1.0,
+        "mc_only": len(vtol_states) > 0 and np.all(vtol_states == MC_VTOL_STATE),
+    }
+    print(f"offboard_duration={duration:.3f}s")
+    print(f"peak_forward_speed={peak_forward_speed:.3f}m/s")
+    print(f"final_horizontal_speed={final_horizontal_speed:.3f}m/s")
+    print(f"peak_calibrated_airspeed={peak_airspeed:.3f}m/s")
+    print(f"peak_pusher_actuator={peak_pusher:.4f}")
+    print(f"final_pusher_actuator={final_pusher_value:.4f}")
+    print(f"max_altitude_error={max_altitude_error:.3f}m")
+    print(f"max_vertical_speed={max_vertical_speed:.3f}m/s")
+    print(f"max_tilt={max_tilt:.2f}deg")
+    print(f"max_cross_track={max_cross_track:.3f}m")
+    print(f"vtol_states={vtol_states.tolist()}")
+    for name, passed in checks.items():
+        print(f"{name}={'PASS' if passed else 'FAIL'}")
+    if not all(checks.values()):
+        raise SystemExit("ulog_gate=FAIL")
+    print("ulog_gate=PASS")
+
+
+if __name__ == "__main__":
+    main()

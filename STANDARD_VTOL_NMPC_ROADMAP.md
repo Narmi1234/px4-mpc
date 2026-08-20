@@ -284,15 +284,16 @@ tranziciju kao jedan timeout bez provjere PX4 potvrda.
 
 ## Šta se radi sada
 
-Sljedeći software milestone je implementacija Gate A:
+Gate A software milestone je implementiran:
 
-1. PX4 timestamp timebase;
-2. `AirspeedValidated` subscriber i freshness status;
-3. 3 m/s level-attitude moving reference;
-4. NMPC pusher-feedback limiter do `0.10`;
-5. novi guarded service, launch parametri i automatski fallback;
-6. offline test i ULog analyzer;
-7. poseban runbook sa sva četiri terminala.
+1. [x] PX4 timestamp timebase;
+2. [x] `AirspeedValidated` subscriber i freshness status;
+3. [x] 3 m/s level-attitude moving reference;
+4. [x] NMPC pusher-feedback limiter do `0.10`;
+5. [x] novi guarded service, launch parametri i automatski fallback;
+6. [x] offline test i ULog analyzer;
+7. [x] poseban runbook sa sva četiri terminala.
 
-Dok taj milestone nije implementiran i offline označen PASS, korisnik ne treba
-pokretati novi live test niti mijenjati `VT_EXT_PUSH_MAX` sa potvrđenih `0.05`.
+Offline closed-loop Gate A je označen PASS. Live verifikacija se izvodi samo po
+[`STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md`](STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md);
+tek u tom postupku se `VT_EXT_PUSH_MAX` privremeno postavlja na `0.10`.
