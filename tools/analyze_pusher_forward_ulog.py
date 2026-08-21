@@ -175,7 +175,9 @@ def main() -> None:
     final_pusher_value = (
         float(np.max(np.abs(finite_final_pusher)))
         if len(finite_final_pusher)
-        else float("nan")
+        # PX4 logs a stopped non-reversible motor channel as NaN. Treat that
+        # as zero only when the same channel was demonstrably active earlier.
+        else (0.0 if len(finite_pusher) else float("nan"))
     )
     peak_forward_speed = float(np.max(forward_speed))
     final_horizontal_speed = float(np.hypot(vx[-1], vy[-1]))

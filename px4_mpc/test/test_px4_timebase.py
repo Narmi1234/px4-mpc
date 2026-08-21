@@ -7,6 +7,29 @@ from px4_mpc.models.px4_timebase import Px4Timebase
 
 
 class TestPx4Timebase(unittest.TestCase):
+    def test_changing_dds_offset_recovers_monotonic_px4_boot_time(self):
+        timebase = Px4Timebase()
+        translated_start = 1_787_292_400_000_000
+        raw_start = 100_000_000
+        timebase.update_timesync(
+            translated_start,
+            raw_start - translated_start,
+        )
+        timebase.start_offboard(raw_start, 10_000_000_000)
+
+        # The translated clock advances three seconds while PX4 advances one;
+        # the changed timesync offset removes the extra two seconds.
+        translated_next = translated_start + 3_000_000
+        raw_next = raw_start + 1_000_000
+        timebase.update_timesync(
+            translated_next,
+            raw_next - translated_next,
+        )
+
+        self.assertTrue(timebase.synchronized)
+        self.assertEqual(timebase.latest_px4_us, raw_next)
+        self.assertAlmostEqual(timebase.px4_elapsed(), 1.0)
+
     def test_slow_simulation_uses_px4_elapsed_for_profile(self):
         timebase = Px4Timebase()
         timebase.update_px4_timestamp(1_000_000)

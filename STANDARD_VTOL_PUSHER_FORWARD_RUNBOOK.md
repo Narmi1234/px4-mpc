@@ -172,6 +172,7 @@ output_requested=False
 offboard=False
 solver_failures=0
 state_age manji od 0.20s
+px4_clock=[sync=True,...]
 pusher_forward_profile=[speed=3.0,accel=0.75,hold=2.0]
 ```
 
@@ -203,6 +204,10 @@ Ne pozivati enable servis ručno i ne pokretati drugi gate u istom letu. Skripta
 prati PX4 vrijeme do završetka, pa sporiji Gazebo može zahtijevati više od 20.5
 wall sekundi.
 
+Node rekonstruiše sirovo PX4 boot vrijeme iz `TimesyncStatus.estimated_offset`.
+Direktno oduzimanje prevedenih DDS epoch timestampova nije dozvoljeno jer se
+timesync offset tokom SITL-a mijenja i može prerano završiti gate.
+
 Očekivani kraj:
 
 ```text
@@ -213,6 +218,9 @@ last_offboard_duration=20.5s
 solver_failures=0
 ROS_GATE=PASS
 ```
+
+ULog `offboard_duration` poslije zatvaranja loga također mora biti najmanje
+`20.0 s`; ROS rezultat sam po sebi nije dovoljan.
 
 Svaki drugi `abort_reason` je FAIL. Odmah sačuvati cijeli završni status i ne
 ponavljati test prije analize.

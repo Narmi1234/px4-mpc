@@ -14,6 +14,29 @@ class Px4Timebase:
     offboard_start_wall_ns: int = 0
     last_px4_elapsed: float = 0.0
     last_wall_elapsed: float = 0.0
+    estimated_offset_us: int | None = None
+
+    @property
+    def synchronized(self) -> bool:
+        """Return whether translated DDS timestamps can be restored to PX4 time."""
+        return self.estimated_offset_us is not None
+
+    def update_timesync(self, translated_timestamp_us: int, offset_us: int) -> None:
+        """Store the DDS-to-PX4 offset and observe its matching raw clock."""
+        self.estimated_offset_us = int(offset_us)
+        self.update_translated_timestamp(translated_timestamp_us)
+
+    def translated_to_px4(self, timestamp_us: int) -> int:
+        """Undo uXRCE-DDS timestamp synchronization to recover PX4 boot time."""
+        if not self.synchronized:
+            return 0
+        return int(timestamp_us) + int(self.estimated_offset_us)
+
+    def update_translated_timestamp(self, timestamp_us: int) -> None:
+        """Observe a DDS timestamp after converting it to PX4 boot time."""
+        raw_timestamp_us = self.translated_to_px4(timestamp_us)
+        if raw_timestamp_us > 0:
+            self.update_px4_timestamp(raw_timestamp_us)
 
     def update_px4_timestamp(self, timestamp_us: int) -> None:
         """Accept a positive, monotonic PX4 timestamp."""
@@ -24,10 +47,9 @@ class Px4Timebase:
     def start_offboard(self, observed_px4_us: int, wall_ns: int) -> None:
         """Start timing from a timestamp in the active PX4 message domain.
 
-        Some PX4 message fields contain boot-relative event timestamps while
-        the ROS bridge translates the message ``timestamp`` field. Reject an
-        event timestamp more than five seconds from the latest observed PX4
-        clock so those domains cannot create a huge false elapsed time.
+        Reject an event timestamp more than five seconds from the latest
+        observed raw PX4 clock so mixed domains cannot create a huge false
+        elapsed time.
         """
         observed_px4_us = int(observed_px4_us)
         if observed_px4_us <= 0 or (

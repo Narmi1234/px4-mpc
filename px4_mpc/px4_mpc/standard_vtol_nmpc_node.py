@@ -9,6 +9,7 @@ import numpy as np
 from px4_msgs.msg import (
     AirspeedValidated,
     OffboardControlMode,
+    TimesyncStatus,
     VehicleCommand,
     VehicleCommandAck,
     VehicleOdometry,
@@ -189,6 +190,12 @@ class StandardVtolNmpcNode(Node):
         self.create_subscription(
             VehicleOdometry, "/fmu/out/vehicle_odometry", self._odometry, qos
         )
+        self.create_subscription(
+            TimesyncStatus,
+            "/fmu/out/timesync_status",
+            self._timesync_status,
+            qos,
+        )
         # PX4 message versioning exposes VehicleStatus v4 with the `_v4`
         # suffix on current releases. Keep the unsuffixed subscription too so
         # the node remains usable with older bridges.
@@ -287,10 +294,16 @@ class StandardVtolNmpcNode(Node):
             px4_quaternion_to_gazebo(np.asarray(message.q)),
         ]
         self.state_received_ns = self.get_clock().now().nanoseconds
-        self.px4_timebase.update_px4_timestamp(message.timestamp)
+        self.px4_timebase.update_translated_timestamp(message.timestamp)
+
+    def _timesync_status(self, message: TimesyncStatus) -> None:
+        self.px4_timebase.update_timesync(
+            message.timestamp,
+            message.estimated_offset,
+        )
 
     def _vehicle_status(self, message: VehicleStatus) -> None:
-        self.px4_timebase.update_px4_timestamp(message.timestamp)
+        self.px4_timebase.update_translated_timestamp(message.timestamp)
         was_armed = (
             self.status is not None
             and self.status.arming_state == VehicleStatus.ARMING_STATE_ARMED
@@ -302,11 +315,8 @@ class StandardVtolNmpcNode(Node):
             message.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD
         )
         if self.offboard_active and not was_offboard:
-            # Use the translated message timestamp, not nav_state_timestamp.
-            # The latter can remain boot-relative while uXRCE-DDS publishes
-            # message timestamps in the synchronized epoch domain.
             self.px4_timebase.start_offboard(
-                message.timestamp,
+                self.px4_timebase.translated_to_px4(message.timestamp),
                 self.get_clock().now().nanoseconds,
             )
         self.ever_offboard = self.ever_offboard or self.offboard_active
@@ -331,7 +341,7 @@ class StandardVtolNmpcNode(Node):
     def _airspeed_validated(self, message: AirspeedValidated) -> None:
         self.airspeed = message
         self.airspeed_received_ns = self.get_clock().now().nanoseconds
-        self.px4_timebase.update_px4_timestamp(message.timestamp)
+        self.px4_timebase.update_translated_timestamp(message.timestamp)
 
     def _vehicle_command_ack(self, message: VehicleCommandAck) -> None:
         self.last_command_ack = f"command={message.command},result={message.result}"
@@ -391,6 +401,8 @@ class StandardVtolNmpcNode(Node):
         return np.array([math.cos(0.5 * yaw), 0.0, 0.0, math.sin(0.5 * yaw)])
 
     def _ready_for_hover(self) -> tuple[bool, str]:
+        if not self.px4_timebase.synchronized:
+            return False, "px4_timesync_missing"
         if self.state is None or self._state_age() > 0.20:
             return False, "odometry_stale"
         if self.status is None or self.status.arming_state != VehicleStatus.ARMING_STATE_ARMED:
@@ -621,7 +633,11 @@ class StandardVtolNmpcNode(Node):
             if self.solve_times_ms
             else math.nan
         )
-        response.success = self.solver_failures == 0 and self._state_age() <= 0.20
+        response.success = (
+            self.solver_failures == 0
+            and self._state_age() <= 0.20
+            and self.px4_timebase.synchronized
+        )
         response.message = (
             f"output_requested={self.output_requested}, offboard={self.offboard_active}, "
             f"armed={armed}, nav_state={nav}, state_age={self._state_age():.3f}s, "
@@ -640,6 +656,8 @@ class StandardVtolNmpcNode(Node):
             f", px4_elapsed={self._offboard_elapsed():.2f}s"
             f", wall_elapsed={self._wall_offboard_elapsed():.2f}s"
             f", realtime_factor={realtime_factor:.3f}"
+            f", px4_clock=[sync={self.px4_timebase.synchronized},"
+            f"boot_us={self.px4_timebase.latest_px4_us}]"
             f", airspeed=[cas={airspeed:.3f},source={airspeed_source},"
             f"age={self._airspeed_age():.3f}s,valid={self._airspeed_is_valid()}]"
             f", solve_time_p99={solve_time_p99:.2f}ms"
