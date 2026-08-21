@@ -28,6 +28,15 @@ def optional_data(ulog: ULog, name: str):
     return matches[0] if matches else None
 
 
+def parameter_at(ulog: ULog, name: str, timestamp_us: int):
+    """Return a parameter value after applying changes up to a timestamp."""
+    value = ulog.initial_parameters.get(name, "missing")
+    for change_timestamp, change_name, change_value in ulog.changed_parameters:
+        if change_name == name and int(change_timestamp) <= timestamp_us:
+            value = change_value
+    return value
+
+
 def last_offboard_interval(status) -> tuple[int, int]:
     """Return exact PX4 timestamps for the latest completed Offboard interval."""
     timestamps = np.asarray(status["timestamp"], dtype=np.int64)
@@ -79,6 +88,7 @@ def main() -> None:
             "airspeed_validated",
             "vehicle_attitude",
             "vehicle_local_position",
+            "vehicle_rates_setpoint",
             "vehicle_status",
             "vtol_vehicle_status",
         ],
@@ -89,6 +99,7 @@ def main() -> None:
     attitude = get_data(ulog, "vehicle_attitude")
     vtol = get_data(ulog, "vtol_vehicle_status")
     airspeed = optional_data(ulog, "airspeed_validated")
+    rates_setpoint = optional_data(ulog, "vehicle_rates_setpoint")
     start, end = last_offboard_interval(status)
 
     motor_time = np.asarray(motors["timestamp"], dtype=np.int64)
@@ -99,6 +110,15 @@ def main() -> None:
         (motor_time >= end - 1_000_000) & (motor_time <= end)
     ]
     finite_final_pusher = final_pusher[np.isfinite(final_pusher)]
+
+    commanded_pusher = np.array([], dtype=float)
+    if rates_setpoint is not None:
+        rates_time = np.asarray(rates_setpoint["timestamp"], dtype=np.int64)
+        rates_mask = (rates_time >= start) & (rates_time <= end)
+        commanded_pusher = np.asarray(
+            rates_setpoint["thrust_body[0]"], dtype=float
+        )[rates_mask]
+        commanded_pusher = commanded_pusher[np.isfinite(commanded_pusher)]
 
     position_time = np.asarray(position["timestamp"], dtype=np.int64)
     position_mask = (position_time >= start) & (position_time <= end)
@@ -143,17 +163,19 @@ def main() -> None:
         if len(calibrated):
             peak_airspeed = float(np.max(calibrated))
 
-    if not len(x) or not len(quaternion) or not len(finite_pusher):
+    if not len(x) or not len(quaternion):
         raise RuntimeError("Offboard interval is missing required flight samples")
     duration = (end - start) * 1.0e-6
-    peak_pusher = float(np.max(finite_pusher))
+    peak_commanded_pusher = (
+        float(np.max(commanded_pusher)) if len(commanded_pusher) else float("nan")
+    )
+    peak_pusher = (
+        float(np.max(finite_pusher)) if len(finite_pusher) else float("nan")
+    )
     final_pusher_value = (
         float(np.max(np.abs(finite_final_pusher)))
         if len(finite_final_pusher)
-        # PX4 logs an inactive non-reversible motor channel as NaN. In the
-        # final window that is equivalent to a stopped pusher, not an unknown
-        # positive command.
-        else 0.0
+        else float("nan")
     )
     peak_forward_speed = float(np.max(forward_speed))
     final_horizontal_speed = float(np.hypot(vx[-1], vy[-1]))
@@ -163,10 +185,22 @@ def main() -> None:
         np.degrees(np.max(np.maximum(np.abs(roll), np.abs(pitch))))
     )
     max_cross_track = float(np.max(cross_track))
+    pusher_enabled = parameter_at(ulog, "VT_EXT_PUSH_EN", start)
+    pusher_max = parameter_at(ulog, "VT_EXT_PUSH_MAX", start)
+    pusher_slew = parameter_at(ulog, "VT_EXT_PUSH_SLEW", start)
+    try:
+        pusher_enabled_ok = int(pusher_enabled) == 1
+        pusher_max_ok = float(pusher_max) >= 0.099
+    except (TypeError, ValueError):
+        pusher_enabled_ok = False
+        pusher_max_ok = False
     checks = {
         "duration": duration >= 20.0,
         "forward_speed": 2.5 <= peak_forward_speed <= 3.5,
         "final_speed": final_horizontal_speed <= 0.35,
+        "pusher_parameter_enabled": pusher_enabled_ok,
+        "pusher_parameter_max": pusher_max_ok,
+        "pusher_command_received": 0.049 <= peak_commanded_pusher <= 0.105,
         "pusher_peak": 0.049 <= peak_pusher <= 0.105,
         "pusher_returned_zero": final_pusher_value <= 0.005,
         "altitude": max_altitude_error <= 0.30,
@@ -179,8 +213,13 @@ def main() -> None:
     print(f"peak_forward_speed={peak_forward_speed:.3f}m/s")
     print(f"final_horizontal_speed={final_horizontal_speed:.3f}m/s")
     print(f"peak_calibrated_airspeed={peak_airspeed:.3f}m/s")
+    print(f"peak_commanded_pusher={peak_commanded_pusher:.4f}")
     print(f"peak_pusher_actuator={peak_pusher:.4f}")
     print(f"final_pusher_actuator={final_pusher_value:.4f}")
+    print(
+        "px4_pusher_parameters="
+        f"[enabled={pusher_enabled},max={pusher_max},slew={pusher_slew}]"
+    )
     print(f"max_altitude_error={max_altitude_error:.3f}m")
     print(f"max_vertical_speed={max_vertical_speed:.3f}m/s")
     print(f"max_tilt={max_tilt:.2f}deg")

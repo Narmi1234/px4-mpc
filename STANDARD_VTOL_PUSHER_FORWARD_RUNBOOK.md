@@ -194,6 +194,11 @@ cd /home/imran/Repositories/px4-mpc
 bash scripts/run_pusher_forward_gate.bash
 ```
 
+Skripta će prije testa ponovo tražiti potvrdu prikazanih PX4 vrijednosti
+`1`, `0.10`, `0.10`. To nije samo formalna provjera: ROS može uredno slati
+`thrust_body[0]`, ali će PX4 ostaviti pusher actuator neaktivan kada je
+`VT_EXT_PUSH_EN=0`.
+
 Ne pozivati enable servis ručno i ne pokretati drugi gate u istom letu. Skripta
 prati PX4 vrijeme do završetka, pa sporiji Gazebo može zahtijevati više od 20.5
 wall sekundi.

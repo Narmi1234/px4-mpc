@@ -37,6 +37,23 @@ fi
 echo "Pre-flight NMPC status:"
 ros2 service call "${_STATUS_SERVICE}" std_srvs/srv/Trigger '{}'
 
+if [[ "${PX4_PUSHER_PARAMS_CONFIRMED:-}" != "YES" ]]; then
+  echo
+  echo "In the live PX4 shell, run and verify:"
+  echo "  param set VT_EXT_PUSH_EN 1"
+  echo "  param set VT_EXT_PUSH_MAX 0.10"
+  echo "  param set VT_EXT_PUSH_SLEW 0.10"
+  echo "  param show VT_EXT_PUSH_EN"
+  echo "  param show VT_EXT_PUSH_MAX"
+  echo "  param show VT_EXT_PUSH_SLEW"
+  read -r -p "Type YES only if PX4 displayed 1, 0.10, 0.10: " \
+    _PX4_PARAMETER_CONFIRMATION
+  if [[ "${_PX4_PARAMETER_CONFIRMATION}" != "YES" ]]; then
+    echo "Gate A cancelled. No Offboard or pusher command was sent."
+    exit 1
+  fi
+fi
+
 echo
 echo "Requesting Gate A: 3 m/s MC pusher feedback..."
 _ENABLE_RESPONSE="$(
