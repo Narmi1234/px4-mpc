@@ -345,6 +345,14 @@ sa `tilt_limit`. Gate A sada ima zaseban pitch control-barrier koji počinje na
 bez solver faila. Sljedeći korak ostaje jedan live Gate A; hard safety granice
 nisu povećane.
 
+Live ULog `2026-08-25/17_30_34.ulg` potvrdio je tilt PASS (`6.06 deg`), ali je
+završio na `horizontal_tracking_error`: pitch barrier je pogrešno smanjivao i
+pusher iako je brzina bila ispod reference. Pusher je zato dosegao samo
+`0.0756`, a vrh brzine `2.279 m/s`. Ta sprega je uklonjena: attitude barrier
+sada mijenja samo pitch-rate, dok pusher ostaje na NMPC zahtjevu; pusher se
+smanjuje samo kada measured speed zaista pređe speed envelope. Nominalni i
+poremećeni offline test i dalje prolaze, uključujući pitch udar.
+
 Altitude handover sada zahtijeva svjež `VehicleLocalPosition.z_deriv` manji od
 `0.10 m/s`. Isti signal zatvara vertikalni hover feedback jer je direktno
 konzistentan s derivacijom položaja i Gazebo ground truthom; sigurnosni altitude

@@ -98,9 +98,10 @@ def govern_pusher_forward_envelope(
     if overspeed <= 0.0 and pitch_excess <= 0.0:
         return result
 
-    # Reducing thrust is allowed faster than the conservative upward ramp;
-    # the custom PX4 branch still applies its independent actuator slew.
-    result[1] = max(0.0, previous[1] - 0.10 * float(dt))
+    if overspeed > 0.0:
+        # Reducing thrust is allowed faster than the conservative upward ramp;
+        # the custom PX4 branch still applies its independent actuator slew.
+        result[1] = max(0.0, previous[1] - 0.10 * float(dt))
 
     # Positive FLU pitch is nose-forward/down for the converted Gazebo state.
     # A negative q command moves that attitude back toward level. Preserve any

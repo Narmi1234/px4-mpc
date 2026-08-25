@@ -89,7 +89,7 @@ class TestStandardVtolOutput(unittest.TestCase):
         actual = govern_pusher_forward_envelope(
             previous, limited, 2.5, 2.7, 3.0, np.deg2rad(6.0), 0.05
         )
-        self.assertAlmostEqual(actual[1], 0.075)
+        self.assertAlmostEqual(actual[1], 0.0815)
         self.assertAlmostEqual(actual[3], -0.2)
         self.assertLess(actual[3], limited[3])
 
