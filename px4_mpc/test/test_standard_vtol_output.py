@@ -65,6 +65,14 @@ class TestStandardVtolOutput(unittest.TestCase):
         self.assertLess(vertical_hover_lift(plant, 0.1, 0.0), plant.hover_command)
         self.assertGreater(vertical_hover_lift(plant, -0.1, 0.0), plant.hover_command)
 
+    def test_vertical_law_is_critically_damped_at_two_radians_squared(self):
+        plant = StandardVtolGazeboModel()
+        position_only = vertical_hover_lift(plant, 0.20, 0.0)
+        rising = vertical_hover_lift(plant, 0.20, 0.10)
+        falling = vertical_hover_lift(plant, 0.20, -0.10)
+        self.assertLess(rising, position_only)
+        self.assertGreater(falling, rising)
+
     def test_pusher_governor_is_inactive_inside_tracking_band(self):
         previous = np.array([0.52, 0.06, 0.0, 0.02, 0.0])
         limited = np.array([0.52, 0.0615, 0.0, 0.03, 0.0])

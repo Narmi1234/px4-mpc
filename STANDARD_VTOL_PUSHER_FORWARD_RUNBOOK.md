@@ -213,6 +213,8 @@ brzine još ne blokira let ako PX4 prijavi synthetic/ground-minus-wind izvor.
 Vertikalni feedback koristi `VehicleLocalPosition.z_deriv`, odnosno derivaciju
 iste pozicije koju altitude watchdog prati. ULog je pokazao da je pouzdanija za
 ovaj SITL od zasebnog EKF `vz` uzorka koji je jednom imao suprotan znak.
+Altitude petlja koristi kritično prigušene gainove `kp=2.0` i
+`kd=2*sqrt(2)`. Hard altitude watchdog ostaje `0.30 m`.
 
 U aktivnom letu freshness watchdog koristi dvije nezavisne granice: PX4
 plant-age `0.20 s` i wall transport-age `0.30 s`. Time kratka pauza cijelog

@@ -137,5 +137,14 @@ def vertical_hover_lift(plant, altitude_error: float, vertical_speed: float) -> 
         * (motor.maximum_speed - motor.minimum_speed)
         / plant.mass
     )
-    desired_acceleration = -float(altitude_error) - 2.0 * float(vertical_speed)
+    # Gate A ULogs showed a slow 0.30 m upward drift during the brake phase
+    # while the original 1 rad/s position loop still had ample thrust margin.
+    # Double the natural-frequency-squared and retain critical damping so the
+    # correction starts earlier without introducing a vertical oscillation.
+    position_gain = 2.0
+    velocity_gain = 2.0 * np.sqrt(position_gain)
+    desired_acceleration = (
+        -position_gain * float(altitude_error)
+        - velocity_gain * float(vertical_speed)
+    )
     return float(hover + desired_acceleration / acceleration_per_command)

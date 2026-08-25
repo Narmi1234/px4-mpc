@@ -353,6 +353,15 @@ sada mijenja samo pitch-rate, dok pusher ostaje na NMPC zahtjevu; pusher se
 smanjuje samo kada measured speed zaista pređe speed envelope. Nominalni i
 poremećeni offline test i dalje prolaze, uključujući pitch udar.
 
+Live ULog `2026-08-25/17_36_01.ulg` zatvorio je forward kanale: vrh brzine
+`3.461 m/s`, tracking `1.660 m`, tilt `8.22 deg`, MC i svi freshness uslovi su
+prošli. Abort je bio samo `altitude_error` na ROS vrijednosti `0.303 m`, tri
+milimetra preko nepromijenjene granice `0.300 m`. Umjesto širenja safety
+granice, vertical hover petlja je pojačana sa `kp=1, kd=2` na kritično
+prigušene `kp=2, kd=2*sqrt(2)`. Offline nominalni maksimum altitude greške pao
+je sa približno `0.216 m` na `0.123 m`; poremećeni slučaj daje `0.119 m` bez
+solver faila.
+
 Altitude handover sada zahtijeva svjež `VehicleLocalPosition.z_deriv` manji od
 `0.10 m/s`. Isti signal zatvara vertikalni hover feedback jer je direktno
 konzistentan s derivacijom položaja i Gazebo ground truthom; sigurnosni altitude
