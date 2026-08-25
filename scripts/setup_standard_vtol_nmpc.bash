@@ -8,4 +8,7 @@ export LD_LIBRARY_PATH="${MICRO_XRCE_AGENT_DIR}/lib:${ACADOS_SOURCE_DIR}/lib${LD
 export PYTHONPATH="${_STANDARD_VTOL_ROOT}/.venv/lib/python3.12/site-packages:${ACADOS_SOURCE_DIR}/interfaces/acados_template${PYTHONPATH:+:${PYTHONPATH}}"
 export MPLCONFIGDIR="/tmp/matplotlib-px4-mpc"
 export ROS_LOG_DIR="/tmp/px4-mpc-ros-logs"
+# This workspace runs one local SITL/DDS graph. Force every documented
+# terminal onto the same domain instead of inheriting an old shell value.
+export ROS_DOMAIN_ID=0
 unset _STANDARD_VTOL_ROOT

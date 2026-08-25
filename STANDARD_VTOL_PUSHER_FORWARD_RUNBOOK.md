@@ -137,6 +137,10 @@ Ne nastavljati ako parametri ne postoje ili prikazane vrijednosti nisu
 
 ## 3. Terminal 2: DDS Agent
 
+Sve projektne source skripte forsiraju `ROS_DOMAIN_ID=0`. Time se sprječava da
+Terminal 3 i Terminal 4 naslijede različite domain vrijednosti iz ranijih ROS
+sesija. Gate skripta radi discovery bez ROS daemona i čeka do četiri sekunde.
+
 ```bash
 cd /home/imran/Repositories/px4-mpc
 source scripts/setup_standard_vtol_nmpc.bash

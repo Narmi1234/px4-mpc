@@ -10,15 +10,16 @@ _STATUS_SERVICE="/standard_vtol_nmpc/status"
 _ENABLE_SERVICE="/standard_vtol_nmpc/enable_pusher_forward_test"
 _DISABLE_SERVICE="/standard_vtol_nmpc/disable"
 
-_service_is_listed() {
-  timeout --kill-after=1s 2s ros2 service list 2>/dev/null | grep -Fxq "$1"
-}
-
 echo "Checking that the Gate A NMPC node from Terminal 3 is running..."
 _READY=false
+_DISCOVERED_SERVICES=""
 for _ATTEMPT in 1 2 3; do
-  if _service_is_listed "${_STATUS_SERVICE}" && \
-     _service_is_listed "${_ENABLE_SERVICE}"; then
+  _DISCOVERED_SERVICES="$(
+    timeout --kill-after=1s 7s ros2 service list \
+      --no-daemon --spin-time 4 2>/dev/null || true
+  )"
+  if grep -Fxq "${_STATUS_SERVICE}" <<<"${_DISCOVERED_SERVICES}" && \
+     grep -Fxq "${_ENABLE_SERVICE}" <<<"${_DISCOVERED_SERVICES}"; then
     _READY=true
     break
   fi
@@ -26,8 +27,11 @@ for _ATTEMPT in 1 2 3; do
 done
 
 if [[ "${_READY}" != true ]]; then
-  cat <<'EOF'
+  cat <<EOF
 Gate A NMPC node is unavailable. No Offboard or pusher command was sent.
+Terminal 4 ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-unset}.
+Discovered standard_vtol services:
+$(grep 'standard_vtol' <<<"${_DISCOVERED_SERVICES}" || echo '  none')
 Start Terminal 3 exactly as documented in STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md,
 keep it open, wait for its startup message, and rerun this script in Terminal 4.
 EOF
@@ -91,7 +95,9 @@ done
 
 if [[ -z "${_FINAL_RESPONSE}" ]]; then
   echo "Gate did not finish within 45 wall seconds; requesting safe disable."
-  if _service_is_listed "${_DISABLE_SERVICE}"; then
+  if timeout --kill-after=1s 7s ros2 service list \
+      --no-daemon --spin-time 4 2>/dev/null | \
+      grep -Fxq "${_DISABLE_SERVICE}"; then
     timeout --kill-after=1s 4s ros2 service call \
       "${_DISABLE_SERVICE}" std_srvs/srv/Trigger '{}' || true
   else
