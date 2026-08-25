@@ -10,6 +10,7 @@ import numpy as np
 
 from px4_mpc.controllers.standard_vtol_nmpc import StandardVtolNmpc
 from px4_mpc.controllers.standard_vtol_output import (
+    govern_pusher_forward_overspeed,
     limit_pusher_forward_command,
     vertical_hover_lift,
 )
@@ -65,8 +66,33 @@ def references(controller, profile, hold_state, profile_time):
 def main() -> None:
     """Run the Gate A rehearsal and enforce its live acceptance envelope."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--duration", type=float, default=20.5)
+    parser.add_argument("--duration", type=float, default=26.5)
+    parser.add_argument("--target-speed", type=float, default=3.0)
+    parser.add_argument("--acceleration", type=float, default=0.50)
+    parser.add_argument("--hold-seconds", type=float, default=2.0)
+    parser.add_argument("--start-delay-seconds", type=float, default=2.0)
     parser.add_argument("--initial-lateral-speed", type=float, default=0.0)
+    parser.add_argument("--initial-forward-speed", type=float, default=0.0)
+    parser.add_argument("--forward-gust-speed", type=float, default=0.0)
+    parser.add_argument("--forward-gust-time", type=float, default=7.0)
+    parser.add_argument(
+        "--rate-delay-seconds",
+        type=float,
+        default=0.075,
+        help="Measured PX4 body-rate tracking delay used by the rehearsal",
+    )
+    parser.add_argument(
+        "--pusher-effectiveness",
+        type=float,
+        default=0.84,
+        help="ULog-fitted pusher thrust scale applied only to the rehearsal plant",
+    )
+    parser.add_argument(
+        "--rate-effectiveness",
+        type=float,
+        default=1.0,
+        help="Stress scale applied to body rates in the rehearsal plant",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -81,27 +107,38 @@ def main() -> None:
     )
     plant = StandardVtolTransitionRateModel(controller.model.plant)
     profile = McForwardProfile(
-        target_speed=3.0,
-        acceleration=0.75,
-        hold_seconds=2.0,
-        start_delay_seconds=2.0,
+        target_speed=arguments.target_speed,
+        acceleration=arguments.acceleration,
+        hold_seconds=arguments.hold_seconds,
+        start_delay_seconds=arguments.start_delay_seconds,
     )
     state = plant.hover_state()
     state[2] = 20.0
+    state[3] = arguments.initial_forward_speed
     hold_state = state.copy()
     hold_state[3:6] = 0.0
     state[4] = arguments.initial_lateral_speed
     command = plant.hover_control()
     states = [state.copy()]
     controls = []
+    applied_controls = []
     raw_controls = []
     state_references = []
     solve_times = []
     solver_failures = 0
     consecutive_failures = 0
+    rate_delay_steps = max(
+        0, int(np.ceil(arguments.rate_delay_seconds / controller.dt))
+    )
+    rate_history = [command[2:5].copy()] * rate_delay_steps
 
     for index in range(round(arguments.duration / controller.dt)):
         elapsed = index * controller.dt
+        if (
+            arguments.forward_gust_speed != 0.0
+            and index == round(arguments.forward_gust_time / controller.dt)
+        ):
+            state[3] += arguments.forward_gust_speed
         profile_time = max(0.0, elapsed - 0.5)
         x_ref, u_ref, parameters = references(
             controller, profile, hold_state, profile_time
@@ -117,8 +154,27 @@ def main() -> None:
                 state[2] - hold_state[2],
                 state[5],
             )
+            previous_command = command.copy()
             command = limit_pusher_forward_command(
-                command, requested, controller.dt
+                previous_command, requested, controller.dt
+            )
+            sample = profile.sample(profile_time)
+            pitch = np.arcsin(
+                np.clip(
+                    2.0
+                    * (state[6] * state[8] - state[9] * state[7]),
+                    -1.0,
+                    1.0,
+                )
+            )
+            command = govern_pusher_forward_overspeed(
+                previous_command,
+                command,
+                state[3],
+                sample.speed,
+                profile.target_speed,
+                pitch,
+                controller.dt,
             )
             raw_controls.append(solution.control.copy())
         else:
@@ -129,14 +185,24 @@ def main() -> None:
             command = plant.hover_control()
         if consecutive_failures >= 3:
             break
-        state = rk4_step(plant, state, command, parameters[0], controller.dt)
+        rate_history.append(command[2:5].copy())
+        applied_command = command.copy()
+        applied_command[1] *= np.sqrt(arguments.pusher_effectiveness)
+        applied_command[2:5] = (
+            arguments.rate_effectiveness * rate_history.pop(0)
+        )
+        state = rk4_step(
+            plant, state, applied_command, parameters[0], controller.dt
+        )
         states.append(state.copy())
         controls.append(command.copy())
+        applied_controls.append(applied_command.copy())
         state_references.append(x_ref[0].copy())
 
     states = np.asarray(states)
     controls = np.asarray(controls)
     raw_controls = np.asarray(raw_controls)
+    applied_controls = np.asarray(applied_controls)
     state_references = np.asarray(state_references)
     solve_times = np.asarray(solve_times)
     position_error = states[1:, 0:2] - state_references[:, 0:2]
@@ -170,6 +236,9 @@ def main() -> None:
         "max_pusher": float(np.max(controls[:, 1])),
         "final_pusher": float(abs(controls[-1, 1])),
         "solve_time_p99_ms": float(1000.0 * np.percentile(solve_times, 99)),
+        "rate_delay_seconds": rate_delay_steps * controller.dt,
+        "pusher_effectiveness": arguments.pusher_effectiveness,
+        "rate_effectiveness": arguments.rate_effectiveness,
     }
     passed = (
         len(controls) == round(arguments.duration / controller.dt)

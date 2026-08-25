@@ -71,6 +71,48 @@ def limit_pusher_forward_command(
     )
 
 
+def govern_pusher_forward_overspeed(
+    previous,
+    limited,
+    forward_speed: float,
+    reference_speed: float,
+    target_speed: float,
+    pitch: float,
+    dt: float = 0.05,
+) -> np.ndarray:
+    """Remove forward thrust and level the aircraft before a speed violation.
+
+    This is a robust safety layer around the reduced NMPC model. It remains
+    inactive inside a 0.10 m/s tracking band, but acts before the hard 3.5 m/s
+    watchdog when live rate/attitude dynamics produce delayed overshoot.
+    """
+    previous = np.asarray(previous, dtype=float)
+    result = np.asarray(limited, dtype=float).copy()
+    pitch = float(pitch)
+    overspeed = max(
+        float(forward_speed) - float(reference_speed) - 0.10,
+        float(forward_speed) - float(target_speed) - 0.05,
+    )
+    if overspeed <= 0.0:
+        return result
+
+    # Reducing thrust is allowed faster than the conservative upward ramp;
+    # the custom PX4 branch still applies its independent actuator slew.
+    result[1] = max(0.0, previous[1] - 0.10 * float(dt))
+
+    # Positive FLU pitch is nose-forward/down for the converted Gazebo state.
+    # A negative q command moves that attitude back toward level. Preserve any
+    # stronger braking request already produced by NMPC.
+    level_rate = -float(
+        np.clip(1.5 * max(pitch, 0.0) + 0.8 * overspeed, 0.0, 0.20)
+    )
+    desired_pitch_rate = min(result[3], level_rate)
+    result[3] = previous[3] + np.clip(
+        desired_pitch_rate - previous[3], -0.30 * dt, 0.30 * dt
+    )
+    return result
+
+
 def vertical_hover_lift(plant, altitude_error: float, vertical_speed: float) -> float:
     """Return the critically damped hover lift command used by the live node."""
     motor = plant.motors[0]

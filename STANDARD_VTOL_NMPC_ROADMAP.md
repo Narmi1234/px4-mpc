@@ -129,7 +129,7 @@ Konfiguracija:
 
 ```text
 target ground-forward speed: 3.0 m/s
-reference acceleration:      najviše 0.75 m/s^2
+reference acceleration:      najviše 0.50 m/s^2
 hold:                         2.0 s
 pusher hard limit:            0.10
 pusher NMPC/OCP limit:        0.10
@@ -323,6 +323,16 @@ drag od reduced modela. Ne ponavljati let prije sljedećeg koraka: iz ovog ULoga
 kvantificirati pusher/tilt doprinos i offline provjeriti measured-speed pusher
 governor ili korekciju low-speed forward modela. Safety limit se ne povećava
 samo da bi gate formalno prošao.
+
+Ta analiza je završena preko devet Gate A ULogova: fitted tilt skala je
+`0.986`, pusher skala približno `0.84`, a posljednji let pokazuje oko `75 ms`
+body-rate kašnjenja. Glavni uzrok preleta je prebrza `0.75 m/s^2` referenca u
+kombinaciji s tim unutrašnjim odzivom, ne jači pusher. Gate A sada koristi
+`0.50 m/s^2`, timeout `26.5 s`, handover horizontalnu brzinu ispod `0.15 m/s`
+i robustni measured-speed governor. Offline nominalni slučaj daje vrh
+`3.019 m/s`; stres slučaj s `0.15 m/s` bočnim poremećajem, `1.35x` rate
+efektivnošću i `0.15 m/s` forward udarom daje `3.071 m/s`, bez solver faila.
+Sljedeći korak je jedan live Gate A po ažuriranom runbooku.
 
 Altitude handover sada zahtijeva svjež `VehicleLocalPosition.z_deriv` manji od
 `0.10 m/s`. Isti signal zatvara vertikalni hover feedback jer je direktno

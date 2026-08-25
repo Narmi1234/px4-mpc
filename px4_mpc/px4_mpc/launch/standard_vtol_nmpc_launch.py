@@ -106,7 +106,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "pusher_forward_test_max_seconds",
-                default_value="20.5",
+                default_value="26.5",
                 description="PX4-time timeout for the Gate A profile",
             ),
             DeclareLaunchArgument(
@@ -116,7 +116,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "pusher_forward_acceleration",
-                default_value="0.75",
+                default_value="0.50",
                 description="Gate A reference acceleration in m/s^2",
             ),
             DeclareLaunchArgument(

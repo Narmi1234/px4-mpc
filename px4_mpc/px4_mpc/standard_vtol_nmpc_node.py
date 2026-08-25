@@ -28,6 +28,7 @@ from rclpy.qos import (
 )
 from px4_mpc.controllers.standard_vtol_nmpc import StandardVtolNmpc
 from px4_mpc.controllers.standard_vtol_output import (
+    govern_pusher_forward_overspeed,
     limit_external_pusher_command,
     limit_mc_command,
     limit_pusher_forward_command,
@@ -85,9 +86,9 @@ class StandardVtolNmpcNode(Node):
         self.declare_parameter("external_pusher_hold_seconds", 2.0)
         self.declare_parameter("external_pusher_start_delay_seconds", 2.0)
         self.declare_parameter("allow_pusher_forward_output", False)
-        self.declare_parameter("pusher_forward_test_max_seconds", 20.5)
+        self.declare_parameter("pusher_forward_test_max_seconds", 26.5)
         self.declare_parameter("pusher_forward_target_speed", 3.0)
-        self.declare_parameter("pusher_forward_acceleration", 0.75)
+        self.declare_parameter("pusher_forward_acceleration", 0.50)
         self.declare_parameter("pusher_forward_hold_seconds", 2.0)
         self.declare_parameter("pusher_forward_start_delay_seconds", 2.0)
         self.allow_output = bool(self.get_parameter("allow_offboard_output").value)
@@ -656,10 +657,10 @@ class StandardVtolNmpcNode(Node):
         profile = self.pusher_forward_profile
         first_gate_configuration = (
             np.isclose(profile.target_speed, 3.0)
-            and np.isclose(profile.acceleration, 0.75)
+            and np.isclose(profile.acceleration, 0.50)
             and np.isclose(profile.hold_seconds, 2.0)
             and np.isclose(profile.start_delay_seconds, 2.0)
-            and np.isclose(self.pusher_forward_test_max_seconds, 20.5)
+            and np.isclose(self.pusher_forward_test_max_seconds, 26.5)
         )
         if not first_gate_configuration:
             response.success = False
@@ -669,6 +670,10 @@ class StandardVtolNmpcNode(Node):
         if not ready:
             response.success = False
             response.message = reason
+            return response
+        if np.linalg.norm(self.state[3:5]) > 0.15:
+            response.success = False
+            response.message = "pusher_forward_handover_speed_too_high"
             return response
         self._start_output("pusher_forward")
         response.success = True
@@ -875,6 +880,11 @@ class StandardVtolNmpcNode(Node):
         )
         pitch = math.asin(np.clip(2.0 * (qw * qy - qz * qx), -1.0, 1.0))
         return math.degrees(max(abs(roll), abs(pitch)))
+
+    def _pitch_angle(self) -> float:
+        """Return converted Gazebo/FLU pitch in radians."""
+        qw, qx, qy, qz = self.state[6:10]
+        return math.asin(np.clip(2.0 * (qw * qy - qz * qx), -1.0, 1.0))
 
     def _update_flight_metrics(self) -> None:
         if self.state is None or self.hold_state is None:
@@ -1144,9 +1154,27 @@ class StandardVtolNmpcNode(Node):
                     self.max_commanded_pusher, self.last_command[1]
                 )
             elif self.test_mode == "pusher_forward":
+                previous_command = self.last_command.copy()
                 self.last_command = limit_pusher_forward_command(
                     self.last_command,
                     requested_control,
+                    control_dt,
+                )
+                forward_speed = float(
+                    np.dot(self.state[3:5], self.forward_direction)
+                )
+                reference_speed = float(
+                    np.dot(
+                        self.current_reference[3:5], self.forward_direction
+                    )
+                )
+                self.last_command = govern_pusher_forward_overspeed(
+                    previous_command,
+                    self.last_command,
+                    forward_speed,
+                    reference_speed,
+                    self.pusher_forward_profile.target_speed,
+                    self._pitch_angle(),
                     control_dt,
                 )
                 self.max_commanded_pusher = max(

@@ -66,7 +66,7 @@ if [[ "${_ENABLE_RESPONSE}" != *"success=True"* ]]; then
 fi
 
 echo
-echo "Watching until the 20.5 s PX4-time gate finishes."
+echo "Watching until the 26.5 s PX4-time gate finishes."
 echo "Keep QGC ready to select Position mode; the aircraft must remain MC."
 _FINAL_RESPONSE=""
 for _POLL in $(seq 1 45); do

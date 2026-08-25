@@ -15,11 +15,11 @@ Profil u PX4/Gazebo vremenu:
 ```text
 0.5 s neutralni Offboard handover
 2.0 s mirna level-attitude referenca
-6.28 s glatko ubrzanje do 3.0 m/s
+9.42 s glatko ubrzanje do 3.0 m/s
 2.0 s hold
-6.28 s glatko kočenje
+9.42 s glatko kočenje
 najmanje 3.0 s završni hover
-20.5 s ukupni Offboard timeout
+26.5 s ukupni Offboard timeout
 ```
 
 Profil i timeout koriste rekonstruisano sirovo PX4 boot vrijeme. Svaki
@@ -38,8 +38,12 @@ horizontalne brzine.
 Gate A koristi zasebno generisan OCP sa pusher granicom `0.10`. Nije dovoljno
 samo odsjeći izlaz na `0.10`: generički transition OCP dopušta `0.60`, pa bi
 NMPC predviđao šest puta veći autoritet od komande koju PX4 stvarno izvršava.
+Posljednji live ULog je izmjerio približno `75 ms` PX4 body-rate kašnjenja i
+pokazao prelet brzine pri staroj referentnoj akceleraciji `0.75 m/s^2`. Profil
+je zato usporen na `0.50 m/s^2`, a robustni governor gasi pusher i traži
+leveliranje ako izmjerena brzina pređe referencu za više od `0.10 m/s`.
 
-Nominalni put je `24.85 m`. Potrebno je najmanje `40 m` slobodnog prostora
+Nominalni put je `34.27 m`. Potrebno je najmanje `50 m` slobodnog prostora
 ispred nosa.
 
 ## PASS kriteriji
@@ -151,9 +155,9 @@ ros2 launch px4_mpc standard_vtol_nmpc_launch.py \
   allow_offboard_output:=true \
   allow_external_pusher_output:=true \
   allow_pusher_forward_output:=true \
-  pusher_forward_test_max_seconds:=20.5 \
+  pusher_forward_test_max_seconds:=26.5 \
   pusher_forward_target_speed:=3.0 \
-  pusher_forward_acceleration:=0.75 \
+  pusher_forward_acceleration:=0.50 \
   pusher_forward_hold_seconds:=2.0 \
   pusher_forward_start_delay_seconds:=2.0
 ```
@@ -189,8 +193,9 @@ solver_failures=0
 state_age manji od 0.20s
 state_px4_age manji od 0.20s
 vertical_rate age manji od 0.20s i apsolutna vrijednost manja od 0.10 m/s
+horizontalna brzina manja od 0.15 m/s pri pokretanju Gatea A
 px4_clock=[sync=True,...]
-pusher_forward_profile=[speed=3.0,accel=0.75,hold=2.0]
+pusher_forward_profile=[speed=3.0,accel=0.50,hold=2.0]
 nmpc_pusher_max=0.100
 ```
 
@@ -210,7 +215,7 @@ maksimalna gapa.
 
 1. Vozilo mora biti u MC konfiguraciji i Position modeu.
 2. Armirati i podići se na približno `10–15 m`.
-3. Usmjeriti nos prema najmanje `40 m` čistog prostora.
+3. Usmjeriti nos prema najmanje `50 m` čistog prostora.
 4. Potpuno pustiti komande i čekati najmanje 5 s.
 5. Provjeriti da nema penjanja, spuštanja ni yaw kretanja.
 6. Držati QGC spreman za ručni izbor Position moda.
@@ -228,7 +233,7 @@ Skripta će prije testa ponovo tražiti potvrdu prikazanih PX4 vrijednosti
 `VT_EXT_PUSH_EN=0`.
 
 Ne pozivati enable servis ručno i ne pokretati drugi gate u istom letu. Skripta
-prati PX4 vrijeme do završetka, pa sporiji Gazebo može zahtijevati više od 20.5
+prati PX4 vrijeme do završetka, pa sporiji Gazebo može zahtijevati više od 26.5
 wall sekundi.
 
 Node uzima sirovo PX4 boot vrijeme samo iz direktnog para
@@ -243,7 +248,7 @@ Očekivani kraj:
 abort_reason=pusher_forward_test_timeout
 test_mode=pusher_forward
 profile_phase=settle_hover
-last_offboard_duration=20.5s
+last_offboard_duration=26.5s
 solver_failures=0
 ROS_GATE=PASS
 ```
