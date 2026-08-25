@@ -312,6 +312,18 @@ Gate A zato sada koristi zaseban OCP čija je pusher granica također `0.10`.
 Nominalni i lateralno poremećeni offline profil prolaze s vrhom približno
 `3.04 m/s`. Završni ponovljivi live ULog PASS je još otvoren prije Gatea B.
 
+Posljednji live checkpoint je ULog `2026-08-25/06_31_37.ulg`. Raw PX4 sat i
+oba freshness watchdoga radili su ispravno, OCP je potvrdio
+`nmpc_pusher_max=0.100`, vozilo je ostalo MC, a visina, vertikalna brzina,
+tilt i cross-track ostali su unutar granica. Gate je ipak prekinut u fazi
+`accelerate` na `8.61 s`: ULog vrh je `3.550 m/s`, uz stvarni pusher vrh samo
+`0.0776`. Timeline pokazuje pitch do približno `-6.25 deg`, pa ubrzanje ne
+dolazi samo od pushera; live plant ima veći forward autoritet/manji efektivni
+drag od reduced modela. Ne ponavljati let prije sljedećeg koraka: iz ovog ULoga
+kvantificirati pusher/tilt doprinos i offline provjeriti measured-speed pusher
+governor ili korekciju low-speed forward modela. Safety limit se ne povećava
+samo da bi gate formalno prošao.
+
 Altitude handover sada zahtijeva svjež `VehicleLocalPosition.z_deriv` manji od
 `0.10 m/s`. Isti signal zatvara vertikalni hover feedback jer je direktno
 konzistentan s derivacijom položaja i Gazebo ground truthom; sigurnosni altitude
