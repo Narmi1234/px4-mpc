@@ -71,7 +71,7 @@ def limit_pusher_forward_command(
     )
 
 
-def govern_pusher_forward_overspeed(
+def govern_pusher_forward_envelope(
     previous,
     limited,
     forward_speed: float,
@@ -80,11 +80,12 @@ def govern_pusher_forward_overspeed(
     pitch: float,
     dt: float = 0.05,
 ) -> np.ndarray:
-    """Remove forward thrust and level the aircraft before a speed violation.
+    """Guard speed and near-level attitude around the reduced NMPC model.
 
     This is a robust safety layer around the reduced NMPC model. It remains
-    inactive inside a 0.10 m/s tracking band, but acts before the hard 3.5 m/s
-    watchdog when live rate/attitude dynamics produce delayed overshoot.
+    The speed guard remains inactive inside a 0.10 m/s tracking band. The
+    attitude guard starts above four degrees of forward pitch, well before the
+    hard ten-degree watchdog used by Gate A.
     """
     previous = np.asarray(previous, dtype=float)
     result = np.asarray(limited, dtype=float).copy()
@@ -93,7 +94,8 @@ def govern_pusher_forward_overspeed(
         float(forward_speed) - float(reference_speed) - 0.10,
         float(forward_speed) - float(target_speed) - 0.05,
     )
-    if overspeed <= 0.0:
+    pitch_excess = max(pitch - np.deg2rad(4.0), 0.0)
+    if overspeed <= 0.0 and pitch_excess <= 0.0:
         return result
 
     # Reducing thrust is allowed faster than the conservative upward ramp;
@@ -103,13 +105,22 @@ def govern_pusher_forward_overspeed(
     # Positive FLU pitch is nose-forward/down for the converted Gazebo state.
     # A negative q command moves that attitude back toward level. Preserve any
     # stronger braking request already produced by NMPC.
-    level_rate = -float(
-        np.clip(1.5 * max(pitch, 0.0) + 0.8 * overspeed, 0.0, 0.20)
-    )
-    desired_pitch_rate = min(result[3], level_rate)
-    result[3] = previous[3] + np.clip(
-        desired_pitch_rate - previous[3], -0.30 * dt, 0.30 * dt
-    )
+    if pitch_excess > 0.0:
+        # Control-barrier behavior: once the aircraft reaches the soft
+        # four-degree envelope, never pass a command that increases forward
+        # pitch. Bypass the ordinary slew here because PX4's measured 75 ms
+        # rate-loop delay otherwise lets a saturated command cross 10 degrees
+        # before the outer loop can reverse it.
+        barrier_rate = -float(np.clip(8.0 * pitch_excess, 0.0, 0.20))
+        result[3] = min(result[3], barrier_rate)
+    else:
+        level_rate = -float(
+            np.clip(0.8 * max(overspeed, 0.0), 0.0, 0.20)
+        )
+        desired_pitch_rate = min(result[3], level_rate)
+        result[3] = previous[3] + np.clip(
+            desired_pitch_rate - previous[3], -0.60 * dt, 0.60 * dt
+        )
     return result
 
 

@@ -1,7 +1,7 @@
 """MPC controller implementations."""
 
 from px4_mpc.controllers.standard_vtol_output import (
-    govern_pusher_forward_overspeed,
+    govern_pusher_forward_envelope,
     limit_external_pusher_command,
     limit_mc_command,
     vertical_hover_lift,
@@ -14,7 +14,7 @@ except (ImportError, RuntimeError):
 
 __all__ = [
     "StandardVtolNmpc",
-    "govern_pusher_forward_overspeed",
+    "govern_pusher_forward_envelope",
     "limit_external_pusher_command",
     "limit_mc_command",
     "vertical_hover_lift",

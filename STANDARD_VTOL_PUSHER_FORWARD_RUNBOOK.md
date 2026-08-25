@@ -42,6 +42,9 @@ Posljednji live ULog je izmjerio približno `75 ms` PX4 body-rate kašnjenja i
 pokazao prelet brzine pri staroj referentnoj akceleraciji `0.75 m/s^2`. Profil
 je zato usporen na `0.50 m/s^2`, a robustni governor gasi pusher i traži
 leveliranje ako izmjerena brzina pređe referencu za više od `0.10 m/s`.
+Gate A dodatno koristi pitch control-barrier: iznad `4 deg` forward pitcha
+izlaz više ne propušta body-rate komandu koja dodatno obara nos, nego traži
+leveliranje. Hard watchdog ostaje nepromijenjen na `10 deg`.
 
 Nominalni put je `34.27 m`. Potrebno je najmanje `50 m` slobodnog prostora
 ispred nosa.

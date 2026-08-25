@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 
 from px4_mpc.controllers.standard_vtol_output import (
-    govern_pusher_forward_overspeed,
+    govern_pusher_forward_envelope,
     limit_external_pusher_command,
     limit_mc_command,
     limit_pusher_forward_command,
@@ -68,7 +68,7 @@ class TestStandardVtolOutput(unittest.TestCase):
     def test_pusher_governor_is_inactive_inside_tracking_band(self):
         previous = np.array([0.52, 0.06, 0.0, 0.02, 0.0])
         limited = np.array([0.52, 0.0615, 0.0, 0.03, 0.0])
-        actual = govern_pusher_forward_overspeed(
+        actual = govern_pusher_forward_envelope(
             previous, limited, 2.0, 1.95, 3.0, 0.05, 0.05
         )
         np.testing.assert_allclose(actual, limited)
@@ -76,11 +76,21 @@ class TestStandardVtolOutput(unittest.TestCase):
     def test_pusher_governor_removes_thrust_and_requests_leveling(self):
         previous = np.array([0.52, 0.06, 0.0, 0.02, 0.0])
         limited = np.array([0.52, 0.0615, 0.0, 0.03, 0.0])
-        actual = govern_pusher_forward_overspeed(
+        actual = govern_pusher_forward_envelope(
             previous, limited, 3.2, 2.9, 3.0, np.deg2rad(5.0), 0.05
         )
         self.assertAlmostEqual(actual[1], 0.055)
-        self.assertAlmostEqual(actual[3], 0.005)
+        self.assertAlmostEqual(actual[3], -8.0 * np.deg2rad(1.0))
+        self.assertLess(actual[3], limited[3])
+
+    def test_pusher_governor_limits_forward_pitch_before_hard_tilt(self):
+        previous = np.array([0.52, 0.08, 0.0, 0.12, 0.0])
+        limited = np.array([0.52, 0.0815, 0.0, 0.135, 0.0])
+        actual = govern_pusher_forward_envelope(
+            previous, limited, 2.5, 2.7, 3.0, np.deg2rad(6.0), 0.05
+        )
+        self.assertAlmostEqual(actual[1], 0.075)
+        self.assertAlmostEqual(actual[3], -0.2)
         self.assertLess(actual[3], limited[3])
 
 

@@ -334,6 +334,17 @@ i robustni measured-speed governor. Offline nominalni slučaj daje vrh
 efektivnošću i `0.15 m/s` forward udarom daje `3.071 m/s`, bez solver faila.
 Sljedeći korak je jedan live Gate A po ažuriranom runbooku.
 
+Live ULog `2026-08-25/17_09_48.ulg` potvrdio je da speed governor drži ROS
+vrh ispod hard speed granice, ali je otkrio drugi realni limit: roll je ostao
+`2.23 deg`, dok je pitch dosegao `10.32 deg`. NMPC je pri brzini ispod
+reference zatražio maksimalno forward naginjanje, pa je test ispravno prekinut
+sa `tilt_limit`. Gate A sada ima zaseban pitch control-barrier koji počinje na
+`4 deg` i ne dopušta daljnju forward-pitch rate komandu. Offline stres sa
+`3 deg` pitch udarom, `0.15 m/s` forward udarom, lateralnim poremećajem i
+`1.35x` rate efektivnošću prolazi: vrh brzine `3.120 m/s`, tilt `4.83 deg`,
+bez solver faila. Sljedeći korak ostaje jedan live Gate A; hard safety granice
+nisu povećane.
+
 Altitude handover sada zahtijeva svjež `VehicleLocalPosition.z_deriv` manji od
 `0.10 m/s`. Isti signal zatvara vertikalni hover feedback jer je direktno
 konzistentan s derivacijom položaja i Gazebo ground truthom; sigurnosni altitude

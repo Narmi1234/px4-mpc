@@ -10,7 +10,7 @@ import numpy as np
 
 from px4_mpc.controllers.standard_vtol_nmpc import StandardVtolNmpc
 from px4_mpc.controllers.standard_vtol_output import (
-    govern_pusher_forward_overspeed,
+    govern_pusher_forward_envelope,
     limit_pusher_forward_command,
     vertical_hover_lift,
 )
@@ -34,6 +34,20 @@ def rk4_step(model, state, control, parameters, dt):
     result = state + dt * (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0
     result[6:10] /= np.linalg.norm(result[6:10])
     return result
+
+
+def quaternion_product(left, right):
+    """Return scalar-first Hamilton product used for attitude disturbances."""
+    lw, lx, ly, lz = left
+    rw, rx, ry, rz = right
+    return np.array(
+        [
+            lw * rw - lx * rx - ly * ry - lz * rz,
+            lw * rx + lx * rw + ly * rz - lz * ry,
+            lw * ry - lx * rz + ly * rw + lz * rx,
+            lw * rz + lx * ry - ly * rx + lz * rw,
+        ]
+    )
 
 
 def references(controller, profile, hold_state, profile_time):
@@ -75,6 +89,8 @@ def main() -> None:
     parser.add_argument("--initial-forward-speed", type=float, default=0.0)
     parser.add_argument("--forward-gust-speed", type=float, default=0.0)
     parser.add_argument("--forward-gust-time", type=float, default=7.0)
+    parser.add_argument("--pitch-gust-degrees", type=float, default=0.0)
+    parser.add_argument("--pitch-gust-time", type=float, default=10.0)
     parser.add_argument(
         "--rate-delay-seconds",
         type=float,
@@ -139,6 +155,18 @@ def main() -> None:
             and index == round(arguments.forward_gust_time / controller.dt)
         ):
             state[3] += arguments.forward_gust_speed
+        if (
+            arguments.pitch_gust_degrees != 0.0
+            and index == round(arguments.pitch_gust_time / controller.dt)
+        ):
+            angle = np.deg2rad(arguments.pitch_gust_degrees)
+            disturbance = np.array(
+                [np.cos(0.5 * angle), 0.0, np.sin(0.5 * angle), 0.0]
+            )
+            state[6:10] = quaternion_product(
+                state[6:10], disturbance
+            )
+            state[6:10] /= np.linalg.norm(state[6:10])
         profile_time = max(0.0, elapsed - 0.5)
         x_ref, u_ref, parameters = references(
             controller, profile, hold_state, profile_time
@@ -167,7 +195,7 @@ def main() -> None:
                     1.0,
                 )
             )
-            command = govern_pusher_forward_overspeed(
+            command = govern_pusher_forward_envelope(
                 previous_command,
                 command,
                 state[3],

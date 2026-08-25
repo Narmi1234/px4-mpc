@@ -28,7 +28,7 @@ from rclpy.qos import (
 )
 from px4_mpc.controllers.standard_vtol_nmpc import StandardVtolNmpc
 from px4_mpc.controllers.standard_vtol_output import (
-    govern_pusher_forward_overspeed,
+    govern_pusher_forward_envelope,
     limit_external_pusher_command,
     limit_mc_command,
     limit_pusher_forward_command,
@@ -1168,7 +1168,7 @@ class StandardVtolNmpcNode(Node):
                         self.current_reference[3:5], self.forward_direction
                     )
                 )
-                self.last_command = govern_pusher_forward_overspeed(
+                self.last_command = govern_pusher_forward_envelope(
                     previous_command,
                     self.last_command,
                     forward_speed,
