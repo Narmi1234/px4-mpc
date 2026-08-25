@@ -309,3 +309,8 @@ Altitude handover sada zahtijeva svjež `VehicleLocalPosition.z_deriv` manji od
 `0.10 m/s`. Isti signal zatvara vertikalni hover feedback jer je direktno
 konzistentan s derivacijom položaja i Gazebo ground truthom; sigurnosni altitude
 limit ostaje nepromijenjen na `0.30 m`.
+
+Freshness zaštita razdvaja PX4 plant-age (`0.20 s`) od DDS wall transport-age
+(`0.30 s`) i u statusu čuva maksimalne vrijednosti oba gapa. Ovo sprječava da
+kratka pauza kompletnog usporenog simulatora izgleda kao gubitak samo odometry
+izvora, a ostaje ispod PX4 Offboard-loss vremena.

@@ -47,8 +47,8 @@ class Px4Timebase:
             return 0
         return int(timestamp_us) + int(self.estimated_offset_us)
 
-    def update_translated_timestamp(self, timestamp_us: int) -> None:
-        """Observe a DDS timestamp after converting it to PX4 boot time."""
+    def update_translated_timestamp(self, timestamp_us: int) -> int:
+        """Observe a DDS timestamp and return accepted PX4 boot time or zero."""
         raw_timestamp_us = self.translated_to_px4(timestamp_us)
         if (
             raw_timestamp_us > 0
@@ -59,6 +59,8 @@ class Px4Timebase:
             )
         ):
             self.update_px4_timestamp(raw_timestamp_us)
+            return raw_timestamp_us
+        return 0
 
     def update_px4_timestamp(self, timestamp_us: int) -> None:
         """Accept a positive, monotonic PX4 timestamp."""

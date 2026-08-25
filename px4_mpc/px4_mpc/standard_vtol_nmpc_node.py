@@ -65,6 +65,9 @@ class StandardVtolNmpcNode(Node):
     """Solve continuously in shadow mode and run explicit guarded MC gates."""
 
     HANDOVER_FREEZE_SECONDS = 0.5
+    PREFLIGHT_STATE_WALL_AGE_SECONDS = 0.20
+    ACTIVE_STATE_WALL_AGE_SECONDS = 0.30
+    ACTIVE_STATE_PX4_AGE_SECONDS = 0.20
 
     def __init__(self) -> None:
         super().__init__("standard_vtol_nmpc")
@@ -147,6 +150,9 @@ class StandardVtolNmpcNode(Node):
         self.controller = StandardVtolNmpc()
         self.state: np.ndarray | None = None
         self.state_received_ns = 0
+        self.state_px4_us = 0
+        self.max_state_wall_age = 0.0
+        self.max_state_px4_age = 0.0
         self.vertical_position_rate_enu = math.nan
         self.vertical_position_rate_received_ns = 0
         self.px4_timebase = Px4Timebase()
@@ -311,7 +317,11 @@ class StandardVtolNmpcNode(Node):
         if self._vertical_position_rate_age() <= 0.20:
             self.state[5] = self.vertical_position_rate_enu
         self.state_received_ns = self.get_clock().now().nanoseconds
-        self.px4_timebase.update_translated_timestamp(message.timestamp)
+        state_px4_us = self.px4_timebase.update_translated_timestamp(
+            message.timestamp
+        )
+        if state_px4_us > 0:
+            self.state_px4_us = state_px4_us
 
     def _vehicle_local_position(self, message: VehicleLocalPosition) -> None:
         if message.z_valid and np.isfinite(message.z_deriv):
@@ -384,6 +394,26 @@ class StandardVtolNmpcNode(Node):
             return math.inf
         return (self.get_clock().now().nanoseconds - self.state_received_ns) * 1e-9
 
+    def _state_px4_age(self) -> float:
+        if self.state_px4_us <= 0 or self.px4_timebase.latest_px4_us <= 0:
+            return math.inf
+        return max(
+            0.0,
+            (self.px4_timebase.latest_px4_us - self.state_px4_us) * 1.0e-6,
+        )
+
+    def _state_is_stale(self, active: bool) -> bool:
+        wall_limit = (
+            self.ACTIVE_STATE_WALL_AGE_SECONDS
+            if active
+            else self.PREFLIGHT_STATE_WALL_AGE_SECONDS
+        )
+        return (
+            self.state is None
+            or self._state_age() > wall_limit
+            or self._state_px4_age() > self.ACTIVE_STATE_PX4_AGE_SECONDS
+        )
+
     def _vertical_position_rate_age(self) -> float:
         if not self.vertical_position_rate_received_ns:
             return math.inf
@@ -444,7 +474,7 @@ class StandardVtolNmpcNode(Node):
     def _ready_for_hover(self) -> tuple[bool, str]:
         if not self.px4_timebase.synchronized:
             return False, "px4_timesync_missing"
-        if self.state is None or self._state_age() > 0.20:
+        if self._state_is_stale(active=False):
             return False, "odometry_stale"
         if self._vertical_position_rate_age() > 0.20:
             return False, "vertical_position_rate_stale"
@@ -498,6 +528,8 @@ class StandardVtolNmpcNode(Node):
         self.max_commanded_pusher = 0.0
         self.max_calibrated_airspeed = 0.0
         self.max_abs_vertical_speed = 0.0
+        self.max_state_wall_age = 0.0
+        self.max_state_px4_age = 0.0
 
     def _enable_hover(self, _request, response):
         if not self.allow_output:
@@ -678,12 +710,13 @@ class StandardVtolNmpcNode(Node):
         )
         response.success = (
             self.solver_failures == 0
-            and self._state_age() <= 0.20
+            and not self._state_is_stale(active=False)
             and self.px4_timebase.synchronized
         )
         response.message = (
             f"output_requested={self.output_requested}, offboard={self.offboard_active}, "
             f"armed={armed}, nav_state={nav}, state_age={self._state_age():.3f}s, "
+            f"state_px4_age={self._state_px4_age():.3f}s, "
             f"vertical_rate=[value={self.vertical_position_rate_enu:.3f},"
             f"age={self._vertical_position_rate_age():.3f}s], "
             f"solve_time={1000.0 * self.last_solve_time:.2f}ms, "
@@ -718,7 +751,9 @@ class StandardVtolNmpcNode(Node):
             f"tilt_deg={self.max_tilt_degrees:.2f},"
             f"vertical_speed={self.max_abs_vertical_speed:.3f},"
             f"airspeed={self.max_calibrated_airspeed:.3f},"
-            f"commanded_pusher={self.max_commanded_pusher:.3f}]"
+            f"commanded_pusher={self.max_commanded_pusher:.3f},"
+            f"state_wall_gap={self.max_state_wall_age:.3f},"
+            f"state_px4_gap={self.max_state_px4_age:.3f}]"
         )
         return response
 
@@ -842,7 +877,7 @@ class StandardVtolNmpcNode(Node):
         # Active-flight limits differ from the stricter handover conditions:
         # small velocities are required to enter Offboard, while modest
         # closed-loop corrections are allowed once Offboard is active.
-        if self.state is None or self._state_age() > 0.20:
+        if self._state_is_stale(active=True):
             return "odometry_stale"
         if self.status is None or (
             self.status.arming_state != VehicleStatus.ARMING_STATE_ARMED
@@ -1029,7 +1064,14 @@ class StandardVtolNmpcNode(Node):
             )
 
     def _update(self) -> None:
-        if self.state is None or self._state_age() > 0.20:
+        if self.output_requested or self.offboard_active:
+            self.max_state_wall_age = max(
+                self.max_state_wall_age, self._state_age()
+            )
+            self.max_state_px4_age = max(
+                self.max_state_px4_age, self._state_px4_age()
+            )
+        if self._state_is_stale(active=self.output_requested or self.offboard_active):
             if self.output_requested or self.offboard_active:
                 self._abort("odometry_stale")
             return

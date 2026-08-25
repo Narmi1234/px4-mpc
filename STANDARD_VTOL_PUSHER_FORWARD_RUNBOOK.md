@@ -181,6 +181,7 @@ output_requested=False
 offboard=False
 solver_failures=0
 state_age manji od 0.20s
+state_px4_age manji od 0.20s
 vertical_rate age manji od 0.20s i apsolutna vrijednost manja od 0.10 m/s
 px4_clock=[sync=True,...]
 pusher_forward_profile=[speed=3.0,accel=0.75,hold=2.0]
@@ -191,6 +192,12 @@ brzine još ne blokira let ako PX4 prijavi synthetic/ground-minus-wind izvor.
 Vertikalni feedback koristi `VehicleLocalPosition.z_deriv`, odnosno derivaciju
 iste pozicije koju altitude watchdog prati. ULog je pokazao da je pouzdanija za
 ovaj SITL od zasebnog EKF `vz` uzorka koji je jednom imao suprotan znak.
+
+U aktivnom letu freshness watchdog koristi dvije nezavisne granice: PX4
+plant-age `0.20 s` i wall transport-age `0.30 s`. Time kratka pauza cijelog
+sporijeg Gazebo/DDS toka ne proizvodi lažni abort, dok nestanak samo odometryja
+uz PX4 sat koji napreduje ostaje strogi fail. Završni status bilježi oba
+maksimalna gapa.
 
 ## 6. QGroundControl
 
