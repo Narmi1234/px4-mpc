@@ -22,9 +22,11 @@ najmanje 3.0 s završni hover
 20.5 s ukupni Offboard timeout
 ```
 
-Profil i timeout koriste rekonstruisano sirovo PX4 boot vrijeme. Node oduzima
-promjenjivi DDS timesync uticaj pomoću `TimesyncStatus.estimated_offset`; time
-se ROS trajanje može direktno porediti sa stvarnim ULog intervalom.
+Profil i timeout koriste rekonstruisano sirovo PX4 boot vrijeme. Svaki
+`TimesyncStatus` direktno sidri sat preko `remote_timestamp + observed_offset`,
+dok se između tih uzoraka koristi filtrirani `estimated_offset`. Nemogući DDS
+offset skokovi se odbacuju, a ulazak u Offboard postavlja tačnu nulu intervala.
+Zato se ROS trajanje može direktno porediti sa stvarnim ULog intervalom.
 
 Gate A zadržava provjereni pitch autoritet potreban za ubrzanje i kočenje, ali
 ograničava roll rate na `0.10 rad/s`. Live ULog je pokazao da širi roll envelope

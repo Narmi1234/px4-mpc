@@ -14,6 +14,8 @@ class TestPx4Timebase(unittest.TestCase):
         timebase.update_timesync(
             translated_start,
             raw_start - translated_start,
+            translated_start,
+            raw_start - translated_start,
         )
         timebase.start_offboard(raw_start, 10_000_000_000)
 
@@ -24,11 +26,47 @@ class TestPx4Timebase(unittest.TestCase):
         timebase.update_timesync(
             translated_next,
             raw_next - translated_next,
+            translated_next,
+            raw_next - translated_next,
         )
 
         self.assertTrue(timebase.synchronized)
         self.assertEqual(timebase.latest_px4_us, raw_next)
         self.assertAlmostEqual(timebase.px4_elapsed(), 1.0)
+
+    def test_timesync_anchor_corrects_transient_forward_offset_jump(self):
+        timebase = Px4Timebase()
+        translated = 1_787_634_100_000_000
+        raw = 150_000_000
+        old_offset = raw - translated
+        timebase.update_timesync(
+            translated,
+            old_offset,
+            translated,
+            old_offset,
+        )
+
+        # DDS starts serializing with a new offset before its status callback
+        # reaches this node. The resulting 1.3 s leap must not be accepted.
+        timebase.update_translated_timestamp(translated + 1_350_000)
+        self.assertEqual(timebase.latest_px4_us, raw)
+
+        next_raw = raw + 1_000_000
+        next_remote = translated + 1_150_000
+        next_observed_offset = next_raw - next_remote
+        timebase.update_timesync(
+            next_remote,
+            next_observed_offset,
+            next_remote,
+            next_observed_offset,
+        )
+        self.assertEqual(timebase.latest_px4_us, next_raw)
+
+    def test_offboard_start_discards_preflight_clock_bias(self):
+        timebase = Px4Timebase(latest_px4_us=101_300_000)
+        timebase.start_offboard(100_000_000, 10_000_000_000)
+        self.assertEqual(timebase.latest_px4_us, 100_000_000)
+        self.assertAlmostEqual(timebase.px4_elapsed(), 0.0)
 
     def test_slow_simulation_uses_px4_elapsed_for_profile(self):
         timebase = Px4Timebase()
@@ -41,11 +79,12 @@ class TestPx4Timebase(unittest.TestCase):
         self.assertAlmostEqual(timebase.wall_elapsed(22_000_000_000), 12.0)
         self.assertAlmostEqual(timebase.realtime_factor(22_000_000_000), 0.8)
 
-    def test_same_domain_event_timestamp_preserves_callback_delay(self):
+    def test_offboard_event_timestamp_defines_interval_zero(self):
         timebase = Px4Timebase()
         timebase.update_px4_timestamp(8_500_000)
         timebase.start_offboard(8_000_000, 100)
-        self.assertAlmostEqual(timebase.px4_elapsed(), 0.5)
+        self.assertEqual(timebase.latest_px4_us, 8_000_000)
+        self.assertAlmostEqual(timebase.px4_elapsed(), 0.0)
 
     def test_mixed_timestamp_domain_falls_back_to_latest_px4_clock(self):
         timebase = Px4Timebase()

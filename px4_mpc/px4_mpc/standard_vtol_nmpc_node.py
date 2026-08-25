@@ -300,6 +300,8 @@ class StandardVtolNmpcNode(Node):
         self.px4_timebase.update_timesync(
             message.timestamp,
             message.estimated_offset,
+            message.remote_timestamp,
+            message.observed_offset,
         )
 
     def _vehicle_status(self, message: VehicleStatus) -> None:
@@ -315,8 +317,11 @@ class StandardVtolNmpcNode(Node):
             message.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD
         )
         if self.offboard_active and not was_offboard:
+            # PX4 does not DDS-translate this nested event timestamp. Now that
+            # the timebase itself is raw boot time, it is the authoritative
+            # zero and is immune to an offset handover at mode entry.
             self.px4_timebase.start_offboard(
-                self.px4_timebase.translated_to_px4(message.timestamp),
+                message.nav_state_timestamp,
                 self.get_clock().now().nanoseconds,
             )
         self.ever_offboard = self.ever_offboard or self.offboard_active

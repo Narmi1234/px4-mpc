@@ -15,15 +15,30 @@ class Px4Timebase:
     last_px4_elapsed: float = 0.0
     last_wall_elapsed: float = 0.0
     estimated_offset_us: int | None = None
+    max_translated_step_us: int = 250_000
 
     @property
     def synchronized(self) -> bool:
         """Return whether translated DDS timestamps can be restored to PX4 time."""
         return self.estimated_offset_us is not None
 
-    def update_timesync(self, translated_timestamp_us: int, offset_us: int) -> None:
-        """Store the DDS-to-PX4 offset and observe its matching raw clock."""
+    def update_timesync(
+        self,
+        translated_timestamp_us: int,
+        offset_us: int,
+        remote_timestamp_us: int | None = None,
+        observed_offset_us: int | None = None,
+    ) -> None:
+        """Store the DDS offset and anchor the clock to a direct PX4 sample."""
         self.estimated_offset_us = int(offset_us)
+        if remote_timestamp_us is not None and observed_offset_us is not None:
+            direct_px4_us = int(remote_timestamp_us) + int(observed_offset_us)
+            if direct_px4_us > 0:
+                # Unlike the filtered estimated offset, this sum is the raw
+                # PX4 timestamp observed by the current timesync exchange.
+                # It is allowed to correct a previously accepted forward jump.
+                self.latest_px4_us = direct_px4_us
+                return
         self.update_translated_timestamp(translated_timestamp_us)
 
     def translated_to_px4(self, timestamp_us: int) -> int:
@@ -35,7 +50,14 @@ class Px4Timebase:
     def update_translated_timestamp(self, timestamp_us: int) -> None:
         """Observe a DDS timestamp after converting it to PX4 boot time."""
         raw_timestamp_us = self.translated_to_px4(timestamp_us)
-        if raw_timestamp_us > 0:
+        if (
+            raw_timestamp_us > 0
+            and (
+                self.latest_px4_us <= 0
+                or raw_timestamp_us - self.latest_px4_us
+                <= self.max_translated_step_us
+            )
+        ):
             self.update_px4_timestamp(raw_timestamp_us)
 
     def update_px4_timestamp(self, timestamp_us: int) -> None:
@@ -57,6 +79,11 @@ class Px4Timebase:
             and abs(self.latest_px4_us - observed_px4_us) > 5_000_000
         ):
             observed_px4_us = self.latest_px4_us
+        # A transient DDS-offset handover may have advanced latest_px4_us
+        # before the matching TimesyncStatus arrived. The observed Offboard
+        # transition is the authoritative zero for this interval.
+        if observed_px4_us > 0:
+            self.latest_px4_us = observed_px4_us
         self.offboard_start_px4_us = observed_px4_us
         self.offboard_start_wall_ns = int(wall_ns)
         self.last_px4_elapsed = 0.0
