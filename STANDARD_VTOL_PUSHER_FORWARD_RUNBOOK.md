@@ -24,9 +24,11 @@ najmanje 3.0 s završni hover
 
 Profil i timeout koriste rekonstruisano sirovo PX4 boot vrijeme. Svaki
 `TimesyncStatus` direktno sidri sat preko `remote_timestamp + observed_offset`,
-dok se između tih uzoraka koristi filtrirani `estimated_offset`. Nemogući DDS
-offset skokovi se odbacuju, a ulazak u Offboard postavlja tačnu nulu intervala.
-Zato se ROS trajanje može direktno porediti sa stvarnim ULog intervalom.
+dok se između direktnih uzoraka sat interpolira lokalnim monotonic satom i
+izmjerenim Gazebo real-time faktorom. DDS-prevedeni apsolutni timestampovi se
+ne koriste za runtime scheduling ni freshness jer mogu skočiti pri promjeni
+timesync offseta. Ulazak u Offboard postavlja tačnu nulu intervala, pa se ROS
+trajanje može direktno porediti sa stvarnim ULog intervalom.
 
 Gate A zadržava provjereni pitch autoritet potreban za ubrzanje i kočenje, ali
 ograničava roll rate na `0.10 rad/s`. Live ULog je pokazao da širi roll envelope
@@ -224,9 +226,11 @@ Ne pozivati enable servis ručno i ne pokretati drugi gate u istom letu. Skripta
 prati PX4 vrijeme do završetka, pa sporiji Gazebo može zahtijevati više od 20.5
 wall sekundi.
 
-Node rekonstruiše sirovo PX4 boot vrijeme iz `TimesyncStatus.estimated_offset`.
-Direktno oduzimanje prevedenih DDS epoch timestampova nije dozvoljeno jer se
-timesync offset tokom SITL-a mijenja i može prerano završiti gate.
+Node uzima sirovo PX4 boot vrijeme samo iz direktnog para
+`TimesyncStatus.remote_timestamp + observed_offset` i interpolira ga između
+uzoraka. Prevedeni DDS epoch timestampovi nisu dozvoljeni za scheduling ni
+plant-age jer se timesync offset tokom SITL-a mijenja i može lažno proglasiti
+svježu odometriju zastarjelom ili prerano završiti gate.
 
 Očekivani kraj:
 

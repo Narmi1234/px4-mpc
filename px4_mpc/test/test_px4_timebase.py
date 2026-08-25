@@ -16,6 +16,7 @@ class TestPx4Timebase(unittest.TestCase):
             raw_start - translated_start,
             translated_start,
             raw_start - translated_start,
+            wall_ns=10_000_000_000,
         )
         timebase.start_offboard(raw_start, 10_000_000_000)
 
@@ -28,11 +29,49 @@ class TestPx4Timebase(unittest.TestCase):
             raw_next - translated_next,
             translated_next,
             raw_next - translated_next,
+            wall_ns=11_000_000_000,
         )
 
         self.assertTrue(timebase.synchronized)
         self.assertEqual(timebase.latest_px4_us, raw_next)
         self.assertAlmostEqual(timebase.px4_elapsed(), 1.0)
+
+    def test_direct_timesync_interpolates_at_measured_simulation_rate(self):
+        timebase = Px4Timebase()
+        translated = 1_787_292_400_000_000
+        raw = 100_000_000
+        timebase.update_timesync(
+            translated,
+            raw - translated,
+            translated,
+            raw - translated,
+            wall_ns=10_000_000_000,
+        )
+        timebase.update_timesync(
+            translated + 1_000_000,
+            raw + 800_000 - (translated + 1_000_000),
+            translated + 1_000_000,
+            raw + 800_000 - (translated + 1_000_000),
+            wall_ns=11_000_000_000,
+        )
+
+        timebase.advance_from_wall(12_000_000_000)
+
+        self.assertAlmostEqual(timebase.px4_rate_per_wall, 0.8)
+        self.assertEqual(timebase.latest_px4_us, raw + 1_600_000)
+
+    def test_offboard_start_reanchors_interpolated_clock(self):
+        timebase = Px4Timebase(
+            latest_px4_us=101_000_000,
+            sync_anchor_px4_us=100_000_000,
+            sync_anchor_wall_ns=10_000_000_000,
+            px4_rate_per_wall=0.8,
+        )
+        timebase.start_offboard(100_900_000, 11_000_000_000)
+        timebase.advance_from_wall(12_000_000_000)
+
+        self.assertEqual(timebase.latest_px4_us, 101_700_000)
+        self.assertAlmostEqual(timebase.px4_elapsed(), 0.8)
 
     def test_timesync_anchor_corrects_transient_forward_offset_jump(self):
         timebase = Px4Timebase()

@@ -316,12 +316,13 @@ class StandardVtolNmpcNode(Node):
         ]
         if self._vertical_position_rate_age() <= 0.20:
             self.state[5] = self.vertical_position_rate_enu
-        self.state_received_ns = self.get_clock().now().nanoseconds
-        state_px4_us = self.px4_timebase.update_translated_timestamp(
-            message.timestamp
-        )
-        if state_px4_us > 0:
-            self.state_px4_us = state_px4_us
+        now_ns = self.get_clock().now().nanoseconds
+        self.px4_timebase.advance_from_wall(now_ns)
+        self.state_received_ns = now_ns
+        # Treat receipt of valid odometry as the state sample's plant-clock
+        # anchor. DDS-translated absolute timestamps can jump when the uXRCE
+        # offset changes, even though the stream itself remains healthy.
+        self.state_px4_us = self.px4_timebase.latest_px4_us
 
     def _vehicle_local_position(self, message: VehicleLocalPosition) -> None:
         if message.z_valid and np.isfinite(message.z_deriv):
@@ -332,18 +333,28 @@ class StandardVtolNmpcNode(Node):
             self.vertical_position_rate_received_ns = (
                 self.get_clock().now().nanoseconds
             )
-        self.px4_timebase.update_translated_timestamp(message.timestamp)
 
     def _timesync_status(self, message: TimesyncStatus) -> None:
+        now_ns = self.get_clock().now().nanoseconds
+        self.px4_timebase.advance_from_wall(now_ns)
+        previous_clock_us = self.px4_timebase.latest_px4_us
         self.px4_timebase.update_timesync(
             message.timestamp,
             message.estimated_offset,
             message.remote_timestamp,
             message.observed_offset,
+            wall_ns=now_ns,
         )
+        # Preserve the measured state age across an absolute clock correction.
+        # Only elapsed plant time since the last odometry receipt may age it.
+        if self.state_px4_us > 0 and previous_clock_us > 0:
+            self.state_px4_us += (
+                self.px4_timebase.latest_px4_us - previous_clock_us
+            )
 
     def _vehicle_status(self, message: VehicleStatus) -> None:
-        self.px4_timebase.update_translated_timestamp(message.timestamp)
+        now_ns = self.get_clock().now().nanoseconds
+        self.px4_timebase.advance_from_wall(now_ns)
         was_armed = (
             self.status is not None
             and self.status.arming_state == VehicleStatus.ARMING_STATE_ARMED
@@ -358,10 +369,15 @@ class StandardVtolNmpcNode(Node):
             # PX4 does not DDS-translate this nested event timestamp. Now that
             # the timebase itself is raw boot time, it is the authoritative
             # zero and is immune to an offset handover at mode entry.
+            previous_clock_us = self.px4_timebase.latest_px4_us
             self.px4_timebase.start_offboard(
                 message.nav_state_timestamp,
-                self.get_clock().now().nanoseconds,
+                now_ns,
             )
+            if self.state_px4_us > 0 and previous_clock_us > 0:
+                self.state_px4_us += (
+                    self.px4_timebase.latest_px4_us - previous_clock_us
+                )
         self.ever_offboard = self.ever_offboard or self.offboard_active
         if was_armed and not is_armed:
             self.output_requested = False
@@ -384,7 +400,6 @@ class StandardVtolNmpcNode(Node):
     def _airspeed_validated(self, message: AirspeedValidated) -> None:
         self.airspeed = message
         self.airspeed_received_ns = self.get_clock().now().nanoseconds
-        self.px4_timebase.update_translated_timestamp(message.timestamp)
 
     def _vehicle_command_ack(self, message: VehicleCommandAck) -> None:
         self.last_command_ack = f"command={message.command},result={message.result}"
@@ -690,6 +705,8 @@ class StandardVtolNmpcNode(Node):
         return max(0.0, self._offboard_elapsed() - self.HANDOVER_FREEZE_SECONDS)
 
     def _status(self, _request, response):
+        now_ns = self.get_clock().now().nanoseconds
+        self.px4_timebase.advance_from_wall(now_ns)
         nav = -1 if self.status is None else int(self.status.nav_state)
         armed = False if self.status is None else (
             self.status.arming_state == VehicleStatus.ARMING_STATE_ARMED
@@ -701,7 +718,6 @@ class StandardVtolNmpcNode(Node):
         airspeed_source = (
             -99 if self.airspeed is None else int(self.airspeed.airspeed_source)
         )
-        now_ns = self.get_clock().now().nanoseconds
         realtime_factor = self.px4_timebase.realtime_factor(now_ns)
         solve_time_p99 = (
             float(np.percentile(self.solve_times_ms, 99))
@@ -1064,6 +1080,9 @@ class StandardVtolNmpcNode(Node):
             )
 
     def _update(self) -> None:
+        self.px4_timebase.advance_from_wall(
+            self.get_clock().now().nanoseconds
+        )
         if self.output_requested or self.offboard_active:
             self.max_state_wall_age = max(
                 self.max_state_wall_age, self._state_age()

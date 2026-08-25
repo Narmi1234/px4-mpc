@@ -300,10 +300,12 @@ tek u tom postupku se `VT_EXT_PUSH_MAX` privremeno postavlja na `0.10`.
 
 Live verifikacija je potvrdila stvarni pusher `0.10` i MC-only stanje. Prvi
 ULog je izdvojio bočnu oscilaciju, pa Gate A sada koristi zaseban roll limit
-`0.10 rad/s`. Sljedeći ULog je potvrdio miran bočni kanal, ali i `1.34 s`
-početnog clock biasa tokom DDS-offset handovera. Timebase zato direktno sidri
-svaki timesync uzorak i odbacuje prolazne skokove. Završni live ULog PASS je još
-otvoren prije Gatea B.
+`0.10 rad/s`. Naredni testovi potvrdili su mirnu dinamiku, ali i lažne
+`odometry_stale` abortove tokom DDS-offset handovera. Runtime timebase zato
+uzima samo direktne raw PX4 timesync uzorke i između njih interpolira boot sat
+monotonic wall satom i izmjerenim Gazebo real-time faktorom. DDS-prevedeni
+apsolutni timestampovi više ne učestvuju u schedulingu ni freshness odluci.
+Završni ponovljivi live ULog PASS je još otvoren prije Gatea B.
 
 Altitude handover sada zahtijeva svjež `VehicleLocalPosition.z_deriv` manji od
 `0.10 m/s`. Isti signal zatvara vertikalni hover feedback jer je direktno

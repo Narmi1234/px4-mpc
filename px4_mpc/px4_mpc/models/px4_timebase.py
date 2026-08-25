@@ -16,11 +16,16 @@ class Px4Timebase:
     last_wall_elapsed: float = 0.0
     estimated_offset_us: int | None = None
     max_translated_step_us: int = 250_000
+    sync_anchor_px4_us: int = 0
+    sync_anchor_wall_ns: int = 0
+    previous_sync_px4_us: int = 0
+    previous_sync_wall_ns: int = 0
+    px4_rate_per_wall: float = 1.0
 
     @property
     def synchronized(self) -> bool:
-        """Return whether translated DDS timestamps can be restored to PX4 time."""
-        return self.estimated_offset_us is not None
+        """Return whether a direct raw PX4 clock anchor is available."""
+        return self.sync_anchor_px4_us > 0
 
     def update_timesync(
         self,
@@ -28,8 +33,9 @@ class Px4Timebase:
         offset_us: int,
         remote_timestamp_us: int | None = None,
         observed_offset_us: int | None = None,
+        wall_ns: int | None = None,
     ) -> None:
-        """Store the DDS offset and anchor the clock to a direct PX4 sample."""
+        """Anchor the clock to a direct PX4 sample and estimate simulation rate."""
         self.estimated_offset_us = int(offset_us)
         if remote_timestamp_us is not None and observed_offset_us is not None:
             direct_px4_us = int(remote_timestamp_us) + int(observed_offset_us)
@@ -37,9 +43,39 @@ class Px4Timebase:
                 # Unlike the filtered estimated offset, this sum is the raw
                 # PX4 timestamp observed by the current timesync exchange.
                 # It is allowed to correct a previously accepted forward jump.
+                self.sync_anchor_px4_us = direct_px4_us
+                if wall_ns is not None and int(wall_ns) > 0:
+                    wall_ns = int(wall_ns)
+                    if (
+                        self.previous_sync_px4_us > 0
+                        and self.previous_sync_wall_ns > 0
+                        and direct_px4_us > self.previous_sync_px4_us
+                        and wall_ns > self.previous_sync_wall_ns
+                    ):
+                        measured_rate = (
+                            (direct_px4_us - self.previous_sync_px4_us)
+                            * 1000.0
+                            / (wall_ns - self.previous_sync_wall_ns)
+                        )
+                        if 0.05 <= measured_rate <= 3.0:
+                            self.px4_rate_per_wall = measured_rate
+                    self.previous_sync_px4_us = direct_px4_us
+                    self.previous_sync_wall_ns = wall_ns
+                    self.sync_anchor_wall_ns = wall_ns
                 self.latest_px4_us = direct_px4_us
                 return
         self.update_translated_timestamp(translated_timestamp_us)
+
+    def advance_from_wall(self, wall_ns: int) -> int:
+        """Interpolate PX4 boot time from the latest direct timesync anchor."""
+        wall_ns = int(wall_ns)
+        if self.sync_anchor_px4_us <= 0 or self.sync_anchor_wall_ns <= 0:
+            return self.latest_px4_us
+        wall_delta_ns = max(0, wall_ns - self.sync_anchor_wall_ns)
+        self.latest_px4_us = self.sync_anchor_px4_us + int(
+            wall_delta_ns * 1.0e-3 * self.px4_rate_per_wall
+        )
+        return self.latest_px4_us
 
     def translated_to_px4(self, timestamp_us: int) -> int:
         """Undo uXRCE-DDS timestamp synchronization to recover PX4 boot time."""
@@ -86,6 +122,8 @@ class Px4Timebase:
         # transition is the authoritative zero for this interval.
         if observed_px4_us > 0:
             self.latest_px4_us = observed_px4_us
+            self.sync_anchor_px4_us = observed_px4_us
+            self.sync_anchor_wall_ns = int(wall_ns)
         self.offboard_start_px4_us = observed_px4_us
         self.offboard_start_wall_ns = int(wall_ns)
         self.last_px4_elapsed = 0.0
