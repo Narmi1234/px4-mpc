@@ -28,6 +28,7 @@ from rclpy.qos import (
 )
 from px4_mpc.controllers.standard_vtol_nmpc import StandardVtolNmpc
 from px4_mpc.controllers.standard_vtol_output import (
+    govern_pusher_forward_lateral,
     govern_pusher_forward_envelope,
     limit_external_pusher_command,
     limit_mc_command,
@@ -41,6 +42,7 @@ from px4_mpc.models.mc_forward_profile import (
     McForwardProfile,
     pusher_forward_feedforward,
     pusher_forward_reference_state,
+    pusher_forward_speed_reference_state,
 )
 from px4_mpc.models.px4_timebase import Px4Timebase
 from std_msgs.msg import Float64MultiArray
@@ -820,13 +822,33 @@ class StandardVtolNmpcNode(Node):
 
     def _references(self):
         base_time = self._profile_elapsed()
-        x_ref = np.vstack(
-            [
-                self._reference_at_profile_time(base_time + stage * self.controller.dt)
-                for stage in range(self.controller.N + 1)
-            ]
-        )
-        self.current_reference = self._reference_at_profile_time(base_time)
+        if self.test_mode == "pusher_forward" and self.hold_state is not None:
+            base_sample = self.pusher_forward_profile.sample(base_time)
+            x_ref = np.vstack(
+                [
+                    pusher_forward_speed_reference_state(
+                        self.hold_state,
+                        self.state,
+                        self.forward_direction,
+                        base_sample,
+                        self.pusher_forward_profile.sample(
+                            base_time + stage * self.controller.dt
+                        ),
+                    )
+                    for stage in range(self.controller.N + 1)
+                ]
+            )
+            self.current_reference = x_ref[0].copy()
+        else:
+            x_ref = np.vstack(
+                [
+                    self._reference_at_profile_time(
+                        base_time + stage * self.controller.dt
+                    )
+                    for stage in range(self.controller.N + 1)
+                ]
+            )
+            self.current_reference = self._reference_at_profile_time(base_time)
         if self.test_mode == "mc_forward":
             self.profile_phase = self.forward_profile.sample(base_time).phase
         elif self.test_mode == "pusher_forward":
@@ -885,6 +907,14 @@ class StandardVtolNmpcNode(Node):
         """Return converted Gazebo/FLU pitch in radians."""
         qw, qx, qy, qz = self.state[6:10]
         return math.asin(np.clip(2.0 * (qw * qy - qz * qx), -1.0, 1.0))
+
+    def _roll_angle(self) -> float:
+        """Return converted Gazebo/FLU roll in radians."""
+        qw, qx, qy, qz = self.state[6:10]
+        return math.atan2(
+            2.0 * (qw * qx + qy * qz),
+            1.0 - 2.0 * (qx * qx + qy * qy),
+        )
 
     def _update_flight_metrics(self) -> None:
         if self.state is None or self.hold_state is None:
@@ -1158,6 +1188,19 @@ class StandardVtolNmpcNode(Node):
                 self.last_command = limit_pusher_forward_command(
                     self.last_command,
                     requested_control,
+                    control_dt,
+                )
+                normal = np.array(
+                    [-self.forward_direction[1], self.forward_direction[0]]
+                )
+                self.last_command = govern_pusher_forward_lateral(
+                    previous_command,
+                    self.last_command,
+                    float(
+                        np.dot(self.state[0:2] - self.hold_state[0:2], normal)
+                    ),
+                    float(np.dot(self.state[3:5], normal)),
+                    self._roll_angle(),
                     control_dt,
                 )
                 forward_speed = float(

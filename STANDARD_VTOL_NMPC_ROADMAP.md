@@ -120,10 +120,11 @@ Status i ULog analyzer moraju za svaki gate dati:
 - solver status, solve-time p99 i razlog završetka;
 - potvrdu da se pusher vratio na nulu.
 
-## Gate A — naredni let: 3 m/s pusher-feedback u MC režimu
+## Gate A — PASS: 3 m/s pusher-feedback u MC režimu
 
-Ovo je neposredni naredni korak. Nema VTOL transition komande i PX4 mora cijelo
-vrijeme ostati `MC_MODE`.
+Gate A je prihvaćen ULogom `2026-08-25/18_49_22.ulg`. Nema VTOL transition
+komande i PX4 je cijelo vrijeme ostao `MC_MODE`. Trajni mali zapis rezultata je
+u `validation_logs/PUSHER_FORWARD_GATE_A_SUMMARY.md`.
 
 Konfiguracija:
 
@@ -138,10 +139,32 @@ minimum final hover settle:   3.0 s
 ```
 
 NMPC ubrzava pusherom i body-rateovima, drži brzinu, koči i zaustavlja se na
-novoj hover tački. U ovom gateu provjereni vertical-hover regulator još
+novoj hover tački. Uzdužna referentna pozicija je moving anchor na trenutnoj
+poziciji, pa je ovo prvenstveno speed-tracking gate; cross-track, visina,
+smjer i geofence ostaju apsolutno kontrolisani. Ova formulacija zamjenjuje
+apsolutnu uzdužnu putanju koja je u live testovima stvarala sukob između
+position i speed cilja i vidljivu ubrzaj-koči oscilaciju. Pitch envelope je
+kontinuirana barijera, a ne hard prekidač. U ovom gateu provjereni
+vertical-hover regulator još
 zamjenjuje NMPC collective izlaz i čuva visinu. NMPC collective i stvarni
 lift-unloading uključuju se tek u Gateu B, nakon što je pusher feedback zasebno
 dokazan.
+
+Prvi live test speed-reference formulacije potvrdio je longitudinalni dio
+(`3.072 m/s`, altitude error `0.138 m`, tilt `5.31 deg`, solver failures `0`),
+ali je ispravno abortirao na `cross_track=1.008 m`. ULog je otkrio rastuću
+roll oscilaciju tokom kočenja, pa Gate A sada koristi zasebnu sporu,
+prigušenu cross-track petlju umjesto raw NMPC roll izlaza. Offline provjera
+prolazi i disturbance test sa trenutnim bočnim udarom `0.50 m/s`: dobijeno je
+`3.10 m/s`, `4.85 deg`, `0.486 m` maksimalnog cross-tracka i nula solver
+grešaka. Naredni live test potvrdio je cross-track (`0.529 m`) i sve ostale
+gate kriterije, ali je otkrio da je pitch barrier bio jednostran: brake/settle
+je dostigao `10.52 deg` na nose-up strani. Barrier je zato sada simetričan i
+overspeed sloj samo smanjuje pusher, bez dodatne pitch komande. Sljedeći korak
+je bio ponovni Gate A. Konačni let je zatim prošao sve kriterije:
+`26.576 s`, `3.127 m/s`, final speed `0.053 m/s`, altitude error `0.200 m`,
+tilt `3.22 deg`, cross-track `0.663 m`, stvarni pusher `0.0838 -> 0`, MC-only i
+`ulog_gate=PASS`. Gate A se više ne ponavlja radi tuninga.
 
 PASS zahtijeva sve:
 
@@ -163,6 +186,10 @@ Bilo koji drugi završetak je FAIL. Ne povećavati limit i ne ponavljati naslije
 prvo analizirati status i ULog.
 
 ## Gate B — MC pre-transition envelope
+
+Tačan redoslijed implementacije i acceptance kriteriji su u
+`STANDARD_VTOL_GATE_B_RUNBOOK.md`. Neposredni korak je B0 implementacija i
+offline provjera; još nema odobrene Gate B live komande.
 
 Tek nakon Gate A rade se odvojeni letovi na `5 m/s`, zatim `8 m/s`. Još nema
 VTOL transition komande.

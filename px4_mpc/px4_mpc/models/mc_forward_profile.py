@@ -169,6 +169,37 @@ def pusher_forward_reference_state(
     return reference
 
 
+def pusher_forward_speed_reference_state(
+    hold_state: np.ndarray,
+    current_state: np.ndarray,
+    forward_direction: np.ndarray,
+    base_sample: McForwardSample,
+    sample: McForwardSample,
+) -> np.ndarray:
+    """Build a speed-focused Gate A reference with a moving along-track anchor.
+
+    Absolute cross-track and altitude references remain fixed at the captured
+    hover state. Along-track position is anchored to the current aircraft
+    position at every solve, so plant mismatch cannot accumulate into a large
+    position error that competes with the forward-speed objective.
+    """
+    hold_state = np.asarray(hold_state, dtype=float)
+    current_state = np.asarray(current_state, dtype=float)
+    direction = np.asarray(forward_direction, dtype=float)
+    reference = pusher_forward_reference_state(
+        hold_state, direction, sample
+    )
+    along_track = float(
+        np.dot(current_state[0:2] - hold_state[0:2], direction)
+    )
+    reference[0:2] = (
+        hold_state[0:2]
+        + direction
+        * (along_track + sample.distance - base_sample.distance)
+    )
+    return reference
+
+
 def pusher_forward_feedforward(
     plant,
     speed: float,

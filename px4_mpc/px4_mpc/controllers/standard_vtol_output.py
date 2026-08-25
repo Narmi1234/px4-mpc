@@ -82,7 +82,6 @@ def govern_pusher_forward_envelope(
 ) -> np.ndarray:
     """Guard speed and near-level attitude around the reduced NMPC model.
 
-    This is a robust safety layer around the reduced NMPC model. It remains
     The speed guard remains inactive inside a 0.10 m/s tracking band. The
     attitude guard starts above four degrees of forward pitch, well before the
     hard ten-degree watchdog used by Gate A.
@@ -94,34 +93,67 @@ def govern_pusher_forward_envelope(
         float(forward_speed) - float(reference_speed) - 0.10,
         float(forward_speed) - float(target_speed) - 0.05,
     )
-    pitch_excess = max(pitch - np.deg2rad(4.0), 0.0)
-    if overspeed <= 0.0 and pitch_excess <= 0.0:
-        return result
-
     if overspeed > 0.0:
         # Reducing thrust is allowed faster than the conservative upward ramp;
         # the custom PX4 branch still applies its independent actuator slew.
         result[1] = max(0.0, previous[1] - 0.10 * float(dt))
 
-    # Positive FLU pitch is nose-forward/down for the converted Gazebo state.
-    # A negative q command moves that attitude back toward level. Preserve any
-    # stronger braking request already produced by NMPC.
-    if pitch_excess > 0.0:
-        # Control-barrier behavior: once the aircraft reaches the soft
-        # four-degree envelope, never pass a command that increases forward
-        # pitch. Bypass the ordinary slew here because PX4's measured 75 ms
-        # rate-loop delay otherwise lets a saturated command cross 10 degrees
-        # before the outer loop can reverse it.
-        barrier_rate = -float(np.clip(8.0 * pitch_excess, 0.0, 0.20))
-        result[3] = min(result[3], barrier_rate)
-    else:
-        level_rate = -float(
-            np.clip(0.8 * max(overspeed, 0.0), 0.0, 0.20)
+    # Continuous symmetric control barrier. Positive FLU pitch is nose-down;
+    # negative FLU pitch is nose-up. The earlier one-sided barrier protected
+    # only the first case and allowed the braking/settle maneuver to reach the
+    # opposite ten-degree watchdog. Clip q between two smooth bounds so either
+    # side begins leveling at four degrees. Pusher reduction alone handles
+    # overspeed; it must not inject a pitch command with the wrong sign.
+    soft_pitch = np.deg2rad(4.0)
+    lower_rate = float(
+        np.clip(4.0 * (-soft_pitch - pitch), -0.20, 0.20)
+    )
+    upper_rate = float(
+        np.clip(4.0 * (soft_pitch - pitch), -0.20, 0.20)
+    )
+    result[3] = np.clip(result[3], lower_rate, upper_rate)
+    return result
+
+
+def govern_pusher_forward_lateral(
+    previous,
+    limited,
+    cross_track_error: float,
+    cross_track_speed: float,
+    roll: float,
+    dt: float = 0.05,
+) -> np.ndarray:
+    """Apply a damped Gate A cross-track loop through the roll-rate command.
+
+    The reduced NMPC's lateral channel proved too sensitive to the measured
+    PX4 rate delay during braking.  Keep NMPC responsible for forward speed,
+    but close this deliberately slow outer loop around signed cross-track
+    position, velocity and measured roll.
+    """
+    previous = np.asarray(previous, dtype=float)
+    result = np.asarray(limited, dtype=float).copy()
+    desired_lateral_acceleration = float(
+        np.clip(
+            -0.35 * float(cross_track_error)
+            - 1.10 * float(cross_track_speed),
+            -0.60,
+            0.60,
         )
-        desired_pitch_rate = min(result[3], level_rate)
-        result[3] = previous[3] + np.clip(
-            desired_pitch_rate - previous[3], -0.60 * dt, 0.60 * dt
+    )
+    # In the ENU/FLU model, positive roll accelerates toward negative body-y.
+    desired_roll = float(
+        np.clip(
+            -desired_lateral_acceleration / 9.81,
+            -np.deg2rad(4.0),
+            np.deg2rad(4.0),
         )
+    )
+    target_roll_rate = float(
+        np.clip(1.5 * (desired_roll - float(roll)), -0.08, 0.08)
+    )
+    result[2] = previous[2] + np.clip(
+        target_roll_rate - previous[2], -0.20 * dt, 0.20 * dt
+    )
     return result
 
 

@@ -9,6 +9,7 @@ from px4_mpc.models.mc_forward_profile import (
     McForwardProfile,
     pusher_forward_feedforward,
     pusher_forward_reference_state,
+    pusher_forward_speed_reference_state,
 )
 from px4_mpc.models.standard_vtol_gz_model import StandardVtolGazeboModel
 
@@ -78,6 +79,34 @@ class TestMcForwardProfile(unittest.TestCase):
         self.assertGreater(reference[1], 0.0)
         self.assertGreater(reference[4], 0.0)
         np.testing.assert_allclose(reference[6:10], hold[6:10])
+
+    def test_pusher_speed_reference_anchors_only_along_track_to_current_state(self):
+        hold = np.zeros(10)
+        hold[6] = 1.0
+        current = hold.copy()
+        current[0:3] = [10.0, 2.0, 3.0]
+        direction = np.array([1.0, 0.0])
+        base_sample = self.profile.sample(3.0)
+        future_sample = self.profile.sample(3.5)
+
+        current_reference = pusher_forward_speed_reference_state(
+            hold, current, direction, base_sample, base_sample
+        )
+        future_reference = pusher_forward_speed_reference_state(
+            hold, current, direction, base_sample, future_sample
+        )
+
+        self.assertAlmostEqual(current_reference[0], current[0])
+        self.assertAlmostEqual(current_reference[1], hold[1])
+        self.assertAlmostEqual(current_reference[2], hold[2])
+        self.assertAlmostEqual(
+            future_reference[0] - current_reference[0],
+            future_sample.distance - base_sample.distance,
+        )
+        self.assertAlmostEqual(future_reference[1], hold[1])
+        self.assertAlmostEqual(future_reference[3], future_sample.speed)
+        self.assertAlmostEqual(future_reference[4], 0.0)
+        np.testing.assert_allclose(future_reference[6:10], hold[6:10])
 
     def test_pusher_feedforward_is_bounded_and_reduces_for_braking(self):
         plant = StandardVtolGazeboModel()

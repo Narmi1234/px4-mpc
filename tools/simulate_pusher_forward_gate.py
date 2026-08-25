@@ -11,13 +11,14 @@ import numpy as np
 from px4_mpc.controllers.standard_vtol_nmpc import StandardVtolNmpc
 from px4_mpc.controllers.standard_vtol_output import (
     govern_pusher_forward_envelope,
+    govern_pusher_forward_lateral,
     limit_pusher_forward_command,
     vertical_hover_lift,
 )
 from px4_mpc.models.mc_forward_profile import (
     McForwardProfile,
     pusher_forward_feedforward,
-    pusher_forward_reference_state,
+    pusher_forward_speed_reference_state,
 )
 from px4_mpc.models.standard_vtol_gz_model import StandardVtolTransitionRateModel
 
@@ -50,16 +51,23 @@ def quaternion_product(left, right):
     )
 
 
-def references(controller, profile, hold_state, profile_time):
+def references(controller, profile, hold_state, current_state, profile_time):
     """Build the exact Gate A horizon for yaw zero."""
     direction = np.array([1.0, 0.0])
     samples = [
         profile.sample(profile_time + stage * controller.dt)
         for stage in range(controller.N + 1)
     ]
+    base_sample = samples[0]
     x_ref = np.vstack(
         [
-            pusher_forward_reference_state(hold_state, direction, sample)
+            pusher_forward_speed_reference_state(
+                hold_state,
+                current_state,
+                direction,
+                base_sample,
+                sample,
+            )
             for sample in samples
         ]
     )
@@ -89,6 +97,8 @@ def main() -> None:
     parser.add_argument("--initial-forward-speed", type=float, default=0.0)
     parser.add_argument("--forward-gust-speed", type=float, default=0.0)
     parser.add_argument("--forward-gust-time", type=float, default=7.0)
+    parser.add_argument("--lateral-gust-speed", type=float, default=0.0)
+    parser.add_argument("--lateral-gust-time", type=float, default=15.0)
     parser.add_argument("--pitch-gust-degrees", type=float, default=0.0)
     parser.add_argument("--pitch-gust-time", type=float, default=10.0)
     parser.add_argument(
@@ -156,6 +166,11 @@ def main() -> None:
         ):
             state[3] += arguments.forward_gust_speed
         if (
+            arguments.lateral_gust_speed != 0.0
+            and index == round(arguments.lateral_gust_time / controller.dt)
+        ):
+            state[4] += arguments.lateral_gust_speed
+        if (
             arguments.pitch_gust_degrees != 0.0
             and index == round(arguments.pitch_gust_time / controller.dt)
         ):
@@ -169,7 +184,7 @@ def main() -> None:
             state[6:10] /= np.linalg.norm(state[6:10])
         profile_time = max(0.0, elapsed - 0.5)
         x_ref, u_ref, parameters = references(
-            controller, profile, hold_state, profile_time
+            controller, profile, hold_state, state, profile_time
         )
         solution = controller.solve(state, x_ref, u_ref, parameters)
         valid = solution.status == 0 and np.all(np.isfinite(solution.control))
@@ -185,6 +200,18 @@ def main() -> None:
             previous_command = command.copy()
             command = limit_pusher_forward_command(
                 previous_command, requested, controller.dt
+            )
+            roll = np.arctan2(
+                2.0 * (state[6] * state[7] + state[8] * state[9]),
+                1.0 - 2.0 * (state[7] ** 2 + state[8] ** 2),
+            )
+            command = govern_pusher_forward_lateral(
+                previous_command,
+                command,
+                state[1] - hold_state[1],
+                state[4],
+                roll,
+                controller.dt,
             )
             sample = profile.sample(profile_time)
             pitch = np.arcsin(

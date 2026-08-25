@@ -5,10 +5,14 @@ multicopter; ovaj test ne šalje VTOL transition komandu.
 
 ## Šta test dokazuje
 
-NMPC dobija glatku pozicijsku i forward-speed referencu, a iz 10-state modela
-računa pusher i body-rate komande. Pusher više nije unaprijed zadani vremenski
-puls. Provjereni vertical-hover regulator još zamjenjuje NMPC collective izlaz
-i izolovano čuva visinu. Lift-unloading počinje tek u Gateu B.
+NMPC dobija glatku forward-speed referencu i iz 10-state modela računa pusher
+i body-rate komande. Uzdužna pozicija se pri svakom solveu sidri na trenutnu
+poziciju letjelice, dok cross-track, visina i smjer ostaju vezani za uhvaćeni
+hover. Time model mismatch ne može akumulirati uzdužni position error koji se
+bori protiv speed cilja i izaziva ubrzaj-koči oscilaciju. Geofence i svi hard
+watchdog limiti ostaju aktivni. Pusher nije unaprijed zadani vremenski puls.
+Provjereni vertical-hover regulator još zamjenjuje NMPC collective izlaz i
+izolovano čuva visinu. Lift-unloading počinje tek u Gateu B.
 
 Profil u PX4/Gazebo vremenu:
 
@@ -35,6 +39,15 @@ ograničava roll rate na `0.10 rad/s`. Live ULog je pokazao da širi roll envelo
 pretvara malu cross-track grešku u bočnu oscilaciju i prekoračenje ukupne
 horizontalne brzine.
 
+ULog `2026-08-25/18_31_49.ulg` potvrdio je dobar longitudinalni odziv
+(`3.072 m/s`, `5.31 deg`, altitude error `0.138 m`), ali i rastuću roll
+oscilaciju u brake fazi: NMPC raw roll-rate je udarao u `0.5 rad/s`, limiter u
+`0.1 rad/s`, a cross-track je dostigao `1.038 m`. Gate A zato više ne koristi
+sirovi NMPC roll kanal. Zasebna spora, prigušena bočna petlja iz signed
+cross-track pozicije, bočne brzine i izmjerenog rolla komanduje samo roll-rate.
+NMPC ostaje vlasnik forward-speed/pusher i pitch kanala. Granica cross-tracka
+ostaje `1.0 m`; nije proširena da bi se prikrio problem.
+
 Gate A koristi zasebno generisan OCP sa pusher granicom `0.10`. Nije dovoljno
 samo odsjeći izlaz na `0.10`: generički transition OCP dopušta `0.60`, pa bi
 NMPC predviđao šest puta veći autoritet od komande koju PX4 stvarno izvršava.
@@ -42,11 +55,14 @@ Posljednji live ULog je izmjerio približno `75 ms` PX4 body-rate kašnjenja i
 pokazao prelet brzine pri staroj referentnoj akceleraciji `0.75 m/s^2`. Profil
 je zato usporen na `0.50 m/s^2`, a robustni governor gasi pusher i traži
 leveliranje ako izmjerena brzina pređe referencu za više od `0.10 m/s`.
-Gate A dodatno koristi pitch control-barrier: iznad `4 deg` forward pitcha
-izlaz više ne propušta body-rate komandu koja dodatno obara nos, nego traži
-leveliranje. Pitch barrier ne smanjuje pusher kada je brzina ispod reference;
-pusher se ubrzano smanjuje samo na stvarni overspeed. Hard watchdog ostaje
-nepromijenjen na `10 deg`.
+Gate A dodatno koristi kontinuirani simetrični pitch control-barrier. Kako se
+nose-down ili nose-up pitch približava `4 deg`, rate autoritet prema toj strani
+se glatko smanjuje; izvan soft envelopea barrier traži leveliranje. ULog
+`2026-08-25/18_41_13.ulg` pokazao je zašto obje strane moraju biti zaštićene:
+cross-track petlja je prošla (`0.529 m`), ali je tokom završnog kočenja
+jednostrani stari barrier dopustio `10.52 deg` nose-up pitcha. Pusher se
+ubrzano smanjuje samo na stvarni overspeed; overspeed sloj više ne ubrizgava
+pitch-rate komandu. Hard watchdog ostaje nepromijenjen na `10 deg`.
 
 Nominalni put je `34.27 m`. Potrebno je najmanje `50 m` slobodnog prostora
 ispred nosa.
@@ -85,18 +101,24 @@ Mora završiti sa `offline_gate=PASS`. Referentni rezultat implementacije je:
 
 ```text
 solver_failures=0
-max_speed_m_s=3.380
-max_horizontal_speed_m_s=3.380
-final_speed_m_s=0.002
-max_altitude_error_m=0.237
-max_vertical_speed_m_s=0.126
-max_tilt_deg=6.57
+max_speed_m_s=3.012
+max_horizontal_speed_m_s=3.012
+final_speed_m_s=0.00003
+max_tracking_error_m=0.151
+max_altitude_error_m=0.122
+max_vertical_speed_m_s=0.032
+max_tilt_deg=2.61
 max_pusher=0.100
 max_cross_track_m=0.000
-final_pusher=0.0002
-solve_time_p99_ms≈4
+final_pusher=0.00014
+solve_time_p99_ms≈14
 offline_gate=PASS
 ```
+
+Dodatni disturbance test sa `0.15 m/s` početne bočne brzine, trenutnim
+bočnim udarom `0.50 m/s`, 35% jačim rate odzivom, forward gustom i `3 deg`
+pitch poremećajem također mora dati `offline_gate=PASS`. Referentni maksimumi
+su `cross_track=0.486 m`, `tilt=4.85 deg` i `speed=3.10 m/s`.
 
 ## 1. Jednokratni ROS build
 
@@ -306,6 +328,11 @@ ulog_gate=PASS
 
 ## 9. Poslije testa
 
+Gate A je prihvaćen `2026-08-25` ULogom `18_49_22.ulg`; kompletan mali zapis
+je u `validation_logs/PUSHER_FORWARD_GATE_A_SUMMARY.md`. Referentni rezultat je
+`3.127 m/s`, final speed `0.053 m/s`, altitude error `0.200 m`, tilt
+`3.22 deg`, cross-track `0.663 m`, pusher `0.0838 -> 0` i `ulog_gate=PASS`.
+
 Ne kopirati veliki ULog automatski u repo. Prvo ćemo sačuvati mali tekstualni
 sažetak i odlučiti treba li raw log. U sljedećem PX4 pokretanju vratiti potvrđeni
 limit dok ne počne Gate B:
@@ -316,4 +343,4 @@ param set VT_EXT_PUSH_EN 0
 ```
 
 Tek nakon ROS i ULog PASS rezultata prelazimo na Gate B (`5 m/s`, zatim
-`8 m/s`) i uvodimo lift-unloading.
+`8 m/s`) prema `STANDARD_VTOL_GATE_B_RUNBOOK.md`.

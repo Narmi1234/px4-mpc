@@ -6,6 +6,7 @@ import numpy as np
 
 from px4_mpc.controllers.standard_vtol_output import (
     govern_pusher_forward_envelope,
+    govern_pusher_forward_lateral,
     limit_external_pusher_command,
     limit_mc_command,
     limit_pusher_forward_command,
@@ -88,7 +89,7 @@ class TestStandardVtolOutput(unittest.TestCase):
             previous, limited, 3.2, 2.9, 3.0, np.deg2rad(5.0), 0.05
         )
         self.assertAlmostEqual(actual[1], 0.055)
-        self.assertAlmostEqual(actual[3], -8.0 * np.deg2rad(1.0))
+        self.assertAlmostEqual(actual[3], -4.0 * np.deg2rad(1.0))
         self.assertLess(actual[3], limited[3])
 
     def test_pusher_governor_limits_forward_pitch_before_hard_tilt(self):
@@ -98,8 +99,45 @@ class TestStandardVtolOutput(unittest.TestCase):
             previous, limited, 2.5, 2.7, 3.0, np.deg2rad(6.0), 0.05
         )
         self.assertAlmostEqual(actual[1], 0.0815)
-        self.assertAlmostEqual(actual[3], -0.2)
+        self.assertAlmostEqual(actual[3], -4.0 * np.deg2rad(2.0))
         self.assertLess(actual[3], limited[3])
+
+    def test_pusher_governor_limits_nose_up_pitch_during_braking(self):
+        previous = np.array([0.52, 0.0, 0.0, -0.12, 0.0])
+        limited = np.array([0.52, 0.0, 0.0, -0.135, 0.0])
+        actual = govern_pusher_forward_envelope(
+            previous, limited, 1.0, 1.0, 3.0, np.deg2rad(-6.0), 0.05
+        )
+        self.assertAlmostEqual(actual[3], 4.0 * np.deg2rad(2.0))
+        self.assertGreater(actual[3], limited[3])
+
+    def test_lateral_governor_opposes_cross_track_position_and_speed(self):
+        previous = np.array([0.52, 0.08, 0.0, 0.0, 0.0])
+        limited = np.array([0.52, 0.08, -0.10, 0.0, 0.0])
+        actual = govern_pusher_forward_lateral(
+            previous,
+            limited,
+            cross_track_error=0.5,
+            cross_track_speed=0.3,
+            roll=0.0,
+            dt=0.05,
+        )
+        # Positive FLU cross-track error needs positive roll, which produces
+        # acceleration toward negative body-y and back toward the path.
+        self.assertAlmostEqual(actual[2], 0.01)
+
+    def test_lateral_governor_is_bounded_and_requests_roll_leveling(self):
+        previous = np.array([0.52, 0.08, 0.0, 0.0, 0.0])
+        limited = np.array([0.52, 0.08, 0.10, 0.0, 0.0])
+        actual = govern_pusher_forward_lateral(
+            previous,
+            limited,
+            cross_track_error=0.0,
+            cross_track_speed=0.0,
+            roll=np.deg2rad(5.0),
+            dt=0.05,
+        )
+        self.assertAlmostEqual(actual[2], -0.01)
 
 
 
