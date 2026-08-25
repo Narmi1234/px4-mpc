@@ -304,3 +304,8 @@ ULog je izdvojio bočnu oscilaciju, pa Gate A sada koristi zaseban roll limit
 početnog clock biasa tokom DDS-offset handovera. Timebase zato direktno sidri
 svaki timesync uzorak i odbacuje prolazne skokove. Završni live ULog PASS je još
 otvoren prije Gatea B.
+
+Altitude handover sada zahtijeva svjež `VehicleLocalPosition.z_deriv` manji od
+`0.10 m/s`. Isti signal zatvara vertikalni hover feedback jer je direktno
+konzistentan s derivacijom položaja i Gazebo ground truthom; sigurnosni altitude
+limit ostaje nepromijenjen na `0.30 m`.

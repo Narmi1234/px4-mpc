@@ -127,7 +127,10 @@ def main() -> None:
     z = np.asarray(position["z"], dtype=float)[position_mask]
     vx = np.asarray(position["vx"], dtype=float)[position_mask]
     vy = np.asarray(position["vy"], dtype=float)[position_mask]
-    vz = np.asarray(position["vz"], dtype=float)[position_mask]
+    # Use the derivative of the same vertical position used for altitude
+    # error. This remained sign-consistent with Gazebo ground truth in the
+    # live logs, while one EKF vz estimate briefly had the opposite sign.
+    vz = np.asarray(position["z_deriv"], dtype=float)[position_mask]
 
     attitude_time = np.asarray(attitude["timestamp"], dtype=np.int64)
     attitude_mask = (attitude_time >= start) & (attitude_time <= end)

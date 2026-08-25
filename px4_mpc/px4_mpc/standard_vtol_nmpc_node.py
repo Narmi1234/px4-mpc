@@ -12,6 +12,7 @@ from px4_msgs.msg import (
     TimesyncStatus,
     VehicleCommand,
     VehicleCommandAck,
+    VehicleLocalPosition,
     VehicleOdometry,
     VehicleRatesSetpoint,
     VehicleStatus,
@@ -146,6 +147,8 @@ class StandardVtolNmpcNode(Node):
         self.controller = StandardVtolNmpc()
         self.state: np.ndarray | None = None
         self.state_received_ns = 0
+        self.vertical_position_rate_enu = math.nan
+        self.vertical_position_rate_received_ns = 0
         self.px4_timebase = Px4Timebase()
         self.last_control_px4_us = 0
         self.status: VehicleStatus | None = None
@@ -189,6 +192,18 @@ class StandardVtolNmpcNode(Node):
         )
         self.create_subscription(
             VehicleOdometry, "/fmu/out/vehicle_odometry", self._odometry, qos
+        )
+        self.create_subscription(
+            VehicleLocalPosition,
+            "/fmu/out/vehicle_local_position",
+            self._vehicle_local_position,
+            qos,
+        )
+        self.create_subscription(
+            VehicleLocalPosition,
+            "/fmu/out/vehicle_local_position_v1",
+            self._vehicle_local_position,
+            qos,
         )
         self.create_subscription(
             TimesyncStatus,
@@ -293,7 +308,20 @@ class StandardVtolNmpcNode(Node):
             ned_to_enu(np.asarray(message.velocity)),
             px4_quaternion_to_gazebo(np.asarray(message.q)),
         ]
+        if self._vertical_position_rate_age() <= 0.20:
+            self.state[5] = self.vertical_position_rate_enu
         self.state_received_ns = self.get_clock().now().nanoseconds
+        self.px4_timebase.update_translated_timestamp(message.timestamp)
+
+    def _vehicle_local_position(self, message: VehicleLocalPosition) -> None:
+        if message.z_valid and np.isfinite(message.z_deriv):
+            # z_deriv is the derivative of the NED position used by the
+            # altitude loop. Its sign remained consistent with position and
+            # Gazebo ground truth in ULog, unlike one observed EKF vz bias.
+            self.vertical_position_rate_enu = -float(message.z_deriv)
+            self.vertical_position_rate_received_ns = (
+                self.get_clock().now().nanoseconds
+            )
         self.px4_timebase.update_translated_timestamp(message.timestamp)
 
     def _timesync_status(self, message: TimesyncStatus) -> None:
@@ -356,6 +384,14 @@ class StandardVtolNmpcNode(Node):
             return math.inf
         return (self.get_clock().now().nanoseconds - self.state_received_ns) * 1e-9
 
+    def _vertical_position_rate_age(self) -> float:
+        if not self.vertical_position_rate_received_ns:
+            return math.inf
+        return (
+            self.get_clock().now().nanoseconds
+            - self.vertical_position_rate_received_ns
+        ) * 1e-9
+
     def _airspeed_age(self) -> float:
         if not self.airspeed_received_ns:
             return math.inf
@@ -410,6 +446,8 @@ class StandardVtolNmpcNode(Node):
             return False, "px4_timesync_missing"
         if self.state is None or self._state_age() > 0.20:
             return False, "odometry_stale"
+        if self._vertical_position_rate_age() > 0.20:
+            return False, "vertical_position_rate_stale"
         if self.status is None or self.status.arming_state != VehicleStatus.ARMING_STATE_ARMED:
             return False, "vehicle_not_armed"
         if self.status.failsafe:
@@ -420,7 +458,7 @@ class StandardVtolNmpcNode(Node):
             return False, "vehicle_not_in_mc_mode"
         if np.linalg.norm(self.state[3:5]) > 0.5:
             return False, "horizontal_speed_too_high_for_hover_handover"
-        if abs(self.state[5]) > 0.20:
+        if abs(self.vertical_position_rate_enu) > 0.10:
             return False, "vertical_speed_too_high_for_hover_handover"
         return True, "ready"
 
@@ -646,6 +684,8 @@ class StandardVtolNmpcNode(Node):
         response.message = (
             f"output_requested={self.output_requested}, offboard={self.offboard_active}, "
             f"armed={armed}, nav_state={nav}, state_age={self._state_age():.3f}s, "
+            f"vertical_rate=[value={self.vertical_position_rate_enu:.3f},"
+            f"age={self._vertical_position_rate_age():.3f}s], "
             f"solve_time={1000.0 * self.last_solve_time:.2f}ms, "
             f"solver_failures={self.solver_failures}, abort_reason={self.abort_reason}"
             f", test_mode={self.test_mode}, profile_phase={self.profile_phase}"
