@@ -66,6 +66,7 @@ def main() -> None:
     """Run the Gate A rehearsal and enforce its live acceptance envelope."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--duration", type=float, default=20.5)
+    parser.add_argument("--initial-lateral-speed", type=float, default=0.0)
     parser.add_argument(
         "--output",
         type=Path,
@@ -86,6 +87,8 @@ def main() -> None:
     state = plant.hover_state()
     state[2] = 20.0
     hold_state = state.copy()
+    hold_state[3:6] = 0.0
+    state[4] = arguments.initial_lateral_speed
     command = plant.hover_control()
     states = [state.copy()]
     controls = []
@@ -144,6 +147,9 @@ def main() -> None:
     metrics = {
         "solver_failures": solver_failures,
         "max_speed_m_s": float(np.max(states[:, 3])),
+        "max_horizontal_speed_m_s": float(
+            np.max(np.linalg.norm(states[:, 3:5], axis=1))
+        ),
         "final_speed_m_s": float(np.linalg.norm(states[-1, 3:5])),
         "final_position_error_m": float(
             np.linalg.norm(states[-1, 0:2] - state_references[-1, 0:2])
@@ -151,6 +157,7 @@ def main() -> None:
         "max_tracking_error_m": float(
             np.max(np.linalg.norm(position_error, axis=1))
         ),
+        "max_cross_track_m": float(np.max(np.abs(states[:, 1] - hold_state[1]))),
         "max_altitude_error_m": float(
             np.max(np.abs(states[:, 2] - hold_state[2]))
         ),
@@ -166,9 +173,11 @@ def main() -> None:
         len(controls) == round(arguments.duration / controller.dt)
         and metrics["solver_failures"] == 0
         and 2.5 <= metrics["max_speed_m_s"] <= 3.5
+        and metrics["max_horizontal_speed_m_s"] <= 3.5
         and metrics["final_speed_m_s"] <= 0.35
         and metrics["final_position_error_m"] <= 1.0
         and metrics["max_tracking_error_m"] <= 2.0
+        and metrics["max_cross_track_m"] <= 1.0
         and metrics["max_altitude_error_m"] <= 0.30
         and metrics["max_vertical_speed_m_s"] <= 0.75
         and metrics["max_tilt_deg"] <= 10.0

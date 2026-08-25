@@ -297,3 +297,9 @@ Gate A software milestone je implementiran:
 Offline closed-loop Gate A je označen PASS. Live verifikacija se izvodi samo po
 [`STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md`](STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md);
 tek u tom postupku se `VT_EXT_PUSH_MAX` privremeno postavlja na `0.10`.
+
+Live verifikacija je potvrdila stvarni pusher `0.10`, MC-only stanje i ispravan
+raw PX4 timebase. Posljednji pokušaj je sigurno prekinut na ukupnoj
+horizontalnoj brzini: forward kanal je bio uredan, ali preširok roll-rate
+envelope je napravio bočnu oscilaciju. Gate A sada koristi zaseban roll limit
+`0.10 rad/s`; završni live ULog PASS je još otvoren prije Gatea B.

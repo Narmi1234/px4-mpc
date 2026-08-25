@@ -22,10 +22,14 @@ najmanje 3.0 s završni hover
 20.5 s ukupni Offboard timeout
 ```
 
-Profil i timeout koriste prevedeni `VehicleStatus.timestamp`. Dodatna zaštita
-odbacuje boot-relative event timestamp ako nije u istoj vremenskoj domeni. Time
-se sprječava trenutni skok profila i lažni `horizontal_tracking_error` odmah
-nakon ulaska u Offboard.
+Profil i timeout koriste rekonstruisano sirovo PX4 boot vrijeme. Node oduzima
+promjenjivi DDS timesync uticaj pomoću `TimesyncStatus.estimated_offset`; time
+se ROS trajanje može direktno porediti sa stvarnim ULog intervalom.
+
+Gate A zadržava provjereni pitch autoritet potreban za ubrzanje i kočenje, ali
+ograničava roll rate na `0.10 rad/s`. Live ULog je pokazao da širi roll envelope
+pretvara malu cross-track grešku u bočnu oscilaciju i prekoračenje ukupne
+horizontalne brzine.
 
 Nominalni put je `24.85 m`. Potrebno je najmanje `40 m` slobodnog prostora
 ispred nosa.
@@ -34,6 +38,7 @@ ispred nosa.
 
 ```text
 2.5 <= peak forward speed <= 3.5 m/s
+peak total horizontal speed <= 3.5 m/s
 final horizontal speed <= 0.35 m/s
 0.05 <= actual pusher peak <= 0.105
 final actual pusher <= 0.005
@@ -64,11 +69,13 @@ Mora završiti sa `offline_gate=PASS`. Referentni rezultat implementacije je:
 ```text
 solver_failures=0
 max_speed_m_s=3.380
+max_horizontal_speed_m_s=3.380
 final_speed_m_s=0.002
 max_altitude_error_m=0.237
 max_vertical_speed_m_s=0.126
 max_tilt_deg=6.57
 max_pusher=0.100
+max_cross_track_m=0.000
 final_pusher=0.0002
 solve_time_p99_ms≈4
 offline_gate=PASS

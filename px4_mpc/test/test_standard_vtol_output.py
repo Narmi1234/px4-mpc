@@ -44,7 +44,7 @@ class TestStandardVtolOutput(unittest.TestCase):
         actual = limit_pusher_forward_command(previous, requested, dt=0.05)
         np.testing.assert_allclose(
             actual,
-            [0.525, 0.0015, 0.015, -0.015, 0.01],
+            [0.525, 0.0015, 0.01, -0.015, 0.01],
             atol=1.0e-12,
         )
         current = actual
@@ -52,6 +52,9 @@ class TestStandardVtolOutput(unittest.TestCase):
             current = limit_pusher_forward_command(current, requested, dt=0.05)
         self.assertAlmostEqual(current[1], 0.10)
         self.assertLessEqual(current[0], 0.56)
+        self.assertLessEqual(abs(current[2]), 0.10)
+        self.assertLessEqual(abs(current[3]), 0.20)
+        self.assertLessEqual(abs(current[4]), 0.15)
 
     def test_vertical_law_is_neutral_at_hover(self):
         plant = StandardVtolGazeboModel()

@@ -180,6 +180,7 @@ def main() -> None:
         else (0.0 if len(finite_pusher) else float("nan"))
     )
     peak_forward_speed = float(np.max(forward_speed))
+    peak_horizontal_speed = float(np.max(np.linalg.norm(velocity_xy, axis=1)))
     final_horizontal_speed = float(np.hypot(vx[-1], vy[-1]))
     max_altitude_error = float(np.max(np.abs(z - z[0])))
     max_vertical_speed = float(np.max(np.abs(vz)))
@@ -199,6 +200,7 @@ def main() -> None:
     checks = {
         "duration": duration >= 20.0,
         "forward_speed": 2.5 <= peak_forward_speed <= 3.5,
+        "horizontal_speed": peak_horizontal_speed <= 3.5,
         "final_speed": final_horizontal_speed <= 0.35,
         "pusher_parameter_enabled": pusher_enabled_ok,
         "pusher_parameter_max": pusher_max_ok,
@@ -213,6 +215,7 @@ def main() -> None:
     }
     print(f"offboard_duration={duration:.3f}s")
     print(f"peak_forward_speed={peak_forward_speed:.3f}m/s")
+    print(f"peak_horizontal_speed={peak_horizontal_speed:.3f}m/s")
     print(f"final_horizontal_speed={final_horizontal_speed:.3f}m/s")
     print(f"peak_calibrated_airspeed={peak_airspeed:.3f}m/s")
     print(f"peak_commanded_pusher={peak_commanded_pusher:.4f}")

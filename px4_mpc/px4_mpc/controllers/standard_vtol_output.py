@@ -52,12 +52,18 @@ def limit_pusher_forward_command(
     requested = np.asarray(requested, dtype=float).copy()
     requested[0] = np.clip(requested[0], 0.48, 0.56)
     requested[1] = np.clip(requested[1], 0.0, 0.10)
-    requested[2:5] = np.clip(
-        0.5 * requested[2:5],
-        [-0.20, -0.20, -0.15],
-        [0.20, 0.20, 0.15],
+    # Gate A validates pusher-speed feedback close to level attitude. Live
+    # ULogs showed that the wider generic MC envelope let small cross-track
+    # errors drive an oscillatory roll response. Keep enough authority for
+    # gentle attitude correction without letting lateral motion dominate the
+    # 3 m/s forward-speed test.
+    requested[2] = np.clip(0.25 * requested[2], -0.10, 0.10)
+    requested[3:5] = np.clip(
+        0.5 * requested[3:5],
+        [-0.20, -0.15],
+        [0.20, 0.15],
     )
-    slew_per_second = np.array([0.10, 0.03, 0.30, 0.30, 0.20])
+    slew_per_second = np.array([0.10, 0.03, 0.20, 0.30, 0.20])
     return previous + np.clip(
         requested - previous,
         -slew_per_second * dt,
