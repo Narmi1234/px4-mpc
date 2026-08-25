@@ -33,6 +33,8 @@ class StandardVtolNmpc:
         horizon_seconds: float = 1.5,
         altitude_floor: float = -1000.0,
         build_directory: str | Path = "build/standard_vtol_nmpc",
+        control_lower_bounds: np.ndarray | None = None,
+        control_upper_bounds: np.ndarray | None = None,
     ) -> None:
         try:
             from acados_template import AcadosOcp, AcadosOcpSolver
@@ -75,8 +77,22 @@ class StandardVtolNmpc:
         ocp.cost.yref = np.zeros(nx + nu)
         ocp.cost.yref_e = np.zeros(nx)
 
-        ocp.constraints.lbu = np.array([0.0, 0.0, -0.5, -0.5, -0.3])
-        ocp.constraints.ubu = np.array([0.65, 0.60, 0.5, 0.5, 0.3])
+        default_lower = np.array([0.0, 0.0, -0.5, -0.5, -0.3])
+        default_upper = np.array([0.65, 0.60, 0.5, 0.5, 0.3])
+        lower = np.asarray(
+            default_lower if control_lower_bounds is None else control_lower_bounds,
+            dtype=float,
+        )
+        upper = np.asarray(
+            default_upper if control_upper_bounds is None else control_upper_bounds,
+            dtype=float,
+        )
+        if lower.shape != (nu,) or upper.shape != (nu,):
+            raise ValueError("control bounds must match the five NMPC inputs")
+        if not np.all(np.isfinite(lower)) or not np.all(lower < upper):
+            raise ValueError("control bounds must be finite and strictly ordered")
+        ocp.constraints.lbu = lower
+        ocp.constraints.ubu = upper
         ocp.constraints.idxbu = np.arange(nu)
         ocp.constraints.idxbx = np.array([2])
         ocp.constraints.lbx = np.array([float(altitude_floor)])

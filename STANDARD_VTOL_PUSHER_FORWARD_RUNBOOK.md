@@ -35,6 +35,10 @@ ograničava roll rate na `0.10 rad/s`. Live ULog je pokazao da širi roll envelo
 pretvara malu cross-track grešku u bočnu oscilaciju i prekoračenje ukupne
 horizontalne brzine.
 
+Gate A koristi zasebno generisan OCP sa pusher granicom `0.10`. Nije dovoljno
+samo odsjeći izlaz na `0.10`: generički transition OCP dopušta `0.60`, pa bi
+NMPC predviđao šest puta veći autoritet od komande koju PX4 stvarno izvršava.
+
 Nominalni put je `24.85 m`. Potrebno je najmanje `40 m` slobodnog prostora
 ispred nosa.
 
@@ -187,6 +191,7 @@ state_px4_age manji od 0.20s
 vertical_rate age manji od 0.20s i apsolutna vrijednost manja od 0.10 m/s
 px4_clock=[sync=True,...]
 pusher_forward_profile=[speed=3.0,accel=0.75,hold=2.0]
+nmpc_pusher_max=0.100
 ```
 
 `airspeed=[...]` se mora pojaviti u statusu. Gate A ga bilježi, ali zbog male

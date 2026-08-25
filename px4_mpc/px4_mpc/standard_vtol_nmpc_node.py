@@ -147,7 +147,23 @@ class StandardVtolNmpcNode(Node):
                 self.get_parameter("pusher_forward_start_delay_seconds").value
             ),
         )
-        self.controller = StandardVtolNmpc()
+        self.nmpc_pusher_max = 0.10 if self.allow_pusher_forward else 0.60
+        if self.allow_pusher_forward:
+            # Gate A must be optimized with the pusher envelope that the
+            # output safety layer and custom PX4 branch can execute. Planning
+            # with the generic 0.60 transition limit and clipping to 0.10
+            # afterward invalidates NMPC's speed and braking prediction.
+            self.controller = StandardVtolNmpc(
+                build_directory="build/standard_vtol_nmpc_gate_a_pusher_010",
+                control_lower_bounds=np.array(
+                    [0.0, 0.0, -0.50, -0.50, -0.30]
+                ),
+                control_upper_bounds=np.array(
+                    [0.65, self.nmpc_pusher_max, 0.50, 0.50, 0.30]
+                ),
+            )
+        else:
+            self.controller = StandardVtolNmpc()
         self.state: np.ndarray | None = None
         self.state_received_ns = 0
         self.state_px4_us = 0
@@ -745,6 +761,7 @@ class StandardVtolNmpcNode(Node):
             f", pusher_forward_profile=[speed={self.pusher_forward_profile.target_speed:.1f},"
             f"accel={self.pusher_forward_profile.acceleration:.2f},"
             f"hold={self.pusher_forward_profile.hold_seconds:.1f}]"
+            f", nmpc_pusher_max={self.nmpc_pusher_max:.3f}"
             f", last_offboard_duration={self.last_offboard_duration:.2f}s"
             f", last_wall_offboard_duration={self.last_wall_offboard_duration:.2f}s"
             f", px4_elapsed={self._offboard_elapsed():.2f}s"

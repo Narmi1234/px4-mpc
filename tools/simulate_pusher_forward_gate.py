@@ -75,7 +75,9 @@ def main() -> None:
     arguments = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     controller = StandardVtolNmpc(
-        build_directory=root / "build/standard_vtol_nmpc"
+        build_directory=root / "build/standard_vtol_nmpc_gate_a_pusher_010",
+        control_lower_bounds=np.array([0.0, 0.0, -0.50, -0.50, -0.30]),
+        control_upper_bounds=np.array([0.65, 0.10, 0.50, 0.50, 0.30]),
     )
     plant = StandardVtolTransitionRateModel(controller.model.plant)
     profile = McForwardProfile(

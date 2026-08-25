@@ -132,6 +132,7 @@ target ground-forward speed: 3.0 m/s
 reference acceleration:      najviše 0.75 m/s^2
 hold:                         2.0 s
 pusher hard limit:            0.10
+pusher NMPC/OCP limit:        0.10
 pusher slew:                  0.03 /s
 minimum final hover settle:   3.0 s
 ```
@@ -305,7 +306,11 @@ ULog je izdvojio bočnu oscilaciju, pa Gate A sada koristi zaseban roll limit
 uzima samo direktne raw PX4 timesync uzorke i između njih interpolira boot sat
 monotonic wall satom i izmjerenim Gazebo real-time faktorom. DDS-prevedeni
 apsolutni timestampovi više ne učestvuju u schedulingu ni freshness odluci.
-Završni ponovljivi live ULog PASS je još otvoren prije Gatea B.
+ULog `06_16_38` zatim je pokazao stvarni dinamički overshoot: NMPC je interno
+tražio pusher `0.60`, a izlaz i PX4 su ispravno izvršavali najviše `0.10`.
+Gate A zato sada koristi zaseban OCP čija je pusher granica također `0.10`.
+Nominalni i lateralno poremećeni offline profil prolaze s vrhom približno
+`3.04 m/s`. Završni ponovljivi live ULog PASS je još otvoren prije Gatea B.
 
 Altitude handover sada zahtijeva svjež `VehicleLocalPosition.z_deriv` manji od
 `0.10 m/s`. Isti signal zatvara vertikalni hover feedback jer je direktno
