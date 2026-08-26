@@ -1,6 +1,9 @@
 import numpy as np
 
-from px4_mpc.standard_vtol_nmpc_node import _status_tracking_values
+from px4_mpc.standard_vtol_nmpc_node import (
+    _state_age_limits,
+    _status_tracking_values,
+)
 
 
 def test_status_before_hover_reference_does_not_access_missing_hold_state():
@@ -13,3 +16,9 @@ def test_status_before_hover_reference_does_not_access_missing_hold_state():
 
     assert tracking_error == [0.0] * 6
     assert displacement == "none"
+
+
+def test_pretransition_allows_only_the_measured_bounded_dds_gap():
+    assert _state_age_limits(False, "pretransition_5mps") == (0.20, 0.20)
+    assert _state_age_limits(True, "pusher_forward") == (0.30, 0.20)
+    assert _state_age_limits(True, "pretransition_5mps") == (0.45, 0.45)

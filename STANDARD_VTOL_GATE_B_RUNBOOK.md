@@ -155,7 +155,10 @@ param show VT_EXT_PUSH_MAX
 param show VT_EXT_PUSH_SLEW
 ```
 
-Mora prikazati `1`, `0.15`, `0.10`.
+Mora prikazati `1`, `0.15`, `0.10`. Ne potvrđivati run skripti samo zato što
+su komande ukucane; pročitati stvarni izlaz svake `param show` komande. Prvi
+B1 pokušaj je ULogom pokazao `enabled=0,max=0.05`, pa taj let nije dokazao
+stvarni pusher i ne smije se ponoviti bez ove provjere.
 
 ### 3. Terminal 2 — DDS Agent
 
@@ -237,10 +240,10 @@ cd /home/imran/Repositories/px4-mpc
 bash scripts/run_pretransition_5mps_gate.bash
 ```
 
-Skripta ponovo provjerava profil, svjež airspeed tok i PX4 parametre. Negativan
-synthetic CAS oko hovera je dozvoljen ako piše `available=True`; tokom leta
-peak CAS mora dostići najmanje `4.0 m/s`. Ne pozivati enable servis ručno.
-Očekivani završetak je:
+Skripta ponovo provjerava profil i svjež airspeed tok, a operator mora prepisati
+tačno `1,0.15,0.10` tek nakon provjere PX4 izlaza. Negativan synthetic CAS oko
+hovera je dozvoljen ako piše `available=True`; tokom leta peak CAS mora dostići
+najmanje `4.0 m/s`. Ne pozivati enable servis ručno. Očekivani završetak je:
 
 ```text
 abort_reason=pretransition_5mps_test_timeout
@@ -252,6 +255,11 @@ ROS_GATE=PASS
 Ako vidiš rastuću oscilaciju, veliki pad/penjanje ili promjenu iz MC režima,
 odmah izaberi Position mode. Svaki drugi `abort_reason` je FAIL i let se ne
 ponavlja prije ULog analize.
+
+Prvi B1 pokušaj abortirao je na DDS odometry gapu `0.365 s`, dok je interni
+PX4 `vehicle_local_position` ostao kontinuiran sa maksimalnim gapom `0.044 s`.
+B1 zato dozvoljava najviše `0.45 s` state gapa; Gate A limiti ostaju
+nepromijenjeni. Gap veći od `0.45 s` i dalje odmah vraća Position mode.
 
 ### 8. ULog analiza
 

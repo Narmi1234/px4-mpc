@@ -64,13 +64,22 @@ def _status_tracking_values(
     return tracking_error, displacement
 
 
+def _state_age_limits(active: bool, test_mode: str) -> tuple[float, float]:
+    """Return wall/PX4 odometry limits for one operating mode."""
+    if not active:
+        return 0.20, 0.20
+    if test_mode == "pretransition_5mps":
+        # The first B1 run recorded a 0.365 s DDS-only receive gap while PX4's
+        # internal local-position log remained continuous at <=44 ms. Allow a
+        # bounded bridge hiccup, but abort before 0.5 s of unobserved flight.
+        return 0.45, 0.45
+    return 0.30, 0.20
+
+
 class StandardVtolNmpcNode(Node):
     """Solve continuously in shadow mode and run explicit guarded MC gates."""
 
     HANDOVER_FREEZE_SECONDS = 0.5
-    PREFLIGHT_STATE_WALL_AGE_SECONDS = 0.20
-    ACTIVE_STATE_WALL_AGE_SECONDS = 0.30
-    ACTIVE_STATE_PX4_AGE_SECONDS = 0.20
 
     def __init__(self) -> None:
         super().__init__("standard_vtol_nmpc")
@@ -480,15 +489,11 @@ class StandardVtolNmpcNode(Node):
         )
 
     def _state_is_stale(self, active: bool) -> bool:
-        wall_limit = (
-            self.ACTIVE_STATE_WALL_AGE_SECONDS
-            if active
-            else self.PREFLIGHT_STATE_WALL_AGE_SECONDS
-        )
+        wall_limit, px4_limit = _state_age_limits(active, self.test_mode)
         return (
             self.state is None
             or self._state_age() > wall_limit
-            or self._state_px4_age() > self.ACTIVE_STATE_PX4_AGE_SECONDS
+            or self._state_px4_age() > px4_limit
         )
 
     def _vertical_position_rate_age(self) -> float:

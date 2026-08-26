@@ -55,9 +55,9 @@ if [[ "${PX4_PUSHER_PARAMS_CONFIRMED:-}" != "YES" ]]; then
   echo "  param show VT_EXT_PUSH_EN"
   echo "  param show VT_EXT_PUSH_MAX"
   echo "  param show VT_EXT_PUSH_SLEW"
-  read -r -p "Type YES only if PX4 displayed 1, 0.15, 0.10: " \
+  read -r -p "Type exactly 1,0.15,0.10 after PX4 displayed those values: " \
     _PX4_PARAMETER_CONFIRMATION
-  if [[ "${_PX4_PARAMETER_CONFIRMATION}" != "YES" ]]; then
+  if [[ "${_PX4_PARAMETER_CONFIRMATION}" != "1,0.15,0.10" ]]; then
     echo "Gate B1 cancelled. No Offboard or pusher command was sent."
     exit 1
   fi
