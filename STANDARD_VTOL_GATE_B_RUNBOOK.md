@@ -33,8 +33,10 @@ Implementirano je:
    `0.40 m/s^2`, hold `3 s` i najmanje `4 s` završnog hovera.
 3. OCP i PX4 pusher hard limit `0.15`; ne koristiti generički OCP limit
    `0.60`.
-4. Calibrated airspeed mora biti fresh, finite i valid prije starta i tokom
-   aktivnog profila. Ground-forward speed ostaje feedback za path/geofence.
+4. Airspeed tok mora biti fresh, finite i imati aktivan source prije starta i
+   tokom profila. Synthetic CAS može biti negativan oko stationary hovera;
+   pozitivan CAS se zahtijeva tek tokom ubrzanja. Ground-forward speed ostaje
+   feedback za path/geofence.
 5. Dokazani Gate A cross-track regulator i simetrični pitch barrier ostaju
    aktivni.
 6. Dokazani vertical-hover collective regulator ostaje stvarna komanda u B1.
@@ -214,7 +216,7 @@ solver_failures=0
 state_age < 0.20s
 state_px4_age < 0.20s
 px4_clock=[sync=True,...]
-airspeed=[...,valid=True]
+airspeed=[...,available=True,...]
 pretransition_profile=[speed=5.0,accel=0.40,hold=3.0]
 nmpc_pusher_max=0.150
 ```
@@ -235,8 +237,10 @@ cd /home/imran/Repositories/px4-mpc
 bash scripts/run_pretransition_5mps_gate.bash
 ```
 
-Skripta ponovo provjerava profil, airspeed i PX4 parametre. Ne pozivati enable
-servis ručno. Očekivani završetak je:
+Skripta ponovo provjerava profil, svjež airspeed tok i PX4 parametre. Negativan
+synthetic CAS oko hovera je dozvoljen ako piše `available=True`; tokom leta
+peak CAS mora dostići najmanje `4.0 m/s`. Ne pozivati enable servis ručno.
+Očekivani završetak je:
 
 ```text
 abort_reason=pretransition_5mps_test_timeout

@@ -40,8 +40,8 @@ _PREFLIGHT_STATUS="$(
 printf '%s\n' "${_PREFLIGHT_STATUS}"
 if [[ "${_PREFLIGHT_STATUS}" != *"pretransition_profile=[speed=5.0,accel=0.40,hold=3.0]"* ||
       "${_PREFLIGHT_STATUS}" != *"nmpc_pusher_max=0.150"* ||
-      "${_PREFLIGHT_STATUS}" != *"valid=True"* ]]; then
-  echo "Gate B1 pre-flight configuration or airspeed is invalid."
+      "${_PREFLIGHT_STATUS}" != *"available=True"* ]]; then
+  echo "Gate B1 pre-flight configuration or airspeed stream is unavailable."
   echo "No Offboard or pusher command was sent."
   exit 1
 fi

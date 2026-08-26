@@ -514,10 +514,22 @@ class StandardVtolNmpcNode(Node):
     def _airspeed_is_valid(self) -> bool:
         value = self._calibrated_airspeed()
         return (
+            self._airspeed_is_available()
+            and value >= 0.0
+        )
+
+    def _airspeed_is_available(self) -> bool:
+        """Return whether a fresh finite airspeed stream and source exist.
+
+        PX4's synthetic source can report a negative calibrated value around
+        stationary hover. That sample is not a valid airspeed measurement, but
+        it still proves that the stream needed by B1 is alive. Positive CAS is
+        required later, once the aircraft has accelerated.
+        """
+        return (
             self.airspeed is not None
             and self._airspeed_age() <= 0.5
-            and np.isfinite(value)
-            and value >= 0.0
+            and np.isfinite(self._calibrated_airspeed())
             and self.airspeed.airspeed_source
             != AirspeedValidated.SOURCE_DISABLED
         )
@@ -760,9 +772,9 @@ class StandardVtolNmpcNode(Node):
             response.success = False
             response.message = reason
             return response
-        if not self._airspeed_is_valid():
+        if not self._airspeed_is_available():
             response.success = False
-            response.message = "airspeed_not_valid_for_pretransition"
+            response.message = "airspeed_stream_unavailable_for_pretransition"
             return response
         if np.linalg.norm(self.state[3:5]) > 0.15:
             response.success = False
@@ -874,7 +886,9 @@ class StandardVtolNmpcNode(Node):
             f", px4_clock=[sync={self.px4_timebase.synchronized},"
             f"boot_us={self.px4_timebase.latest_px4_us}]"
             f", airspeed=[cas={airspeed:.3f},source={airspeed_source},"
-            f"age={self._airspeed_age():.3f}s,valid={self._airspeed_is_valid()}]"
+            f"age={self._airspeed_age():.3f}s,"
+            f"available={self._airspeed_is_available()},"
+            f"valid={self._airspeed_is_valid()}]"
             f", solve_time_p99={solve_time_p99:.2f}ms"
             f", last_command_ack={self.last_command_ack}"
             f", control={np.round(self.last_command, 4).tolist()}"
@@ -1172,8 +1186,8 @@ class StandardVtolNmpcNode(Node):
             reference_speed = self.pretransition_profile.sample(
                 self._profile_elapsed()
             ).speed
-            if reference_speed >= 2.0 and not self._airspeed_is_valid():
-                return "airspeed_invalid_during_pretransition"
+            if reference_speed >= 2.0 and not self._airspeed_is_available():
+                return "airspeed_stream_lost_during_pretransition"
         if self.solver_failures >= 3:
             return "three_solver_failures"
         if (
