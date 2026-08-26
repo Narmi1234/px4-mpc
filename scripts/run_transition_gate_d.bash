@@ -22,7 +22,7 @@ fi
 echo "Pre-flight NMPC status:"
 _PREFLIGHT="$(ros2 service call "${_STATUS_SERVICE}" std_srvs/srv/Trigger '{}')"
 printf '%s\n' "${_PREFLIGHT}"
-if [[ "${_PREFLIGHT}" != *"configured_timeout=90.0s"* ||
+if [[ "${_PREFLIGHT}" != *"gate_d_config=[enabled=True,timeout=90.0,pusher_max=0.300]"* ||
       "${_PREFLIGHT}" != *"nmpc_pusher_max=0.300"* ||
       "${_PREFLIGHT}" != *"gate_d=[state=idle,vtol_state=3"* ||
       "${_PREFLIGHT}" != *"available=True"* ||
