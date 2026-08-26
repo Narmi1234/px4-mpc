@@ -58,6 +58,16 @@ class TestStandardVtolOutput(unittest.TestCase):
         self.assertLessEqual(abs(current[3]), 0.20)
         self.assertLessEqual(abs(current[4]), 0.15)
 
+    def test_pusher_forward_limiter_accepts_b1_pusher_envelope(self):
+        previous = np.array([0.52, 0.10, 0.0, 0.0, 0.0])
+        requested = np.array([0.52, 0.30, 0.0, 0.0, 0.0])
+        current = previous
+        for _ in range(100):
+            current = limit_pusher_forward_command(
+                current, requested, dt=0.05, pusher_limit=0.15
+            )
+        self.assertAlmostEqual(current[1], 0.15)
+
     def test_vertical_law_is_neutral_at_hover(self):
         plant = StandardVtolGazeboModel()
         self.assertAlmostEqual(

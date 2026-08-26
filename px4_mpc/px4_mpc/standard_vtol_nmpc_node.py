@@ -93,6 +93,12 @@ class StandardVtolNmpcNode(Node):
         self.declare_parameter("pusher_forward_acceleration", 0.50)
         self.declare_parameter("pusher_forward_hold_seconds", 2.0)
         self.declare_parameter("pusher_forward_start_delay_seconds", 2.0)
+        self.declare_parameter("allow_pretransition_output", False)
+        self.declare_parameter("pretransition_test_max_seconds", 49.0)
+        self.declare_parameter("pretransition_target_speed", 5.0)
+        self.declare_parameter("pretransition_acceleration", 0.40)
+        self.declare_parameter("pretransition_hold_seconds", 3.0)
+        self.declare_parameter("pretransition_start_delay_seconds", 2.0)
         self.allow_output = bool(self.get_parameter("allow_offboard_output").value)
         self.max_offboard_seconds = float(
             self.get_parameter("hover_offboard_max_seconds").value
@@ -150,14 +156,44 @@ class StandardVtolNmpcNode(Node):
                 self.get_parameter("pusher_forward_start_delay_seconds").value
             ),
         )
-        self.nmpc_pusher_max = 0.10 if self.allow_pusher_forward else 0.60
-        if self.allow_pusher_forward:
+        self.allow_pretransition = bool(
+            self.get_parameter("allow_pretransition_output").value
+        )
+        self.pretransition_test_max_seconds = float(
+            self.get_parameter("pretransition_test_max_seconds").value
+        )
+        self.pretransition_profile = McForwardProfile(
+            target_speed=float(
+                self.get_parameter("pretransition_target_speed").value
+            ),
+            acceleration=float(
+                self.get_parameter("pretransition_acceleration").value
+            ),
+            hold_seconds=float(
+                self.get_parameter("pretransition_hold_seconds").value
+            ),
+            start_delay_seconds=float(
+                self.get_parameter("pretransition_start_delay_seconds").value
+            ),
+        )
+        if self.allow_pretransition:
+            self.nmpc_pusher_max = 0.15
+        elif self.allow_pusher_forward:
+            self.nmpc_pusher_max = 0.10
+        else:
+            self.nmpc_pusher_max = 0.60
+        if self.allow_pusher_forward or self.allow_pretransition:
             # Gate A must be optimized with the pusher envelope that the
             # output safety layer and custom PX4 branch can execute. Planning
             # with the generic 0.60 transition limit and clipping to 0.10
             # afterward invalidates NMPC's speed and braking prediction.
+            build_name = (
+                "standard_vtol_nmpc_gate_b1_pusher_015"
+                if self.allow_pretransition
+                else "standard_vtol_nmpc_gate_a_pusher_010"
+            )
             self.controller = StandardVtolNmpc(
-                build_directory="build/standard_vtol_nmpc_gate_a_pusher_010",
+                build_directory=f"build/{build_name}",
                 control_lower_bounds=np.array(
                     [0.0, 0.0, -0.50, -0.50, -0.30]
                 ),
@@ -300,6 +336,11 @@ class StandardVtolNmpcNode(Node):
         )
         self.create_service(
             Trigger,
+            "/standard_vtol_nmpc/enable_pretransition_5mps_test",
+            self._enable_pretransition,
+        )
+        self.create_service(
+            Trigger,
             "/standard_vtol_nmpc/capture_hover_reference",
             self._capture_hover_reference,
         )
@@ -315,6 +356,8 @@ class StandardVtolNmpcNode(Node):
             mode += " plus guarded external pusher"
         if self.allow_pusher_forward:
             mode += " plus guarded 3 m/s pusher feedback"
+        if self.allow_pretransition:
+            mode += " plus guarded 5 m/s MC pre-transition"
         self.get_logger().info(f"Standard VTOL NMPC started in {mode} mode")
 
     def _odometry(self, message: VehicleOdometry) -> None:
@@ -663,6 +706,7 @@ class StandardVtolNmpcNode(Node):
             and np.isclose(profile.hold_seconds, 2.0)
             and np.isclose(profile.start_delay_seconds, 2.0)
             and np.isclose(self.pusher_forward_test_max_seconds, 26.5)
+            and np.isclose(self.nmpc_pusher_max, 0.10)
         )
         if not first_gate_configuration:
             response.success = False
@@ -681,6 +725,54 @@ class StandardVtolNmpcNode(Node):
         response.success = True
         response.message = (
             "3.0 m/s MC pusher-feedback prestream started; "
+            "PX4 Offboard follows after 1 s"
+        )
+        return response
+
+    def _enable_pretransition(self, _request, response):
+        if (
+            not self.allow_output
+            or not self.allow_external_pusher
+            or not self.allow_pretransition
+        ):
+            response.success = False
+            response.message = (
+                "launch with allow_offboard_output:=true, "
+                "allow_external_pusher_output:=true and "
+                "allow_pretransition_output:=true first"
+            )
+            return response
+        profile = self.pretransition_profile
+        b1_configuration = (
+            np.isclose(profile.target_speed, 5.0)
+            and np.isclose(profile.acceleration, 0.40)
+            and np.isclose(profile.hold_seconds, 3.0)
+            and np.isclose(profile.start_delay_seconds, 2.0)
+            and np.isclose(self.pretransition_test_max_seconds, 49.0)
+            and np.isclose(self.nmpc_pusher_max, 0.15)
+        )
+        if not b1_configuration:
+            response.success = False
+            response.message = "pretransition_profile_not_gate_b1_configuration"
+            return response
+        ready, reason = self._ready_for_hover()
+        if not ready:
+            response.success = False
+            response.message = reason
+            return response
+        if not self._airspeed_is_valid():
+            response.success = False
+            response.message = "airspeed_not_valid_for_pretransition"
+            return response
+        if np.linalg.norm(self.state[3:5]) > 0.15:
+            response.success = False
+            response.message = "pretransition_handover_speed_too_high"
+            return response
+        self._start_output("pretransition_5mps")
+        response.success = True
+        response.message = (
+            "5.0 m/s MC pre-transition prestream started; "
+            "collective remains validated hover feedback, "
             "PX4 Offboard follows after 1 s"
         )
         return response
@@ -708,6 +800,8 @@ class StandardVtolNmpcNode(Node):
         return response
 
     def _active_timeout(self) -> float:
+        if self.test_mode == "pretransition_5mps":
+            return self.pretransition_test_max_seconds
         if self.test_mode == "pusher_forward":
             return self.pusher_forward_test_max_seconds
         if self.test_mode == "external_pusher":
@@ -768,6 +862,9 @@ class StandardVtolNmpcNode(Node):
             f", pusher_forward_profile=[speed={self.pusher_forward_profile.target_speed:.1f},"
             f"accel={self.pusher_forward_profile.acceleration:.2f},"
             f"hold={self.pusher_forward_profile.hold_seconds:.1f}]"
+            f", pretransition_profile=[speed={self.pretransition_profile.target_speed:.1f},"
+            f"accel={self.pretransition_profile.acceleration:.2f},"
+            f"hold={self.pretransition_profile.hold_seconds:.1f}]"
             f", nmpc_pusher_max={self.nmpc_pusher_max:.3f}"
             f", last_offboard_duration={self.last_offboard_duration:.2f}s"
             f", last_wall_offboard_duration={self.last_wall_offboard_duration:.2f}s"
@@ -811,8 +908,13 @@ class StandardVtolNmpcNode(Node):
                 sample,
                 self.controller.model.plant.gravity,
             )
-        elif self.test_mode == "pusher_forward":
-            sample = self.pusher_forward_profile.sample(profile_time)
+        elif self.test_mode in ("pusher_forward", "pretransition_5mps"):
+            profile = (
+                self.pretransition_profile
+                if self.test_mode == "pretransition_5mps"
+                else self.pusher_forward_profile
+            )
+            sample = profile.sample(profile_time)
             reference = pusher_forward_reference_state(
                 self.hold_state,
                 self.forward_direction,
@@ -822,8 +924,16 @@ class StandardVtolNmpcNode(Node):
 
     def _references(self):
         base_time = self._profile_elapsed()
-        if self.test_mode == "pusher_forward" and self.hold_state is not None:
-            base_sample = self.pusher_forward_profile.sample(base_time)
+        if (
+            self.test_mode in ("pusher_forward", "pretransition_5mps")
+            and self.hold_state is not None
+        ):
+            profile = (
+                self.pretransition_profile
+                if self.test_mode == "pretransition_5mps"
+                else self.pusher_forward_profile
+            )
+            base_sample = profile.sample(base_time)
             x_ref = np.vstack(
                 [
                     pusher_forward_speed_reference_state(
@@ -831,7 +941,7 @@ class StandardVtolNmpcNode(Node):
                         self.state,
                         self.forward_direction,
                         base_sample,
-                        self.pusher_forward_profile.sample(
+                        profile.sample(
                             base_time + stage * self.controller.dt
                         ),
                     )
@@ -855,6 +965,8 @@ class StandardVtolNmpcNode(Node):
             self.profile_phase = self.pusher_forward_profile.sample(
                 base_time
             ).phase
+        elif self.test_mode == "pretransition_5mps":
+            self.profile_phase = self.pretransition_profile.sample(base_time).phase
         elif self.test_mode == "external_pusher":
             self.profile_phase = self.external_pusher_profile.sample(base_time).phase
         elif self.output_requested:
@@ -868,16 +980,18 @@ class StandardVtolNmpcNode(Node):
                 ).command
                 for stage in range(self.controller.N)
             ]
-        elif self.test_mode == "pusher_forward":
+        elif self.test_mode in ("pusher_forward", "pretransition_5mps"):
+            profile = (
+                self.pretransition_profile
+                if self.test_mode == "pretransition_5mps"
+                else self.pusher_forward_profile
+            )
             u_ref[:, 1] = [
                 pusher_forward_feedforward(
                     self.controller.model.plant,
-                    self.pusher_forward_profile.sample(
-                        base_time + stage * self.controller.dt
-                    ).speed,
-                    self.pusher_forward_profile.sample(
-                        base_time + stage * self.controller.dt
-                    ).acceleration,
+                    profile.sample(base_time + stage * self.controller.dt).speed,
+                    profile.sample(base_time + stage * self.controller.dt).acceleration,
+                    command_limit=self.nmpc_pusher_max,
                 )
                 for stage in range(self.controller.N)
             ]
@@ -967,15 +1081,25 @@ class StandardVtolNmpcNode(Node):
             return "vehicle_not_in_mc_mode"
         if self.hold_state is None:
             return "hold_state_missing"
-        altitude_limit = 0.30 if self.test_mode == "pusher_forward" else 0.5
+        if self.test_mode == "pusher_forward":
+            altitude_limit = 0.30
+        elif self.test_mode == "pretransition_5mps":
+            altitude_limit = 0.40
+        else:
+            altitude_limit = 0.5
         if abs(self.state[2] - self.hold_state[2]) > altitude_limit:
             return "altitude_error"
-        if abs(self.state[5]) > 0.75:
+        vertical_speed_limit = (
+            1.0 if self.test_mode == "pretransition_5mps" else 0.75
+        )
+        if abs(self.state[5]) > vertical_speed_limit:
             return "vertical_speed_limit"
         if self.test_mode == "mc_forward":
             horizontal_speed_limit = 2.7
         elif self.test_mode == "pusher_forward":
             horizontal_speed_limit = 3.5
+        elif self.test_mode == "pretransition_5mps":
+            horizontal_speed_limit = 5.75
         elif self.test_mode == "external_pusher":
             horizontal_speed_limit = 1.5
         else:
@@ -983,41 +1107,73 @@ class StandardVtolNmpcNode(Node):
         if np.linalg.norm(self.state[3:5]) > horizontal_speed_limit:
             return "horizontal_speed_limit"
         delta_xy = self.state[0:2] - self.hold_state[0:2]
-        if self.test_mode in ("mc_forward", "pusher_forward"):
+        if self.test_mode in (
+            "mc_forward",
+            "pusher_forward",
+            "pretransition_5mps",
+        ):
             profile = (
-                self.pusher_forward_profile
-                if self.test_mode == "pusher_forward"
-                else self.forward_profile
+                self.pretransition_profile
+                if self.test_mode == "pretransition_5mps"
+                else (
+                    self.pusher_forward_profile
+                    if self.test_mode == "pusher_forward"
+                    else self.forward_profile
+                )
             )
             normal = np.array(
                 [-self.forward_direction[1], self.forward_direction[0]]
             )
             along_track = float(np.dot(delta_xy, self.forward_direction))
             cross_track = abs(float(np.dot(delta_xy, normal)))
-            end_margin = 3.0 if self.test_mode == "pusher_forward" else 2.0
+            if self.test_mode == "pretransition_5mps":
+                end_margin = 5.0
+            elif self.test_mode == "pusher_forward":
+                end_margin = 3.0
+            else:
+                end_margin = 2.0
             if (
                 along_track < -1.0
                 or along_track > profile.final_distance + end_margin
             ):
                 return "forward_geofence"
             cross_track_limit = (
-                1.0 if self.test_mode == "pusher_forward" else 1.5
+                1.0
+                if self.test_mode in ("pusher_forward", "pretransition_5mps")
+                else 1.5
             )
             if cross_track > cross_track_limit:
                 return "cross_track_limit"
             if (
-                self.current_reference is not None
-                and np.linalg.norm(self.state[0:2] - self.current_reference[0:2])
-                > (2.0 if self.test_mode == "pusher_forward" else 1.5)
-            ):
+                    self.current_reference is not None
+                    and np.linalg.norm(self.state[0:2] - self.current_reference[0:2])
+                    > (
+                        2.0
+                        if self.test_mode in (
+                            "pusher_forward",
+                            "pretransition_5mps",
+                        )
+                        else 1.5
+                    )
+                ):
                 return "horizontal_tracking_error"
         elif self.test_mode == "external_pusher" and np.linalg.norm(delta_xy) > 3.0:
             return "external_pusher_geofence"
         elif np.linalg.norm(delta_xy) > 5.0:
             return "horizontal_geofence"
-        tilt_limit = 10.0 if self.test_mode == "pusher_forward" else 25.0
+        tilt_limit = (
+            10.0
+            if self.test_mode in ("pusher_forward", "pretransition_5mps")
+            else 25.0
+        )
         if self._tilt_degrees() > tilt_limit:
             return "tilt_limit"
+        if self.test_mode == "pretransition_5mps":
+            reference_speed = self.pretransition_profile.sample(
+                self._profile_elapsed()
+            ).speed
+            if reference_speed >= 2.0 and not self._airspeed_is_valid():
+                return "airspeed_invalid_during_pretransition"
         if self.solver_failures >= 3:
             return "three_solver_failures"
         if (
@@ -1026,6 +1182,28 @@ class StandardVtolNmpcNode(Node):
             and self.px4_timebase.active
             and self._offboard_elapsed() >= self._active_timeout()
         ):
+            if self.test_mode == "pretransition_5mps":
+                if self.max_forward_speed < 4.25:
+                    return "pretransition_speed_not_reached"
+                if self.max_forward_speed > 5.75:
+                    return "pretransition_speed_overshoot"
+                if np.linalg.norm(self.state[3:5]) > 0.40:
+                    return "pretransition_test_not_stopped"
+                if self.max_calibrated_airspeed < 4.0:
+                    return "pretransition_airspeed_not_reached"
+                if self.max_commanded_pusher < 0.05:
+                    return "pretransition_pusher_not_reached"
+                if abs(self.last_command[1]) > 0.005:
+                    return "pretransition_pusher_not_zero_at_end"
+                if (
+                    self.current_reference is None
+                    or np.linalg.norm(
+                        self.state[0:2] - self.current_reference[0:2]
+                    )
+                    > 1.0
+                ):
+                    return "pretransition_final_position_error"
+                return "pretransition_5mps_test_timeout"
             if self.test_mode == "pusher_forward":
                 if self.max_forward_speed < 2.5:
                     return "pusher_forward_speed_not_reached"
@@ -1183,12 +1361,13 @@ class StandardVtolNmpcNode(Node):
                 self.max_commanded_pusher = max(
                     self.max_commanded_pusher, self.last_command[1]
                 )
-            elif self.test_mode == "pusher_forward":
+            elif self.test_mode in ("pusher_forward", "pretransition_5mps"):
                 previous_command = self.last_command.copy()
                 self.last_command = limit_pusher_forward_command(
                     self.last_command,
                     requested_control,
                     control_dt,
+                    pusher_limit=self.nmpc_pusher_max,
                 )
                 normal = np.array(
                     [-self.forward_direction[1], self.forward_direction[0]]
@@ -1211,12 +1390,17 @@ class StandardVtolNmpcNode(Node):
                         self.current_reference[3:5], self.forward_direction
                     )
                 )
+                target_speed = (
+                    self.pretransition_profile.target_speed
+                    if self.test_mode == "pretransition_5mps"
+                    else self.pusher_forward_profile.target_speed
+                )
                 self.last_command = govern_pusher_forward_envelope(
                     previous_command,
                     self.last_command,
                     forward_speed,
                     reference_speed,
-                    self.pusher_forward_profile.target_speed,
+                    target_speed,
                     self._pitch_angle(),
                     control_dt,
                 )
@@ -1232,6 +1416,7 @@ class StandardVtolNmpcNode(Node):
             *self.last_command.tolist(),
             float(solution.status),
             1000.0 * solution.solve_time,
+            *self.last_raw_control.tolist(),
         ]
         self.diagnostic_publisher.publish(diagnostic)
 

@@ -32,6 +32,16 @@ def generate_launch_description():
     pusher_forward_delay = LaunchConfiguration(
         "pusher_forward_start_delay_seconds"
     )
+    allow_pretransition = LaunchConfiguration("allow_pretransition_output")
+    pretransition_seconds = LaunchConfiguration("pretransition_test_max_seconds")
+    pretransition_speed = LaunchConfiguration("pretransition_target_speed")
+    pretransition_acceleration = LaunchConfiguration(
+        "pretransition_acceleration"
+    )
+    pretransition_hold = LaunchConfiguration("pretransition_hold_seconds")
+    pretransition_delay = LaunchConfiguration(
+        "pretransition_start_delay_seconds"
+    )
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -129,6 +139,36 @@ def generate_launch_description():
                 default_value="2.0",
                 description="Gate A stationary warm-up before acceleration",
             ),
+            DeclareLaunchArgument(
+                "allow_pretransition_output",
+                default_value="false",
+                description="Allow the guarded Gate B1 5 m/s MC test",
+            ),
+            DeclareLaunchArgument(
+                "pretransition_test_max_seconds",
+                default_value="49.0",
+                description="PX4-time timeout for the Gate B1 profile",
+            ),
+            DeclareLaunchArgument(
+                "pretransition_target_speed",
+                default_value="5.0",
+                description="Gate B1 forward-speed reference in m/s",
+            ),
+            DeclareLaunchArgument(
+                "pretransition_acceleration",
+                default_value="0.40",
+                description="Gate B1 reference acceleration in m/s^2",
+            ),
+            DeclareLaunchArgument(
+                "pretransition_hold_seconds",
+                default_value="3.0",
+                description="Gate B1 hold time at peak speed",
+            ),
+            DeclareLaunchArgument(
+                "pretransition_start_delay_seconds",
+                default_value="2.0",
+                description="Gate B1 stationary warm-up before acceleration",
+            ),
             Node(
                 package="px4_mpc",
                 executable="standard_vtol_nmpc",
@@ -155,6 +195,12 @@ def generate_launch_description():
                         "pusher_forward_acceleration": pusher_forward_acceleration,
                         "pusher_forward_hold_seconds": pusher_forward_hold,
                         "pusher_forward_start_delay_seconds": pusher_forward_delay,
+                        "allow_pretransition_output": allow_pretransition,
+                        "pretransition_test_max_seconds": pretransition_seconds,
+                        "pretransition_target_speed": pretransition_speed,
+                        "pretransition_acceleration": pretransition_acceleration,
+                        "pretransition_hold_seconds": pretransition_hold,
+                        "pretransition_start_delay_seconds": pretransition_delay,
                     }
                 ],
             ),

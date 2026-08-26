@@ -188,8 +188,10 @@ prvo analizirati status i ULog.
 ## Gate B — MC pre-transition envelope
 
 Tačan redoslijed implementacije i acceptance kriteriji su u
-`STANDARD_VTOL_GATE_B_RUNBOOK.md`. Neposredni korak je B0 implementacija i
-offline provjera; još nema odobrene Gate B live komande.
+`STANDARD_VTOL_GATE_B_RUNBOOK.md`. B0 implementacija, nominalna simulacija i
+disturbance simulacija su PASS. Neposredni naredni eksperiment je jedan B1
+`5 m/s` MC let po tačnim komandama iz runbooka; još nema transition komande ni
+aktivnog lift-unloadinga.
 
 Tek nakon Gate A rade se odvojeni letovi na `5 m/s`, zatim `8 m/s`. Još nema
 VTOL transition komande.

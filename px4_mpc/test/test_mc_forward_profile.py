@@ -56,6 +56,18 @@ class TestMcForwardProfile(unittest.TestCase):
         with self.assertRaises(ValueError):
             McForwardProfile(start_delay_seconds=-0.1)
 
+    def test_gate_b1_profile_duration_and_distance(self):
+        profile = McForwardProfile(
+            target_speed=5.0,
+            acceleration=0.40,
+            hold_seconds=3.0,
+            start_delay_seconds=2.0,
+        )
+        self.assertAlmostEqual(profile.acceleration_seconds, 6.25 * np.pi)
+        self.assertAlmostEqual(profile.profile_seconds, 5.0 + 12.5 * np.pi)
+        self.assertAlmostEqual(profile.final_distance, 15.0 + 31.25 * np.pi)
+        self.assertLess(profile.profile_seconds + 0.5 + 4.0, 49.0)
+
     def test_reference_follows_heading_and_feedforward_pitch(self):
         hold = np.zeros(10)
         hold[6:10] = [np.sqrt(0.5), 0.0, 0.0, np.sqrt(0.5)]

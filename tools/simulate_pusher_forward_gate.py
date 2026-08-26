@@ -51,7 +51,14 @@ def quaternion_product(left, right):
     )
 
 
-def references(controller, profile, hold_state, current_state, profile_time):
+def references(
+    controller,
+    profile,
+    hold_state,
+    current_state,
+    profile_time,
+    pusher_limit,
+):
     """Build the exact Gate A horizon for yaw zero."""
     direction = np.array([1.0, 0.0])
     samples = [
@@ -78,6 +85,7 @@ def references(controller, profile, hold_state, current_state, profile_time):
             controller.model.plant,
             sample.speed,
             sample.acceleration,
+            command_limit=pusher_limit,
         )
         for sample in samples[:-1]
     ]
@@ -93,6 +101,13 @@ def main() -> None:
     parser.add_argument("--acceleration", type=float, default=0.50)
     parser.add_argument("--hold-seconds", type=float, default=2.0)
     parser.add_argument("--start-delay-seconds", type=float, default=2.0)
+    parser.add_argument("--pusher-limit", type=float, default=0.10)
+    parser.add_argument("--minimum-peak-speed", type=float, default=2.5)
+    parser.add_argument("--maximum-speed", type=float, default=3.5)
+    parser.add_argument("--maximum-final-speed", type=float, default=0.35)
+    parser.add_argument("--maximum-altitude-error", type=float, default=0.30)
+    parser.add_argument("--maximum-cross-track", type=float, default=1.0)
+    parser.add_argument("--maximum-tilt-degrees", type=float, default=10.0)
     parser.add_argument("--initial-lateral-speed", type=float, default=0.0)
     parser.add_argument("--initial-forward-speed", type=float, default=0.0)
     parser.add_argument("--forward-gust-speed", type=float, default=0.0)
@@ -127,9 +142,14 @@ def main() -> None:
     arguments = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     controller = StandardVtolNmpc(
-        build_directory=root / "build/standard_vtol_nmpc_gate_a_pusher_010",
+        build_directory=root / (
+            "build/standard_vtol_nmpc_offline_pusher_"
+            f"{round(1000.0 * arguments.pusher_limit):03d}"
+        ),
         control_lower_bounds=np.array([0.0, 0.0, -0.50, -0.50, -0.30]),
-        control_upper_bounds=np.array([0.65, 0.10, 0.50, 0.50, 0.30]),
+        control_upper_bounds=np.array(
+            [0.65, arguments.pusher_limit, 0.50, 0.50, 0.30]
+        ),
     )
     plant = StandardVtolTransitionRateModel(controller.model.plant)
     profile = McForwardProfile(
@@ -184,7 +204,12 @@ def main() -> None:
             state[6:10] /= np.linalg.norm(state[6:10])
         profile_time = max(0.0, elapsed - 0.5)
         x_ref, u_ref, parameters = references(
-            controller, profile, hold_state, state, profile_time
+            controller,
+            profile,
+            hold_state,
+            state,
+            profile_time,
+            arguments.pusher_limit,
         )
         solution = controller.solve(state, x_ref, u_ref, parameters)
         valid = solution.status == 0 and np.all(np.isfinite(solution.control))
@@ -199,7 +224,10 @@ def main() -> None:
             )
             previous_command = command.copy()
             command = limit_pusher_forward_command(
-                previous_command, requested, controller.dt
+                previous_command,
+                requested,
+                controller.dt,
+                pusher_limit=arguments.pusher_limit,
             )
             roll = np.arctan2(
                 2.0 * (state[6] * state[7] + state[8] * state[9]),
@@ -298,16 +326,20 @@ def main() -> None:
     passed = (
         len(controls) == round(arguments.duration / controller.dt)
         and metrics["solver_failures"] == 0
-        and 2.5 <= metrics["max_speed_m_s"] <= 3.5
-        and metrics["max_horizontal_speed_m_s"] <= 3.5
-        and metrics["final_speed_m_s"] <= 0.35
+        and arguments.minimum_peak_speed
+        <= metrics["max_speed_m_s"]
+        <= arguments.maximum_speed
+        and metrics["max_horizontal_speed_m_s"] <= arguments.maximum_speed
+        and metrics["final_speed_m_s"] <= arguments.maximum_final_speed
         and metrics["final_position_error_m"] <= 1.0
         and metrics["max_tracking_error_m"] <= 2.0
-        and metrics["max_cross_track_m"] <= 1.0
-        and metrics["max_altitude_error_m"] <= 0.30
+        and metrics["max_cross_track_m"] <= arguments.maximum_cross_track
+        and metrics["max_altitude_error_m"] <= arguments.maximum_altitude_error
         and metrics["max_vertical_speed_m_s"] <= 0.75
-        and metrics["max_tilt_deg"] <= 10.0
-        and 0.05 <= metrics["max_pusher"] <= 0.10 + 1.0e-12
+        and metrics["max_tilt_deg"] <= arguments.maximum_tilt_degrees
+        and 0.05
+        <= metrics["max_pusher"]
+        <= arguments.pusher_limit + 1.0e-12
         and metrics["final_pusher"] <= 0.005
         and metrics["solve_time_p99_ms"] <= 40.0
     )

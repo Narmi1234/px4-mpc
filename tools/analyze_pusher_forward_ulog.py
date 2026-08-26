@@ -80,6 +80,17 @@ def main() -> None:
     """Calculate Gate A metrics and print a strict PASS/FAIL decision."""
     parser = argparse.ArgumentParser()
     parser.add_argument("ulog", type=Path)
+    parser.add_argument("--minimum-duration", type=float, default=20.0)
+    parser.add_argument("--minimum-forward-speed", type=float, default=2.5)
+    parser.add_argument("--maximum-forward-speed", type=float, default=3.5)
+    parser.add_argument("--maximum-final-speed", type=float, default=0.35)
+    parser.add_argument("--maximum-altitude-error", type=float, default=0.30)
+    parser.add_argument("--maximum-vertical-speed", type=float, default=0.75)
+    parser.add_argument("--maximum-tilt-degrees", type=float, default=10.0)
+    parser.add_argument("--maximum-cross-track", type=float, default=1.0)
+    parser.add_argument("--expected-pusher-limit", type=float, default=0.10)
+    parser.add_argument("--minimum-peak-airspeed", type=float, default=0.0)
+    parser.add_argument("--require-airspeed", action="store_true")
     args = parser.parse_args()
     ulog = ULog(
         str(args.ulog),
@@ -112,6 +123,7 @@ def main() -> None:
     finite_final_pusher = final_pusher[np.isfinite(final_pusher)]
 
     commanded_pusher = np.array([], dtype=float)
+    commanded_collective = np.array([], dtype=float)
     if rates_setpoint is not None:
         rates_time = np.asarray(rates_setpoint["timestamp"], dtype=np.int64)
         rates_mask = (rates_time >= start) & (rates_time <= end)
@@ -119,6 +131,20 @@ def main() -> None:
             rates_setpoint["thrust_body[0]"], dtype=float
         )[rates_mask]
         commanded_pusher = commanded_pusher[np.isfinite(commanded_pusher)]
+        commanded_collective = -np.asarray(
+            rates_setpoint["thrust_body[2]"], dtype=float
+        )[rates_mask]
+        commanded_collective = commanded_collective[
+            np.isfinite(commanded_collective)
+        ]
+
+    lift_motor_values = np.column_stack(
+        [
+            np.asarray(motors[f"control[{index}]"], dtype=float)[motor_mask]
+            for index in range(4)
+        ]
+    ).ravel()
+    lift_motor_values = lift_motor_values[np.isfinite(lift_motor_values)]
 
     position_time = np.asarray(position["timestamp"], dtype=np.int64)
     position_mask = (position_time >= start) & (position_time <= end)
@@ -156,6 +182,7 @@ def main() -> None:
     vtol_states = np.asarray(vtol["vehicle_vtol_state"], dtype=int)[relevant]
 
     peak_airspeed = float("nan")
+    airspeed_stream_ok = False
     if airspeed is not None:
         airspeed_time = np.asarray(airspeed["timestamp"], dtype=np.int64)
         airspeed_mask = (airspeed_time >= start) & (airspeed_time <= end)
@@ -165,6 +192,14 @@ def main() -> None:
         calibrated = calibrated[np.isfinite(calibrated)]
         if len(calibrated):
             peak_airspeed = float(np.max(calibrated))
+        selected_times = airspeed_time[airspeed_mask]
+        if len(selected_times) >= 2:
+            maximum_gap = float(np.max(np.diff(selected_times))) * 1.0e-6
+            airspeed_stream_ok = (
+                selected_times[0] <= start + 500_000
+                and selected_times[-1] >= end - 500_000
+                and maximum_gap <= 0.5
+            )
 
     if not len(x) or not len(quaternion):
         raise RuntimeError("Offboard interval is missing required flight samples")
@@ -196,24 +231,40 @@ def main() -> None:
     pusher_slew = parameter_at(ulog, "VT_EXT_PUSH_SLEW", start)
     try:
         pusher_enabled_ok = int(pusher_enabled) == 1
-        pusher_max_ok = float(pusher_max) >= 0.099
+        pusher_max_ok = abs(
+            float(pusher_max) - float(args.expected_pusher_limit)
+        ) <= 0.005
     except (TypeError, ValueError):
         pusher_enabled_ok = False
         pusher_max_ok = False
     checks = {
-        "duration": duration >= 20.0,
-        "forward_speed": 2.5 <= peak_forward_speed <= 3.5,
-        "horizontal_speed": peak_horizontal_speed <= 3.5,
-        "final_speed": final_horizontal_speed <= 0.35,
+        "duration": duration >= args.minimum_duration,
+        "forward_speed": args.minimum_forward_speed
+        <= peak_forward_speed
+        <= args.maximum_forward_speed,
+        "horizontal_speed": peak_horizontal_speed <= args.maximum_forward_speed,
+        "final_speed": final_horizontal_speed <= args.maximum_final_speed,
         "pusher_parameter_enabled": pusher_enabled_ok,
         "pusher_parameter_max": pusher_max_ok,
-        "pusher_command_received": 0.049 <= peak_commanded_pusher <= 0.105,
-        "pusher_peak": 0.049 <= peak_pusher <= 0.105,
+        "pusher_command_received": 0.049
+        <= peak_commanded_pusher
+        <= args.expected_pusher_limit + 0.005,
+        "pusher_peak": 0.049
+        <= peak_pusher
+        <= args.expected_pusher_limit + 0.005,
         "pusher_returned_zero": final_pusher_value <= 0.005,
-        "altitude": max_altitude_error <= 0.30,
-        "vertical_speed": max_vertical_speed <= 0.75,
-        "tilt": max_tilt <= 10.0,
-        "cross_track": max_cross_track <= 1.0,
+        "altitude": max_altitude_error <= args.maximum_altitude_error,
+        "vertical_speed": max_vertical_speed <= args.maximum_vertical_speed,
+        "tilt": max_tilt <= args.maximum_tilt_degrees,
+        "cross_track": max_cross_track <= args.maximum_cross_track,
+        "airspeed": (
+            not args.require_airspeed
+            or (
+                airspeed_stream_ok
+                and np.isfinite(peak_airspeed)
+                and peak_airspeed >= args.minimum_peak_airspeed
+            )
+        ),
         "mc_only": len(vtol_states) > 0 and np.all(vtol_states == MC_VTOL_STATE),
     }
     print(f"offboard_duration={duration:.3f}s")
@@ -224,6 +275,16 @@ def main() -> None:
     print(f"peak_commanded_pusher={peak_commanded_pusher:.4f}")
     print(f"peak_pusher_actuator={peak_pusher:.4f}")
     print(f"final_pusher_actuator={final_pusher_value:.4f}")
+    if len(commanded_collective):
+        print(
+            "commanded_collective_range="
+            f"[{np.min(commanded_collective):.4f},{np.max(commanded_collective):.4f}]"
+        )
+    if len(lift_motor_values):
+        print(
+            "lift_motor_range="
+            f"[{np.min(lift_motor_values):.4f},{np.max(lift_motor_values):.4f}]"
+        )
     print(
         "px4_pusher_parameters="
         f"[enabled={pusher_enabled},max={pusher_max},slew={pusher_slew}]"

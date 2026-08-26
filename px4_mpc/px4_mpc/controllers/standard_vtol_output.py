@@ -46,12 +46,16 @@ def limit_pusher_forward_command(
     previous,
     requested,
     dt: float = 0.05,
+    pusher_limit: float = 0.10,
 ) -> np.ndarray:
-    """Apply the first 3 m/s MC pusher-feedback envelope."""
+    """Apply the guarded MC pusher-feedback envelope."""
     previous = np.asarray(previous, dtype=float)
     requested = np.asarray(requested, dtype=float).copy()
+    pusher_limit = float(pusher_limit)
+    if not np.isfinite(pusher_limit) or pusher_limit <= 0.0:
+        raise ValueError("pusher_limit must be positive and finite")
     requested[0] = np.clip(requested[0], 0.48, 0.56)
-    requested[1] = np.clip(requested[1], 0.0, 0.10)
+    requested[1] = np.clip(requested[1], 0.0, pusher_limit)
     # Gate A validates pusher-speed feedback close to level attitude. Live
     # ULogs showed that the wider generic MC envelope let small cross-track
     # errors drive an oscillatory roll response. Keep enough authority for
