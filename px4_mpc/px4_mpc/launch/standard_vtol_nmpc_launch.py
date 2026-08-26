@@ -55,6 +55,15 @@ def generate_launch_description():
         "lift_unloading_start_delay_seconds"
     )
     lift_unloading_maximum = LaunchConfiguration("lift_unloading_maximum")
+    allow_transition_gate_d = LaunchConfiguration(
+        "allow_transition_gate_d_output"
+    )
+    transition_gate_d_seconds = LaunchConfiguration(
+        "transition_gate_d_max_seconds"
+    )
+    transition_gate_d_pusher_max = LaunchConfiguration(
+        "transition_gate_d_pusher_max"
+    )
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -217,6 +226,21 @@ def generate_launch_description():
                 default_value="0.020",
                 description="Maximum ULog-bounded B2 collective unloading",
             ),
+            DeclareLaunchArgument(
+                "allow_transition_gate_d_output",
+                default_value="false",
+                description="Allow the first guarded NMPC front/back transition",
+            ),
+            DeclareLaunchArgument(
+                "transition_gate_d_max_seconds",
+                default_value="90.0",
+                description="PX4-time deadline including Gate D recovery",
+            ),
+            DeclareLaunchArgument(
+                "transition_gate_d_pusher_max",
+                default_value="0.30",
+                description="Gate D NMPC/external-pusher command ceiling",
+            ),
             Node(
                 package="px4_mpc",
                 executable="standard_vtol_nmpc",
@@ -256,6 +280,9 @@ def generate_launch_description():
                         "lift_unloading_hold_seconds": lift_unloading_hold,
                         "lift_unloading_start_delay_seconds": lift_unloading_delay,
                         "lift_unloading_maximum": lift_unloading_maximum,
+                        "allow_transition_gate_d_output": allow_transition_gate_d,
+                        "transition_gate_d_max_seconds": transition_gate_d_seconds,
+                        "transition_gate_d_pusher_max": transition_gate_d_pusher_max,
                     }
                 ],
             ),

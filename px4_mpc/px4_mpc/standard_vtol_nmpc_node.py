@@ -28,11 +28,13 @@ from rclpy.qos import (
 )
 from px4_mpc.controllers.standard_vtol_nmpc import StandardVtolNmpc
 from px4_mpc.controllers.standard_vtol_output import (
+    govern_transition_speed,
     govern_pusher_forward_lateral,
     govern_pusher_forward_envelope,
     limit_external_pusher_command,
     limit_mc_command,
     limit_pusher_forward_command,
+    limit_transition_command,
     pretransition_lift_command,
     vertical_hover_lift,
 )
@@ -46,6 +48,14 @@ from px4_mpc.models.mc_forward_profile import (
     pusher_forward_speed_reference_state,
 )
 from px4_mpc.models.px4_timebase import Px4Timebase
+from px4_mpc.models.transition_gate_d import (
+    GateDStateMachine,
+    VTOL_FW,
+    VTOL_MC,
+    px4_mc_weight,
+    transition_pitch_and_elevator,
+    transition_pusher_trim,
+)
 from std_msgs.msg import Float64MultiArray
 from std_srvs.srv import Trigger
 
@@ -116,6 +126,9 @@ class StandardVtolNmpcNode(Node):
         self.declare_parameter("lift_unloading_hold_seconds", 3.0)
         self.declare_parameter("lift_unloading_start_delay_seconds", 2.0)
         self.declare_parameter("lift_unloading_maximum", 0.020)
+        self.declare_parameter("allow_transition_gate_d_output", False)
+        self.declare_parameter("transition_gate_d_max_seconds", 90.0)
+        self.declare_parameter("transition_gate_d_pusher_max", 0.30)
         self.allow_output = bool(self.get_parameter("allow_offboard_output").value)
         self.max_offboard_seconds = float(
             self.get_parameter("hover_offboard_max_seconds").value
@@ -216,7 +229,18 @@ class StandardVtolNmpcNode(Node):
         self.lift_unloading_maximum = float(
             self.get_parameter("lift_unloading_maximum").value
         )
-        if self.allow_lift_unloading:
+        self.allow_transition_gate_d = bool(
+            self.get_parameter("allow_transition_gate_d_output").value
+        )
+        self.transition_gate_d_max_seconds = float(
+            self.get_parameter("transition_gate_d_max_seconds").value
+        )
+        self.transition_gate_d_pusher_max = float(
+            self.get_parameter("transition_gate_d_pusher_max").value
+        )
+        if self.allow_transition_gate_d:
+            self.nmpc_pusher_max = self.transition_gate_d_pusher_max
+        elif self.allow_lift_unloading:
             self.nmpc_pusher_max = 0.20
         elif self.allow_pretransition:
             self.nmpc_pusher_max = 0.15
@@ -225,7 +249,8 @@ class StandardVtolNmpcNode(Node):
         else:
             self.nmpc_pusher_max = 0.60
         if (
-            self.allow_pusher_forward
+            self.allow_transition_gate_d
+            or self.allow_pusher_forward
             or self.allow_pretransition
             or self.allow_lift_unloading
         ):
@@ -234,12 +259,16 @@ class StandardVtolNmpcNode(Node):
             # with the generic 0.60 transition limit and clipping to 0.10
             # afterward invalidates NMPC's speed and braking prediction.
             build_name = (
-                "standard_vtol_nmpc_gate_b2_pusher_020"
-                if self.allow_lift_unloading
+                "standard_vtol_nmpc_gate_d_pusher_030"
+                if self.allow_transition_gate_d
                 else (
-                    "standard_vtol_nmpc_gate_b1_pusher_015"
-                    if self.allow_pretransition
-                    else "standard_vtol_nmpc_gate_a_pusher_010"
+                    "standard_vtol_nmpc_gate_b2_pusher_020"
+                    if self.allow_lift_unloading
+                    else (
+                        "standard_vtol_nmpc_gate_b1_pusher_015"
+                        if self.allow_pretransition
+                        else "standard_vtol_nmpc_gate_a_pusher_010"
+                    )
                 )
             )
             self.controller = StandardVtolNmpc(
@@ -297,6 +326,11 @@ class StandardVtolNmpcNode(Node):
         self.max_abs_vertical_speed = 0.0
         self.last_lift_unloading = 0.0
         self.max_lift_unloading = 0.0
+        self.gate_d = GateDStateMachine()
+        self.gate_d_last_transition_request = "none"
+        self.gate_d_front_ack = False
+        self.gate_d_back_ack = False
+        self.gate_d_recovery_reason = "none"
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -399,6 +433,11 @@ class StandardVtolNmpcNode(Node):
         )
         self.create_service(
             Trigger,
+            "/standard_vtol_nmpc/enable_transition_gate_d",
+            self._enable_transition_gate_d,
+        )
+        self.create_service(
+            Trigger,
             "/standard_vtol_nmpc/capture_hover_reference",
             self._capture_hover_reference,
         )
@@ -418,6 +457,8 @@ class StandardVtolNmpcNode(Node):
             mode += " plus guarded 5 m/s MC pre-transition"
         if self.allow_lift_unloading:
             mode += " plus guarded 8 m/s MC lift-unloading"
+        if self.allow_transition_gate_d:
+            mode += " plus guarded Gate D front/back transition"
         self.get_logger().info(f"Standard VTOL NMPC started in {mode} mode")
 
     def _odometry(self, message: VehicleOdometry) -> None:
@@ -525,6 +566,17 @@ class StandardVtolNmpcNode(Node):
 
     def _vehicle_command_ack(self, message: VehicleCommandAck) -> None:
         self.last_command_ack = f"command={message.command},result={message.result}"
+        if (
+            self.test_mode == "transition_gate_d"
+            and message.command == VehicleCommand.VEHICLE_CMD_DO_VTOL_TRANSITION
+        ):
+            accepted = message.result == VehicleCommandAck.VEHICLE_CMD_RESULT_ACCEPTED
+            if self.gate_d_last_transition_request == "front":
+                self.gate_d_front_ack = accepted
+            elif self.gate_d_last_transition_request == "back":
+                self.gate_d_back_ack = accepted
+            if not accepted and self.output_requested:
+                self._begin_gate_d_recovery("vtol_transition_command_rejected")
 
     def _state_age(self) -> float:
         if not self.state_received_ns:
@@ -616,6 +668,16 @@ class StandardVtolNmpcNode(Node):
         yaw = cls._yaw_from_quaternion(quaternion)
         return np.array([math.cos(0.5 * yaw), 0.0, 0.0, math.sin(0.5 * yaw)])
 
+    @classmethod
+    def _yaw_pitch_quaternion(
+        cls, quaternion: np.ndarray, pitch: float
+    ) -> np.ndarray:
+        """Keep captured yaw and apply the Gate D pitch reference."""
+        yaw = cls._yaw_from_quaternion(quaternion)
+        cy, sy = math.cos(0.5 * yaw), math.sin(0.5 * yaw)
+        cp, sp = math.cos(0.5 * pitch), math.sin(0.5 * pitch)
+        return np.array([cy * cp, -sy * sp, cy * sp, sy * cp])
+
     def _ready_for_hover(self) -> tuple[bool, str]:
         if not self.px4_timebase.synchronized:
             return False, "px4_timesync_missing"
@@ -677,6 +739,10 @@ class StandardVtolNmpcNode(Node):
         self.max_state_px4_age = 0.0
         self.last_lift_unloading = 0.0
         self.max_lift_unloading = 0.0
+        self.gate_d_last_transition_request = "none"
+        self.gate_d_front_ack = False
+        self.gate_d_back_ack = False
+        self.gate_d_recovery_reason = "none"
 
     def _enable_hover(self, _request, response):
         if not self.allow_output:
@@ -895,6 +961,51 @@ class StandardVtolNmpcNode(Node):
         )
         return response
 
+    def _enable_transition_gate_d(self, _request, response):
+        configured = (
+            self.allow_output
+            and self.allow_external_pusher
+            and self.allow_transition_gate_d
+            and np.isclose(self.transition_gate_d_max_seconds, 90.0)
+            and np.isclose(self.transition_gate_d_pusher_max, 0.30)
+        )
+        if not configured:
+            response.success = False
+            response.message = (
+                "launch Gate D with Offboard, external pusher, 90 s timeout "
+                "and 0.30 pusher envelope"
+            )
+            return response
+        ready, reason = self._ready_for_hover()
+        if not ready:
+            response.success = False
+            response.message = reason
+            return response
+        if not self._airspeed_is_available():
+            response.success = False
+            response.message = "airspeed_stream_unavailable_for_gate_d"
+            return response
+        if np.linalg.norm(self.state[3:5]) > 0.15:
+            response.success = False
+            response.message = "gate_d_handover_speed_too_high"
+            return response
+        if self.state[2] < 29.0:
+            response.success = False
+            response.message = "gate_d_requires_at_least_30m_local_altitude"
+            return response
+        if self.total_solver_failures != 0:
+            response.success = False
+            response.message = "restart_gate_d_node_after_any_solver_failure"
+            return response
+        self._start_output("transition_gate_d")
+        self.gate_d.start(0.0)
+        response.success = True
+        response.message = (
+            "Gate D prestream started: MC 0->8 m/s, PX4 front transition, "
+            "FW hold, PX4 back transition and MC brake"
+        )
+        return response
+
     def _capture_hover_reference(self, _request, response):
         ready, reason = self._ready_for_hover()
         if not ready:
@@ -912,12 +1023,19 @@ class StandardVtolNmpcNode(Node):
         return response
 
     def _disable(self, _request, response):
+        if self.test_mode == "transition_gate_d" and self.output_requested:
+            self._begin_gate_d_recovery("operator_disabled")
+            response.success = True
+            response.message = "Gate D recovery started; returning to MC first"
+            return response
         self._abort("operator_disabled")
         response.success = True
         response.message = "Position mode requested; NMPC output disabled"
         return response
 
     def _active_timeout(self) -> float:
+        if self.test_mode == "transition_gate_d":
+            return self.transition_gate_d_max_seconds
         if self.test_mode == "pretransition_8mps":
             return self.lift_unloading_test_max_seconds
         if self.test_mode == "pretransition_5mps":
@@ -956,6 +1074,11 @@ class StandardVtolNmpcNode(Node):
             -99 if self.airspeed is None else int(self.airspeed.airspeed_source)
         )
         realtime_factor = self.px4_timebase.realtime_factor(now_ns)
+        vtol_state = (
+            -1
+            if self.vtol_status is None
+            else int(self.vtol_status.vehicle_vtol_state)
+        )
         solve_time_p99 = (
             float(np.percentile(self.solve_times_ms, 99))
             if self.solve_times_ms
@@ -992,6 +1115,10 @@ class StandardVtolNmpcNode(Node):
             f"hold={self.lift_unloading_profile.hold_seconds:.1f},"
             f"max_unload={self.lift_unloading_maximum:.3f}]"
             f", nmpc_pusher_max={self.nmpc_pusher_max:.3f}"
+            f", gate_d=[state={self.gate_d.state},vtol_state={vtol_state},"
+            f"last_request={self.gate_d_last_transition_request},"
+            f"front_ack={self.gate_d_front_ack},back_ack={self.gate_d_back_ack},"
+            f"recovery_reason={self.gate_d_recovery_reason}]"
             f", last_offboard_duration={self.last_offboard_duration:.2f}s"
             f", last_wall_offboard_duration={self.last_wall_offboard_duration:.2f}s"
             f", px4_elapsed={self._offboard_elapsed():.2f}s"
@@ -1061,6 +1188,8 @@ class StandardVtolNmpcNode(Node):
 
     def _references(self):
         base_time = self._profile_elapsed()
+        if self.test_mode == "transition_gate_d" and self.hold_state is not None:
+            return self._gate_d_references(base_time)
         if (
             self.test_mode in (
                 "pusher_forward",
@@ -1150,7 +1279,75 @@ class StandardVtolNmpcNode(Node):
                 )
                 for stage in range(self.controller.N)
             ]
-        parameters = np.zeros((self.controller.N + 1, 4))
+        parameters = np.zeros(
+            (self.controller.N + 1, self.controller.model.parameter_size)
+        )
+        parameters[:, 4] = 1.0
+        return x_ref, u_ref, parameters
+
+    def _gate_d_references(self, base_time: float):
+        """Build the 10-state transition horizon and PX4 lift-blend parameters."""
+        vtol_state = (
+            VTOL_MC
+            if self.vtol_status is None
+            else int(self.vtol_status.vehicle_vtol_state)
+        )
+        airspeed = self._calibrated_airspeed()
+        if not np.isfinite(airspeed):
+            airspeed = max(
+                0.0, float(np.dot(self.state[3:5], self.forward_direction))
+            )
+        phase_seconds = max(0.0, base_time - self.gate_d.entered_s)
+        lift_weight = px4_mc_weight(vtol_state, airspeed, phase_seconds)
+        base_sample = self.gate_d.sample(base_time)
+        x_rows = []
+        elevators = []
+        weights = []
+        for stage in range(self.controller.N + 1):
+            stage_time = base_time + stage * self.controller.dt
+            sample = self.gate_d.sample(stage_time)
+            reference = pusher_forward_speed_reference_state(
+                self.hold_state,
+                self.state,
+                self.forward_direction,
+                base_sample,
+                sample,
+            )
+            stage_weight = lift_weight
+            pitch, elevator = transition_pitch_and_elevator(
+                sample.speed, stage_weight
+            )
+            reference[6:10] = self._yaw_pitch_quaternion(
+                self.hold_state[6:10], pitch
+            )
+            x_rows.append(reference)
+            elevators.append(elevator)
+            weights.append(stage_weight)
+        x_ref = np.vstack(x_rows)
+        self.current_reference = x_ref[0].copy()
+        self.profile_phase = self.gate_d.state
+        u_ref = np.zeros((self.controller.N, 5))
+        u_ref[:, 0] = self.controller.model.plant.hover_command
+        for stage in range(self.controller.N):
+            sample = self.gate_d.sample(
+                base_time + stage * self.controller.dt
+            )
+            mc_feedforward = pusher_forward_feedforward(
+                self.controller.model.plant,
+                sample.speed,
+                sample.acceleration,
+                command_limit=self.transition_gate_d_pusher_max,
+            )
+            fw_weight = 1.0 - weights[stage]
+            u_ref[stage, 1] = (
+                (1.0 - fw_weight) * mc_feedforward
+                + transition_pusher_trim(sample.speed, weights[stage])
+            )
+        parameters = np.zeros(
+            (self.controller.N + 1, self.controller.model.parameter_size)
+        )
+        parameters[:, 3] = elevators
+        parameters[:, 4] = weights
         return x_ref, u_ref, parameters
 
     def _vertical_hover_lift(self) -> float:
@@ -1230,13 +1427,16 @@ class StandardVtolNmpcNode(Node):
         if self.vtol_status is None:
             return "vtol_status_missing"
         if (
-            self.vtol_status.vehicle_vtol_state
+            self.test_mode != "transition_gate_d"
+            and self.vtol_status.vehicle_vtol_state
             != VtolVehicleStatus.VEHICLE_VTOL_STATE_MC
         ):
             return "vehicle_not_in_mc_mode"
         if self.hold_state is None:
             return "hold_state_missing"
-        if self.test_mode == "pusher_forward":
+        if self.test_mode == "transition_gate_d":
+            altitude_limit = 2.0
+        elif self.test_mode == "pusher_forward":
             altitude_limit = 0.30
         elif self.test_mode in ("pretransition_5mps", "pretransition_8mps"):
             altitude_limit = 0.40
@@ -1244,14 +1444,16 @@ class StandardVtolNmpcNode(Node):
             altitude_limit = 0.5
         if abs(self.state[2] - self.hold_state[2]) > altitude_limit:
             return "altitude_error"
-        vertical_speed_limit = (
+        vertical_speed_limit = 3.0 if self.test_mode == "transition_gate_d" else (
             1.0
             if self.test_mode in ("pretransition_5mps", "pretransition_8mps")
             else 0.75
         )
         if abs(self.state[5]) > vertical_speed_limit:
             return "vertical_speed_limit"
-        if self.test_mode == "mc_forward":
+        if self.test_mode == "transition_gate_d":
+            horizontal_speed_limit = 14.0
+        elif self.test_mode == "mc_forward":
             horizontal_speed_limit = 2.7
         elif self.test_mode == "pusher_forward":
             horizontal_speed_limit = 3.5
@@ -1266,7 +1468,24 @@ class StandardVtolNmpcNode(Node):
         if np.linalg.norm(self.state[3:5]) > horizontal_speed_limit:
             return "horizontal_speed_limit"
         delta_xy = self.state[0:2] - self.hold_state[0:2]
-        if self.test_mode in (
+        if self.test_mode == "transition_gate_d":
+            normal = np.array(
+                [-self.forward_direction[1], self.forward_direction[0]]
+            )
+            along_track = float(np.dot(delta_xy, self.forward_direction))
+            cross_track = abs(float(np.dot(delta_xy, normal)))
+            if along_track < -5.0 or along_track > 500.0:
+                return "gate_d_forward_geofence"
+            if cross_track > 20.0:
+                return "gate_d_cross_track_limit"
+            if (
+                self.current_reference is not None
+                and np.linalg.norm(
+                    self.state[0:2] - self.current_reference[0:2]
+                ) > 10.0
+            ):
+                return "gate_d_horizontal_tracking_error"
+        elif self.test_mode in (
             "mc_forward",
             "pusher_forward",
             "pretransition_5mps",
@@ -1333,12 +1552,16 @@ class StandardVtolNmpcNode(Node):
         elif np.linalg.norm(delta_xy) > 5.0:
             return "horizontal_geofence"
         tilt_limit = (
-            12.0
-            if self.test_mode == "pretransition_8mps"
+            20.0
+            if self.test_mode == "transition_gate_d"
             else (
-                10.0
-                if self.test_mode in ("pusher_forward", "pretransition_5mps")
-                else 25.0
+                12.0
+                if self.test_mode == "pretransition_8mps"
+                else (
+                    10.0
+                    if self.test_mode in ("pusher_forward", "pretransition_5mps")
+                    else 25.0
+                )
             )
         )
         if self._tilt_degrees() > tilt_limit:
@@ -1352,10 +1575,15 @@ class StandardVtolNmpcNode(Node):
             reference_speed = profile.sample(self._profile_elapsed()).speed
             if reference_speed >= 2.0 and not self._airspeed_is_available():
                 return "airspeed_stream_lost_during_pretransition"
+        if self.test_mode == "transition_gate_d":
+            reference_speed = self.gate_d.sample(self._profile_elapsed()).speed
+            if reference_speed >= 2.0 and not self._airspeed_is_available():
+                return "airspeed_stream_lost_during_gate_d"
         if self.solver_failures >= 3:
             return "three_solver_failures"
         if (
-            self.offboard_active
+            self.test_mode != "transition_gate_d"
+            and self.offboard_active
             and self._active_timeout() > 0.0
             and self.px4_timebase.active
             and self._offboard_elapsed() >= self._active_timeout()
@@ -1487,6 +1715,87 @@ class StandardVtolNmpcNode(Node):
         message.from_external = True
         self.command_publisher.publish(message)
 
+    def _request_vtol_transition(self, target_state: int) -> None:
+        """Ask PX4's VTOL controller for a normal front or back transition."""
+        message = VehicleCommand()
+        message.timestamp = self.get_clock().now().nanoseconds // 1000
+        message.command = VehicleCommand.VEHICLE_CMD_DO_VTOL_TRANSITION
+        message.param1 = float(target_state)
+        message.param2 = 0.0
+        message.target_system = 1
+        message.target_component = 1
+        message.source_system = 1
+        message.source_component = 1
+        message.from_external = True
+        self.gate_d_last_transition_request = (
+            "front" if target_state == VTOL_FW else "back"
+        )
+        self.last_command_ack = "waiting_for_vtol_transition_ack"
+        self.command_publisher.publish(message)
+        self.get_logger().info(
+            f"Gate D requested PX4 VTOL state {target_state}"
+        )
+
+    def _begin_gate_d_recovery(self, reason: str) -> None:
+        """Preserve Offboard until PX4 has safely returned to MC."""
+        if self.gate_d.state in ("abort_recovery", "failed"):
+            return
+        self.abort_reason = reason
+        self.gate_d_recovery_reason = reason
+        vtol_state = (
+            VTOL_MC
+            if self.vtol_status is None
+            else int(self.vtol_status.vehicle_vtol_state)
+        )
+        update = self.gate_d.abort(reason, self._profile_elapsed(), vtol_state)
+        if update.transition_request is not None:
+            self._request_vtol_transition(update.transition_request)
+        self.get_logger().error(
+            f"Gate D recovery started: {reason}; returning to MC before Position"
+        )
+
+    def _update_gate_d_state(self) -> bool:
+        """Advance Gate D; return False once output was stopped."""
+        if self.test_mode != "transition_gate_d" or not self.output_requested:
+            return True
+        if self.vtol_status is None:
+            self._begin_gate_d_recovery("vtol_status_missing")
+            return True
+        vtol_state = int(self.vtol_status.vehicle_vtol_state)
+        forward_speed = float(np.dot(self.state[3:5], self.forward_direction))
+        airspeed = self._calibrated_airspeed()
+        if not np.isfinite(airspeed):
+            airspeed = 0.0
+        update = self.gate_d.update(
+            self._profile_elapsed(),
+            vtol_state,
+            forward_speed,
+            airspeed,
+            float(self.last_command[1]),
+        )
+        self.profile_phase = update.state
+        if update.transition_request is not None:
+            self._request_vtol_transition(update.transition_request)
+        if update.completed:
+            self._abort("gate_d_complete")
+            return False
+        if update.failed:
+            self._abort(self.gate_d_recovery_reason)
+            return False
+        return True
+
+    def _gate_d_recovery_command(self) -> np.ndarray:
+        """Conservative command while PX4 completes an emergency back transition."""
+        vtol_state = (
+            VTOL_MC
+            if self.vtol_status is None
+            else int(self.vtol_status.vehicle_vtol_state)
+        )
+        pusher = 0.0 if vtol_state == VTOL_MC else min(self.last_command[1], 0.15)
+        return np.array(
+            [self.controller.model.plant.hover_command, pusher, 0.0, 0.0, 0.0]
+        )
+
     def _abort(self, reason: str) -> None:
         was_requested = self.output_requested or self.offboard_active
         now_ns = self.get_clock().now().nanoseconds
@@ -1531,7 +1840,12 @@ class StandardVtolNmpcNode(Node):
             )
         if self._state_is_stale(active=self.output_requested or self.offboard_active):
             if self.output_requested or self.offboard_active:
-                self._abort("odometry_stale")
+                if self.test_mode == "transition_gate_d":
+                    self._begin_gate_d_recovery("odometry_stale")
+                else:
+                    self._abort("odometry_stale")
+            return
+        if not self._update_gate_d_state():
             return
         x_ref, u_ref, parameters = self._references()
         try:
@@ -1541,7 +1855,10 @@ class StandardVtolNmpcNode(Node):
             self.total_solver_failures += 1
             self.get_logger().error(f"NMPC solve exception: {error}")
             if self.output_requested and self.solver_failures >= 3:
-                self._abort("three_solver_exceptions")
+                if self.test_mode == "transition_gate_d":
+                    self._begin_gate_d_recovery("three_solver_exceptions")
+                else:
+                    self._abort("three_solver_exceptions")
             return
         self.last_solve_time = solution.solve_time
         self.solve_times_ms.append(1000.0 * solution.solve_time)
@@ -1552,7 +1869,24 @@ class StandardVtolNmpcNode(Node):
             self.solver_failures = 0
             self.last_raw_control = solution.control.copy()
             requested_control = solution.control.copy()
-            if self.test_mode == "pretransition_8mps":
+            if (
+                self.test_mode == "transition_gate_d"
+                and self.gate_d.state == "mc_accelerate"
+            ):
+                altitude_error = self.state[2] - self.hold_state[2]
+                forward_speed_for_lift = float(
+                    np.dot(self.state[3:5], self.forward_direction)
+                )
+                requested_control[0], self.last_lift_unloading = (
+                    pretransition_lift_command(
+                        self.controller.model.plant,
+                        altitude_error,
+                        self.state[5],
+                        forward_speed_for_lift,
+                        maximum_unloading=self.lift_unloading_maximum,
+                    )
+                )
+            elif self.test_mode == "pretransition_8mps":
                 altitude_error = self.state[2] - self.hold_state[2]
                 forward_speed_for_lift = float(
                     np.dot(self.state[3:5], self.forward_direction)
@@ -1573,7 +1907,49 @@ class StandardVtolNmpcNode(Node):
                 requested_control[0] = self._vertical_hover_lift()
                 self.last_lift_unloading = 0.0
             control_dt = self._control_dt()
-            if self.test_mode == "external_pusher":
+            if self.test_mode == "transition_gate_d":
+                previous_command = self.last_command.copy()
+                self.last_command = limit_transition_command(
+                    self.last_command,
+                    requested_control,
+                    control_dt,
+                    pusher_limit=self.transition_gate_d_pusher_max,
+                )
+                normal = np.array(
+                    [-self.forward_direction[1], self.forward_direction[0]]
+                )
+                self.last_command = govern_pusher_forward_lateral(
+                    previous_command,
+                    self.last_command,
+                    float(np.dot(self.state[0:2] - self.hold_state[0:2], normal)),
+                    float(np.dot(self.state[3:5], normal)),
+                    self._roll_angle(),
+                    control_dt,
+                )
+                forward_speed = float(
+                    np.dot(self.state[3:5], self.forward_direction)
+                )
+                reference_speed = float(
+                    np.dot(self.current_reference[3:5], self.forward_direction)
+                )
+                self.last_command = govern_transition_speed(
+                    previous_command,
+                    self.last_command,
+                    forward_speed,
+                    reference_speed,
+                    control_dt,
+                )
+                if self.gate_d.state == "abort_recovery":
+                    self.last_command = limit_transition_command(
+                        self.last_command,
+                        self._gate_d_recovery_command(),
+                        control_dt,
+                        pusher_limit=self.transition_gate_d_pusher_max,
+                    )
+                self.max_commanded_pusher = max(
+                    self.max_commanded_pusher, self.last_command[1]
+                )
+            elif self.test_mode == "external_pusher":
                 pusher_sample = self.external_pusher_profile.sample(
                     self._profile_elapsed()
                 )
@@ -1656,12 +2032,25 @@ class StandardVtolNmpcNode(Node):
         if not self.output_requested:
             return
         if self.ever_offboard and not self.offboard_active:
-            self._abort("px4_left_offboard")
+            if self.test_mode == "transition_gate_d":
+                self._begin_gate_d_recovery("px4_left_offboard")
+            else:
+                self._abort("px4_left_offboard")
             return
         self._update_flight_metrics()
-        reason = self._safety_reason()
+        reason = (
+            None
+            if (
+                self.test_mode == "transition_gate_d"
+                and self.gate_d.state == "abort_recovery"
+            )
+            else self._safety_reason()
+        )
         if reason is not None:
-            self._abort(reason)
+            if self.test_mode == "transition_gate_d":
+                self._begin_gate_d_recovery(reason)
+            else:
+                self._abort(reason)
             return
         # Bumpless transfer: prestream and the first 0.5 s in Offboard use
         # the ULog-confirmed hover thrust with zero rates. Feedback then ramps

@@ -23,7 +23,9 @@ from px4_mpc.models.standard_vtol_gz_model import StandardVtolTransitionRateMode
 def rk4_step(model, state, control, parameters, dt):
     """Integrate the NumPy rate-controlled plant by one controller sample."""
     def dynamics(value):
-        return model.derivative(value, control, parameters[:3], parameters[3])
+        return model.derivative(
+            value, control, parameters[:3], parameters[3], parameters[4]
+        )
 
     k1 = dynamics(state)
     k2 = dynamics(state + 0.5 * dt * k1)
@@ -50,7 +52,8 @@ def references(controller, profile, hold_state, profile_time):
     )
     u_ref = np.zeros((controller.N, 5))
     u_ref[:, 0] = controller.model.plant.hover_command
-    parameters = np.zeros((controller.N + 1, 4))
+    parameters = np.zeros((controller.N + 1, controller.model.parameter_size))
+    parameters[:, 4] = 1.0
     return x_ref, u_ref, parameters
 
 

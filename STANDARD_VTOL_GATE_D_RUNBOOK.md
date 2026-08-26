@@ -1,0 +1,193 @@
+# Gate D — prva NMPC-koordinisana VTOL tranzicija
+
+Gate D izvodi jednu automatsku sekvencu:
+
+```text
+MC hover -> 8 m/s -> PX4 front transition -> kratki FW hold
+         -> PX4 back transition -> kočenje -> MC hover
+```
+
+NMPC šalje collective, pusher i body-rate setpointe. PX4 i dalje posjeduje
+VTOL state machine, airspeed blend, control allocation i unutrašnji rate loop.
+NMPC ne komanduje pojedinačne motore. Ovo je prvi Gate koji mijenja VTOL state;
+ne pokretati ga bez najmanje 30 m visine i 500 m čistog prostora ispred nosa.
+
+## Acceptance envelope
+
+```text
+Gate timeout:              90 s PX4 vremena
+MC transition trigger:     ground speed i CAS >= 7.5 m/s tokom 1 s
+front-transition timeout:  12 s
+FW hold nakon FW ulaska:   5 s
+referentna brzina:         0 -> 8 -> 12 -> 0 m/s
+pusher command:            0.00 .. 0.30
+apsolutna greška visine:   <= 2.0 m
+apsolutni roll/pitch:      <= 20 deg
+brzina:                    <= 14 m/s
+cross-track:               <= 20 m
+solver failures:           0
+završno stanje:            MC, pusher 0, speed <= 0.5 m/s tokom 2 s
+```
+
+Na grešku se ne bira odmah Position dok je vozilo FW. Node prvo traži PX4 back
+transition i zadržava konzervativan setpoint. Tek nakon potvrđenog MC stanja
+traži Position mode. Ako automatika očigledno ne uspijeva, ručni prioritet je
+`Transition to Multicopter`, pa tek kada je vozilo MC `Position`.
+
+## Jednokratno prije prvog leta
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source /opt/ros/jazzy/setup.bash
+source .venv/bin/activate
+colcon build --packages-select px4_mpc --symlink-install
+```
+
+Build mora završiti bez greške. Svaki Terminal ispod otvori kao novi shell.
+
+Offline Gate D je već prošao (`58.95 s`, `11.959 m/s`, visina `1.385 m`,
+tilt `7.70 deg`, solver failures `0`, završni MC). Regresija se može ponoviti:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source .venv/bin/activate
+source scripts/source_ros2_nmpc.bash
+python3 tools/simulate_transition_gate_d.py
+```
+
+Mora završiti sa `transition_gate_d_offline=PASS`.
+
+## Terminal 1 — PX4/Gazebo
+
+Ne sourceati ROS ni `px4-mpc/.venv` u ovom terminalu:
+
+```bash
+cd /home/imran/Repositories/PX4-Autopilot
+git branch --show-current
+make px4_sitl gz_standard_vtol
+```
+
+Branch mora biti `nmpc-external-pusher`. U `pxh>` shellu:
+
+```text
+param set VT_EXT_PUSH_EN 1
+param set VT_EXT_PUSH_MAX 0.30
+param set VT_EXT_PUSH_SLEW 0.10
+param show VT_EXT_PUSH_EN
+param show VT_EXT_PUSH_MAX
+param show VT_EXT_PUSH_SLEW
+```
+
+Mora prikazati `1`, `0.30`, `0.10`. Ne mijenjati PX4 stock transition
+parametre `VT_ARSP_BLEND`, `VT_ARSP_TRANS`, `VT_TRANS_MIN_TM`,
+`VT_B_TRANS_RAMP` ili `VT_B_TRANS_DUR`.
+
+## Terminal 2 — DDS Agent
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source scripts/setup_standard_vtol_nmpc.bash
+microxrce_agent_install/bin/MicroXRCEAgent udp4 -p 8888
+```
+
+Ostaviti terminal otvoren.
+
+## Terminal 3 — Gate D node
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+ros2 launch px4_mpc standard_vtol_nmpc_launch.py \
+  allow_offboard_output:=true \
+  allow_external_pusher_output:=true \
+  allow_transition_gate_d_output:=true \
+  transition_gate_d_max_seconds:=90.0 \
+  transition_gate_d_pusher_max:=0.30
+```
+
+Startup poruka mora sadržati `guarded Gate D front/back transition`. Ostaviti
+terminal otvoren. Warning za Matplotlib `Axes3D` nije razlog za prekid.
+
+## QGC — priprema leta
+
+1. Vozilo mora biti MC i Position mode.
+2. Armirati i podići na najmanje 30 m iznad tla.
+3. Nos usmjeriti prema najmanje 500 m praznog prostora.
+4. Držati stabilan hover najmanje 10 s.
+5. Ne pritiskati QGC transition dugme tokom normalnog Gate D testa.
+6. Biti spreman za ručni `Transition to Multicopter` ako recovery zakaže.
+
+Negativan CAS u stacionarnom hoveru je normalan ako status kaže
+`available=True`. Gate D traži pozitivan CAS tek nakon početka ubrzavanja.
+
+## Terminal 4 — pokretanje i automatsko praćenje
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_transition_gate_d.bash
+```
+
+Kada skripta traži potvrdu, provjeri PX4 parametre, visinu, smjer i prostor, pa
+upiši tačno:
+
+```text
+GATE-D-READY
+```
+
+Normalan redoslijed statusa je:
+
+```text
+mc_accelerate -> front_transition -> fw_hold
+              -> back_transition -> mc_recovered -> complete
+```
+
+FW krug nije dio ovog testa. Vozilo treba nastaviti približno ravno i nakon 5 s
+FW stanja automatski zatražiti back transition. Ako počne kružiti, to obično
+znači da je napustilo Offboard; node tada mora prijaviti recovery. Ne pokretati
+novi gate u istom letu.
+
+PASS završava sa:
+
+```text
+abort_reason=gate_d_complete
+gate_d=[state=complete,vtol_state=3,...front_ack=True,back_ack=True,...]
+solver_failures=0
+total_solver_failures=0
+ROS_GATE_D=PASS
+```
+
+Svaki drugi `abort_reason` je FAIL. Ne ponavljati naslijepo.
+
+## Nakon leta — ULog
+
+Sletjeti, disarmirati i ugasiti PX4/Gazebo. Pronaći samo najnoviji log:
+
+```bash
+find /home/imran/Repositories/PX4-Autopilot/build/px4_sitl_default/rootfs/log \
+  -type f -name '*.ulg' -printf '%T@ %s %p\n' | sort -nr | head -1
+```
+
+Zamijeniti putanju u narednoj komandi stvarnim rezultatom:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+/usr/bin/python3 tools/analyze_transition_shadow_ulog.py --gate-d \
+  /home/imran/Repositories/PX4-Autopilot/build/px4_sitl_default/rootfs/log/YYYY-MM-DD/HH_MM_SS.ulg
+```
+
+ULog je prihvaćen tek kada završava sa:
+
+```text
+complete_state_sequence=PASS
+altitude_loss=PASS
+tilt=PASS
+no_failsafe=PASS
+nmpc_external_pusher_enabled=PASS
+pusher_bounded=PASS
+lift_blend_observed=PASS
+transition_gate_d_ulog=PASS
+```
+
+Ne kopirati cijeli ULog u git repo. Nakon PASS-a zapisujemo njegovu putanju,
+SHA-256 i mali tekstualni sažetak; stari neuspješni SITL logovi se mogu obrisati
+tek nakon što potvrdimo koji je Gate D log.

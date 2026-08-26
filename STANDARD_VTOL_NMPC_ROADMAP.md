@@ -264,8 +264,8 @@ Početni uslovi:
 
 ```text
 visina najmanje 30 m
-mirni hover najmanje 5 s
-najmanje 200 m čistog prostora ispred
+mirni hover najmanje 10 s
+najmanje 500 m čistog prostora ispred
 airspeed fresh i valid
 bez failsafea
 ```
@@ -279,8 +279,8 @@ Sekvenca:
 4. PX4 ostaje vlasnik VTOL statea i MC/FW torque blenda.
 5. NMPC prati `8 -> 12 m/s`, komanduje pusher i raw collective uz modelirani
    PX4 lift weight.
-6. U `FW_MODE` collective referenca postaje nula, a pusher/rate kontrola se
-   nastavlja preko FW putanje.
+6. U `FW_MODE` PX4 lift weight postaje nula, pa raw collective više ne pokreće
+   lift motore; NMPC pusher/rate kontrola nastavlja preko FW putanje.
 7. Nakon kratkog holda node traži kontrolisani back-transition; test nije
    završen dok vozilo ponovo nije u MC Position modu.
 
@@ -330,6 +330,19 @@ Node mora imati eksplicitna stanja `idle`, `mc_accelerate`, `front_transition`,
 tranziciju kao jedan timeout bez provjere PX4 potvrda.
 
 ## Šta se radi sada
+
+Gate D software je implementiran i čeka prvi live let. State machine,
+efektivni PX4 lift-weight u 10-state modelu, transition limiter, PX4 command
+ACK, state-dependent MC recovery, launch argumenti, automatska skripta i ULog
+`--gate-d` kriteriji su dodani. Jedini dozvoljeni postupak za prvi let je
+[`STANDARD_VTOL_GATE_D_RUNBOOK.md`](STANDARD_VTOL_GATE_D_RUNBOOK.md).
+
+Puni offline closed-loop Gate D PASS traje `58.95 s`: doseže `11.959 m/s`,
+maksimalnu altitude grešku `1.385 m`, tilt `7.70 deg`, pusher `0.300`, nula
+solver grešaka i završava u MC sa `0.074 m/s` i pusherom `0.0001`.
+
+Gate D još nije PASS dok i ROS završetak i najnoviji ULog ne prođu. Gate E se
+ne pokreće prije tog checkpointa.
 
 Gate A software milestone je implementiran:
 

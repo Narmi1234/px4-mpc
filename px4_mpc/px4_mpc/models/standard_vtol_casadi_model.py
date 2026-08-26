@@ -42,9 +42,9 @@ class StandardVtolTransitionCasadiModel:
 
     state_size = 10
     control_size = 5
-    # [wind_W(3), scheduled elevator trim].  Elevator is not directly
+    # [wind_W(3), scheduled elevator trim, PX4 MC lift weight]. Elevator is not directly
     # commanded by this NMPC; PX4's rate loop and allocator remain in charge.
-    parameter_size = 4
+    parameter_size = 5
 
     def __init__(self, plant: StandardVtolGazeboModel | None = None) -> None:
         self.name = "standard_vtol_transition_rate_model"
@@ -60,8 +60,11 @@ class StandardVtolTransitionCasadiModel:
             cs.if_else(alpha < -alpha_stall, below, slope * alpha),
         )
 
-    def _motor_force(self, controls, velocity_body, body_rates, wind_body):
-        collective, pusher = controls[0], controls[1]
+    def _motor_force(
+        self, controls, velocity_body, body_rates, wind_body, lift_weight
+    ):
+        collective = cs.fmin(1.0, cs.fmax(0.0, lift_weight)) * controls[0]
+        pusher = controls[1]
         commands = [collective] * 4 + [pusher]
         total = cs.MX.zeros(3, 1)
         for command, motor in zip(commands, self.plant.motors):
@@ -137,6 +140,7 @@ class StandardVtolTransitionCasadiModel:
         parameters = cs.MX.sym("parameters", self.parameter_size)
         wind_world = parameters[0:3]
         elevator_trim = parameters[3]
+        lift_weight = parameters[4]
         velocity_world = state[3:6]
         quaternion = state[6:10]
         body_rates = control[2:5]
@@ -145,7 +149,7 @@ class StandardVtolTransitionCasadiModel:
         wind_body = rotation.T @ wind_world
 
         force_body = self._motor_force(
-            control, velocity_body, body_rates, wind_body
+            control, velocity_body, body_rates, wind_body, lift_weight
         )
         for index, surface in enumerate(self.plant.aero_surfaces):
             deflection = elevator_trim if index == 2 else 0.0

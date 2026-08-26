@@ -75,6 +75,43 @@ def limit_pusher_forward_command(
     )
 
 
+def limit_transition_command(
+    previous,
+    requested,
+    dt: float = 0.05,
+    pusher_limit: float = 0.30,
+) -> np.ndarray:
+    """Bound Gate D commands without Gate A's near-level pitch barrier."""
+    previous = np.asarray(previous, dtype=float)
+    requested = np.asarray(requested, dtype=float).copy()
+    requested[0] = np.clip(requested[0], 0.48, 0.56)
+    requested[1] = np.clip(requested[1], 0.0, pusher_limit)
+    requested[2:5] = np.clip(
+        requested[2:5], [-0.12, -0.25, -0.15], [0.12, 0.25, 0.15]
+    )
+    slew_per_second = np.array([0.10, 0.05, 0.20, 0.35, 0.20])
+    return previous + np.clip(
+        requested - previous,
+        -slew_per_second * dt,
+        slew_per_second * dt,
+    )
+
+
+def govern_transition_speed(
+    previous,
+    limited,
+    forward_speed: float,
+    reference_speed: float,
+    dt: float = 0.05,
+) -> np.ndarray:
+    """Remove pusher promptly when Gate D exceeds its speed reference."""
+    previous = np.asarray(previous, dtype=float)
+    result = np.asarray(limited, dtype=float).copy()
+    if float(forward_speed) > float(reference_speed) + 0.75:
+        result[1] = max(0.0, previous[1] - 0.10 * float(dt))
+    return result
+
+
 def govern_pusher_forward_envelope(
     previous,
     limited,

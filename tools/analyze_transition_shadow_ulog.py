@@ -67,11 +67,30 @@ def latest_complete_transition(vtol) -> tuple[int, int, int, list[int]]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("ulog", type=Path)
-    parser.add_argument("--minimum-fw-entry-airspeed", type=float, default=10.0)
-    parser.add_argument("--maximum-altitude-loss", type=float, default=12.0)
-    parser.add_argument("--maximum-tilt-degrees", type=float, default=60.0)
+    parser.add_argument(
+        "--gate-d",
+        action="store_true",
+        help="apply strict NMPC Gate D criteria and require external pusher",
+    )
+    parser.add_argument("--minimum-fw-entry-airspeed", type=float, default=None)
+    parser.add_argument("--maximum-altitude-loss", type=float, default=None)
+    parser.add_argument("--maximum-tilt-degrees", type=float, default=None)
     parser.add_argument("--maximum-transition-cycle-seconds", type=float, default=90.0)
     args = parser.parse_args()
+    minimum_fw_entry_airspeed = (
+        10.0 if args.minimum_fw_entry_airspeed is None
+        else args.minimum_fw_entry_airspeed
+    )
+    maximum_altitude_loss = (
+        2.0 if args.gate_d and args.maximum_altitude_loss is None
+        else 12.0 if args.maximum_altitude_loss is None
+        else args.maximum_altitude_loss
+    )
+    maximum_tilt_degrees = (
+        20.0 if args.gate_d and args.maximum_tilt_degrees is None
+        else 60.0 if args.maximum_tilt_degrees is None
+        else args.maximum_tilt_degrees
+    )
 
     ulog = ULog(
         str(args.ulog),
@@ -144,23 +163,37 @@ def main() -> None:
     minimum_lift = float(np.min(lift))
     maximum_lift = float(np.max(lift))
     external_pusher_enabled = parameter_at(ulog, "VT_EXT_PUSH_EN", start)
+    external_pusher_max = parameter_at(ulog, "VT_EXT_PUSH_MAX", start)
     try:
         external_pusher_disabled = int(external_pusher_enabled) == 0
     except (TypeError, ValueError):
         external_pusher_disabled = False
+    try:
+        external_pusher_limit_correct = np.isclose(
+            float(external_pusher_max), 0.30, atol=1.0e-4
+        )
+    except (TypeError, ValueError):
+        external_pusher_limit_correct = False
 
     checks = {
         "complete_state_sequence": True,
         "cycle_duration": duration <= args.maximum_transition_cycle_seconds,
         "fw_entry_airspeed": (
             np.isfinite(fw_entry_airspeed)
-            and fw_entry_airspeed >= args.minimum_fw_entry_airspeed
+            and fw_entry_airspeed >= minimum_fw_entry_airspeed
         ),
-        "altitude_loss": altitude_loss <= args.maximum_altitude_loss,
-        "tilt": maximum_tilt <= args.maximum_tilt_degrees,
+        "altitude_loss": altitude_loss <= maximum_altitude_loss,
+        "tilt": maximum_tilt <= maximum_tilt_degrees,
         "no_failsafe": len(failsafe) > 0 and not np.any(failsafe),
-        "stock_px4_owns_pusher": external_pusher_disabled,
+        (
+            "nmpc_external_pusher_enabled"
+            if args.gate_d else "stock_px4_owns_pusher"
+        ): (not external_pusher_disabled if args.gate_d else external_pusher_disabled),
         "pusher_active": peak_pusher >= 0.10,
+        "pusher_bounded": peak_pusher <= 0.35 if args.gate_d else True,
+        "external_pusher_limit": (
+            external_pusher_limit_correct if args.gate_d else True
+        ),
         "lift_blend_observed": minimum_lift <= 0.10 and maximum_lift >= 0.10,
     }
 
@@ -175,11 +208,13 @@ def main() -> None:
     print(f"pusher_peak={peak_pusher:.4f}")
     print(f"lift_motor_range=[{minimum_lift:.4f},{maximum_lift:.4f}]")
     print(f"VT_EXT_PUSH_EN={external_pusher_enabled}")
+    print(f"VT_EXT_PUSH_MAX={external_pusher_max}")
     for name, passed in checks.items():
         print(f"{name}={'PASS' if passed else 'FAIL'}")
+    result_name = "transition_gate_d_ulog" if args.gate_d else "transition_shadow_ulog_gate"
     if not all(checks.values()):
-        raise SystemExit("transition_shadow_ulog_gate=FAIL")
-    print("transition_shadow_ulog_gate=PASS")
+        raise SystemExit(f"{result_name}=FAIL")
+    print(f"{result_name}=PASS")
 
 
 if __name__ == "__main__":

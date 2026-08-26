@@ -507,6 +507,7 @@ class StandardVtolTransitionRateModel:
         control: np.ndarray,
         wind_w: np.ndarray | None = None,
         elevator_trim: float = 0.0,
+        lift_weight: float = 1.0,
     ) -> np.ndarray:
         state = np.asarray(state, dtype=float)
         control = np.asarray(control, dtype=float)
@@ -523,8 +524,10 @@ class StandardVtolTransitionRateModel:
         wind_w = np.zeros(3) if wind_w is None else np.asarray(wind_w, dtype=float)
         wind_b = rotation_wb.T @ wind_w
 
+        lift_weight = float(np.clip(lift_weight, 0.0, 1.0))
+        effective_lift = lift_weight * control[0]
         speeds = np.array(
-            [self.plant.motors[index].target_speed(control[0]) for index in range(4)]
+            [self.plant.motors[index].target_speed(effective_lift) for index in range(4)]
             + [self.plant.motors[4].target_speed(control[1])]
         )
         motor_force_b, _ = self.plant.motor_wrench(speeds, velocity_b, body_rates, wind_b)

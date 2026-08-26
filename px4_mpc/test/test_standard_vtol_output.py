@@ -5,11 +5,13 @@ import unittest
 import numpy as np
 
 from px4_mpc.controllers.standard_vtol_output import (
+    govern_transition_speed,
     govern_pusher_forward_envelope,
     govern_pusher_forward_lateral,
     limit_external_pusher_command,
     limit_mc_command,
     limit_pusher_forward_command,
+    limit_transition_command,
     pretransition_lift_command,
     pretransition_lift_unloading,
     vertical_hover_lift,
@@ -170,6 +172,16 @@ class TestStandardVtolOutput(unittest.TestCase):
             plant, 10.0, 10.0, 8.0
         )
         self.assertAlmostEqual(bounded, 0.48)
+
+    def test_gate_d_command_allows_trim_pitch_but_bounds_every_channel(self):
+        previous = np.array([0.52, 0.0, 0.0, 0.0, 0.0])
+        requested = np.array([0.2, 0.8, 1.0, -1.0, 1.0])
+        limited = limit_transition_command(previous, requested, dt=1.0)
+        np.testing.assert_allclose(limited, [0.48, 0.05, 0.12, -0.25, 0.15])
+        governed = govern_transition_speed(
+            limited, limited, forward_speed=13.0, reference_speed=12.0, dt=0.05
+        )
+        self.assertLess(governed[1], limited[1])
 
 
 

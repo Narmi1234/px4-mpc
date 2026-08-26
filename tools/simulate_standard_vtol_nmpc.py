@@ -43,7 +43,8 @@ def references(
     """Construct horizon references and scheduled elevator parameters."""
     x_ref = np.zeros((controller.N + 1, 10))
     u_ref = np.zeros((controller.N, 5))
-    params = np.zeros((controller.N + 1, 4))
+    params = np.zeros((controller.N + 1, controller.model.parameter_size))
+    params[:, 4] = 1.0
     forward_position = initial_x
     for stage in range(controller.N + 1):
         stage_time = time_seconds + stage * controller.dt
@@ -68,7 +69,10 @@ def rk4_step(model, state, control, parameters, dt):
     """Integrate the independent NumPy prediction plant by one sample."""
     wind = parameters[:3]
     elevator = parameters[3]
-    dynamics = lambda value: model.derivative(value, control, wind, elevator)
+    lift_weight = parameters[4]
+    dynamics = lambda value: model.derivative(
+        value, control, wind, elevator, lift_weight
+    )
     k1 = dynamics(state)
     k2 = dynamics(state + 0.5 * dt * k1)
     k3 = dynamics(state + 0.5 * dt * k2)

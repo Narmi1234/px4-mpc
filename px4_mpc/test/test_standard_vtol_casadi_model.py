@@ -17,9 +17,11 @@ class TestStandardVtolTransitionCasadiModel(unittest.TestCase):
         self.symbolic = StandardVtolTransitionCasadiModel(self.numeric.plant)
         self.function = self.symbolic.function()
 
-    def compare(self, state, control, wind, elevator=0.0):
-        expected = self.numeric.derivative(state, control, wind, elevator)
-        parameters = np.r_[wind, elevator]
+    def compare(self, state, control, wind, elevator=0.0, lift_weight=1.0):
+        expected = self.numeric.derivative(
+            state, control, wind, elevator, lift_weight
+        )
+        parameters = np.r_[wind, elevator, lift_weight]
         actual = np.asarray(self.function(state, control, parameters)).reshape(-1)
         np.testing.assert_allclose(actual, expected, rtol=1.0e-9, atol=1.0e-9)
 
@@ -56,10 +58,21 @@ class TestStandardVtolTransitionCasadiModel(unittest.TestCase):
             jacobian(
                 level_state,
                 self.numeric.hover_control(),
-                np.zeros(4),
+                np.r_[np.zeros(4), 1.0],
             )
         )
         self.assertTrue(np.all(np.isfinite(actual)))
+
+    def test_zero_mc_weight_removes_lift_rotor_force(self):
+        state = self.numeric.hover_state()
+        control = self.numeric.hover_control()
+        expected = self.numeric.derivative(
+            state, control, np.zeros(3), 0.0, 0.0
+        )
+        actual = np.asarray(
+            self.function(state, control, np.r_[np.zeros(4), 0.0])
+        ).reshape(-1)
+        np.testing.assert_allclose(actual, expected, rtol=1.0e-9, atol=1.0e-9)
 
 
 if __name__ == "__main__":

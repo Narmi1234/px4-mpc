@@ -23,6 +23,9 @@ prva NMPC-koordinisana tranzicija još nije odobrena. Za nastavak rada prvo
    prihvaćeni odvojeni 5 m/s i 8 m/s MC gateovi.
 4. [`STANDARD_VTOL_GATE_C_RUNBOOK.md`](STANDARD_VTOL_GATE_C_RUNBOOK.md) —
    prihvaćeni stock PX4 front/back transition uz NMPC shadow računanje.
+5. [`STANDARD_VTOL_GATE_D_RUNBOOK.md`](STANDARD_VTOL_GATE_D_RUNBOOK.md) —
+   aktivni prvi NMPC-koordinisani front/back transition gate i kompletne
+   komande za četiri terminala.
 
 Pozadinski dokumenti su:
 
