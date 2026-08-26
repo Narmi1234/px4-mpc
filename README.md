@@ -10,8 +10,9 @@ Offboard node su implementirani. Hover je potvrđen kroz 30 sekundi, Gate A je
 potvrdio zatvorenu NMPC pusher-speed petlju do `3.127 m/s`, a Gate B1 stvarni
 pusher i airspeed feedback do `5.076 m/s`, a Gate B2 stabilan MC let do
 `8.111 m/s` sa postepenim lift-unloadingom, sigurnim kočenjem i povratkom u
-hover. Puna VTOL tranzicija još nije odobrena. Za nastavak rada
-prvo čitaj:
+hover. Gate C je potvrdio stock PX4 front/back transition uz shadow model;
+prva NMPC-koordinisana tranzicija još nije odobrena. Za nastavak rada prvo
+čitaj:
 
 1. [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md) — trenutno
    stanje, vlasništvo komandi, prihvaćeni 3 m/s pusher-feedback gate i svi
@@ -21,7 +22,7 @@ prvo čitaj:
 3. [`STANDARD_VTOL_GATE_B_RUNBOOK.md`](STANDARD_VTOL_GATE_B_RUNBOOK.md) —
    prihvaćeni odvojeni 5 m/s i 8 m/s MC gateovi.
 4. [`STANDARD_VTOL_GATE_C_RUNBOOK.md`](STANDARD_VTOL_GATE_C_RUNBOOK.md) —
-   neposredni stock PX4 front/back transition uz NMPC shadow računanje.
+   prihvaćeni stock PX4 front/back transition uz NMPC shadow računanje.
 
 Pozadinski dokumenti su:
 

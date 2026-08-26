@@ -237,6 +237,12 @@ Gate B2 je prihvaćen ULogom `2026-08-26/06_28_37.ulg`, pa je Gate C sada
 aktivni korak. Tačan postupak je u
 [`STANDARD_VTOL_GATE_C_RUNBOOK.md`](STANDARD_VTOL_GATE_C_RUNBOOK.md).
 
+Gate C stock front/back transition je zatim prihvaćen ULogom
+`2026-08-26/17_14_25.ulg`. PX4 je ušao u FW na CAS `11.213 m/s`, prošao tačan
+VTOL state slijed bez failsafea i vratio se u MC. Sažetak i model reziduali su
+u `validation_logs/TRANSITION_SHADOW_GATE_C_SUMMARY.md`. Aktivni razvojni korak
+je sada Gate D state machine; Gate C se ne ponavlja radi tuninga.
+
 Ovim se provjerava:
 
 - airspeed koji PX4 stvarno koristi;
