@@ -64,7 +64,13 @@ Disturbance test uključuje `0.50 m/s` bočni udar, `0.25 m/s` forward gust,
 cross-trackom `0.485 m`, altitude errorom `0.248 m`, tiltom `7.48 deg` i nula
 solver grešaka.
 
-## B1 — prvi 5 m/s MC let
+## B1 — PASS: 5 m/s MC let
+
+Prihvaćeni rezultat i ULog hash su u
+`validation_logs/PRETRANSITION_GATE_B1_SUMMARY.md`. B1 je završio sa
+`5.076 m/s`, final speed `0.034 m/s`, CAS `5.359 m/s`, stvarnim pusherom
+`0.150 -> 0`, altitude errorom `0.264 m`, tiltom `4.55 deg`, cross-trackom
+`0.177 m`, MC-only i `ulog_gate=PASS`.
 
 Planirana fiksna konfiguracija:
 
@@ -293,7 +299,7 @@ cd /home/imran/Repositories/px4-mpc
 Prihvatamo B1 samo ako završi sa `ulog_gate=PASS`. Sačuvati analyzer output;
 raw ULog se ne kopira u repo dok ne odlučimo da je potreban.
 
-## Između B1 i B2
+## Između B1 i B2 — izmjereno
 
 Iz B1 ULoga se računa koliko je collective regulator stvarno morao smanjiti
 lift pri istoj visini i brzini. Tek taj izmjereni MC podatak postaje ograničeni
@@ -305,11 +311,28 @@ feedforward lift-unloading raspored. Raspored mora:
 - vratiti puni hover collective pri kočenju i prije završnog hovera;
 - biti ograničen tako da jedan model mismatch ne može ugasiti lift motore.
 
+Prihvaćeni ULog daje hover collective oko `0.5201` i `0.5096–0.5100` pri
+4.5–5 m/s, odnosno efektivno rasterećenje oko `0.010`. Raw plant predviđa
+`0.022` na 5 m/s i zato precjenjuje wing-lift efekt. Početni B2 schedule mora
+biti konzervativniji od direktnog modela:
+
+```text
+speed <= 3 m/s: unload = 0.000
+speed = 5 m/s:  unload = 0.010
+speed = 8 m/s:  unload <= 0.020
+```
+
+Interpolacija mora biti glatka, a vrijednost se dodaje kao feedforward ispod
+postojećeg altitude feedbacka. Pri kočenju schedule prati izmjerenu brzinu i
+vraća se na nulu prije završnog hovera.
+
 ## B2 — 8 m/s MC pre-transition let
 
-B2 se implementira tek nakon B1 ULog PASS-a. Početni pusher limit je `0.20`,
-ali se može smanjiti ako B1 pokaže da nije potreban. Na `8 m/s` se prvi put
-aktivira validirani lift-unloading feedforward uz altitude feedback.
+B1 ULog je PASS, pa je neposredni rad B2 implementacija i offline disturbance
+provjera. Početni pusher limit je `0.20`. Na `8 m/s` se prvi put aktivira
+ULog-ograničeni lift-unloading feedforward uz altitude feedback. Još ne
+pokretati B2 let dok zaseban servis, OCP, simulator, watchdog i analyzer nisu
+implementirani i dokumentovani.
 
 PASS kriteriji ostaju najmanje jednako strogi:
 

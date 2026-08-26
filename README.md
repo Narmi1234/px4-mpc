@@ -6,10 +6,11 @@ The MPC uses the [acados framework](https://github.com/acados/acados)
 ## Standard VTOL hover-to-forward-flight rad
 
 Standard VTOL plant, trim corridor, CasADi/acados OCP i zaštićeni ROS 2
-Offboard node su implementirani. Hover je potvrđen kroz 30 sekundi, a Gate A
-je ULogom potvrdio zatvorenu NMPC pusher-speed petlju do `3.127 m/s`, sigurno
-kočenje i povratak u hover u MC režimu. Puna VTOL tranzicija još nije odobrena.
-Za nastavak rada prvo čitaj:
+Offboard node su implementirani. Hover je potvrđen kroz 30 sekundi, Gate A je
+potvrdio zatvorenu NMPC pusher-speed petlju do `3.127 m/s`, a Gate B1 stvarni
+pusher i airspeed feedback do `5.076 m/s`, sa sigurnim kočenjem i povratkom u
+hover u MC režimu. Puna VTOL tranzicija još nije odobrena. Za nastavak rada
+prvo čitaj:
 
 1. [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md) — trenutno
    stanje, vlasništvo komandi, prihvaćeni 3 m/s pusher-feedback gate i svi

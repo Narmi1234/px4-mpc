@@ -196,6 +196,13 @@ aktivnog lift-unloadinga.
 Tek nakon Gate A rade se odvojeni letovi na `5 m/s`, zatim `8 m/s`. Još nema
 VTOL transition komande.
 
+Gate B1 na `5 m/s` je prihvaćen ULogom `2026-08-26/05_52_44.ulg`: stvarni
+pusher `0.150 -> 0`, peak speed `5.076 m/s`, final speed `0.034 m/s`, CAS
+`5.359 m/s`, altitude error `0.264 m`, tilt `4.55 deg`, cross-track `0.177 m`,
+MC-only i `ulog_gate=PASS`. Sažetak je u
+`validation_logs/PRETRANSITION_GATE_B1_SUMMARY.md`. Neposredni naredni korak je
+B2 implementacija/offline provjera, ne novi let.
+
 Ovdje se dodaje:
 
 - validirani airspeed feedback;
