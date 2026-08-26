@@ -282,6 +282,7 @@ class StandardVtolNmpcNode(Node):
         self.last_wall_offboard_duration = 0.0
         self.prestream_count = 0
         self.solver_failures = 0
+        self.total_solver_failures = 0
         self.last_solve_time = math.nan
         self.solve_times_ms = deque(maxlen=5000)
         self.abort_reason = "none"
@@ -972,7 +973,9 @@ class StandardVtolNmpcNode(Node):
             f"vertical_rate=[value={self.vertical_position_rate_enu:.3f},"
             f"age={self._vertical_position_rate_age():.3f}s], "
             f"solve_time={1000.0 * self.last_solve_time:.2f}ms, "
-            f"solver_failures={self.solver_failures}, abort_reason={self.abort_reason}"
+            f"solver_failures={self.solver_failures}, "
+            f"total_solver_failures={self.total_solver_failures}, "
+            f"abort_reason={self.abort_reason}"
             f", test_mode={self.test_mode}, profile_phase={self.profile_phase}"
             f", configured_timeout={self._active_timeout():.1f}s"
             f", forward_profile=[speed={self.forward_profile.target_speed:.1f},"
@@ -1535,6 +1538,7 @@ class StandardVtolNmpcNode(Node):
             solution = self.controller.solve(self.state, x_ref, u_ref, parameters)
         except Exception as error:  # acados errors must never kill the watchdog
             self.solver_failures += 1
+            self.total_solver_failures += 1
             self.get_logger().error(f"NMPC solve exception: {error}")
             if self.output_requested and self.solver_failures >= 3:
                 self._abort("three_solver_exceptions")
@@ -1543,6 +1547,7 @@ class StandardVtolNmpcNode(Node):
         self.solve_times_ms.append(1000.0 * solution.solve_time)
         if solution.status != 0 or not np.all(np.isfinite(solution.control)):
             self.solver_failures += 1
+            self.total_solver_failures += 1
         else:
             self.solver_failures = 0
             self.last_raw_control = solution.control.copy()

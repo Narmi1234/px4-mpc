@@ -233,6 +233,10 @@ NMPC radi samo shadow prediction dok normalni PX4/QGC napravi front i back
 transition. `VT_EXT_PUSH_EN=0`, tako da PX4 u ovom testu potpuno upravlja
 tranzicijom.
 
+Gate B2 je prihvaćen ULogom `2026-08-26/06_28_37.ulg`, pa je Gate C sada
+aktivni korak. Tačan postupak je u
+[`STANDARD_VTOL_GATE_C_RUNBOOK.md`](STANDARD_VTOL_GATE_C_RUNBOOK.md).
+
 Ovim se provjerava:
 
 - airspeed koji PX4 stvarno koristi;
