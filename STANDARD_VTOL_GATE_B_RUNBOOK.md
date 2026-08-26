@@ -328,7 +328,8 @@ vraća se na nulu prije završnog hovera.
 
 ## B2 — 8 m/s MC pre-transition let
 
-B1 ULog je PASS. B2 implementacija i offline provjera su također završene.
+B1 ULog je PASS. B2 live let i ULog su također **PASS**; prihvaćeni rezultat
+i hash su u `validation_logs/PRETRANSITION_GATE_B2_SUMMARY.md`.
 Početni pusher limit je `0.20`. Na `8 m/s` se prvi put aktivira
 ULog-ograničeni lift-unloading feedforward uz postojeći altitude feedback.
 Vozilo cijelo vrijeme ostaje MC; ovo još nije transition.
@@ -512,9 +513,10 @@ cd /home/imran/Repositories/px4-mpc
   --require-airspeed
 ```
 
-B2 je prihvaćen tek kada i `ROS_GATE=PASS` i `ulog_gate=PASS`. Tada se rezultat
-i hash prihvaćenog ULoga upisuju u novi summary; raw ULog se ne kopira u repo.
+B2 je prihvaćen sa `ROS_GATE=PASS` i `ulog_gate=PASS`. Peak brzina je bila
+`8.111 m/s`, peak CAS `8.199 m/s`, altitude error `0.241 m`, tilt `4.61 deg`,
+minimalni lift-motor izlaz `0.4914`, a stvarni pusher se vratio na nulu.
 
-Tek B2 PASS otvara Gate C: prvo PX4 transition uz NMPC shadow prediction, bez
+Gate B2 PASS otvara Gate C: prvo PX4 transition uz NMPC shadow prediction, bez
 NMPC preuzimanja transition aktuatora. Nakon validacije shadow predikcije ide
 ograničeni NMPC transition gate.
