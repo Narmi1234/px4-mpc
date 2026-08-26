@@ -42,6 +42,19 @@ def generate_launch_description():
     pretransition_delay = LaunchConfiguration(
         "pretransition_start_delay_seconds"
     )
+    allow_lift_unloading = LaunchConfiguration("allow_lift_unloading_output")
+    lift_unloading_seconds = LaunchConfiguration(
+        "lift_unloading_test_max_seconds"
+    )
+    lift_unloading_speed = LaunchConfiguration("lift_unloading_target_speed")
+    lift_unloading_acceleration = LaunchConfiguration(
+        "lift_unloading_acceleration"
+    )
+    lift_unloading_hold = LaunchConfiguration("lift_unloading_hold_seconds")
+    lift_unloading_delay = LaunchConfiguration(
+        "lift_unloading_start_delay_seconds"
+    )
+    lift_unloading_maximum = LaunchConfiguration("lift_unloading_maximum")
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -169,6 +182,41 @@ def generate_launch_description():
                 default_value="2.0",
                 description="Gate B1 stationary warm-up before acceleration",
             ),
+            DeclareLaunchArgument(
+                "allow_lift_unloading_output",
+                default_value="false",
+                description="Allow the guarded Gate B2 8 m/s MC test",
+            ),
+            DeclareLaunchArgument(
+                "lift_unloading_test_max_seconds",
+                default_value="60.0",
+                description="PX4-time timeout for the Gate B2 profile",
+            ),
+            DeclareLaunchArgument(
+                "lift_unloading_target_speed",
+                default_value="8.0",
+                description="Gate B2 forward-speed reference in m/s",
+            ),
+            DeclareLaunchArgument(
+                "lift_unloading_acceleration",
+                default_value="0.50",
+                description="Gate B2 reference acceleration in m/s^2",
+            ),
+            DeclareLaunchArgument(
+                "lift_unloading_hold_seconds",
+                default_value="3.0",
+                description="Gate B2 hold time at peak speed",
+            ),
+            DeclareLaunchArgument(
+                "lift_unloading_start_delay_seconds",
+                default_value="2.0",
+                description="Gate B2 stationary warm-up before acceleration",
+            ),
+            DeclareLaunchArgument(
+                "lift_unloading_maximum",
+                default_value="0.020",
+                description="Maximum ULog-bounded B2 collective unloading",
+            ),
             Node(
                 package="px4_mpc",
                 executable="standard_vtol_nmpc",
@@ -201,6 +249,13 @@ def generate_launch_description():
                         "pretransition_acceleration": pretransition_acceleration,
                         "pretransition_hold_seconds": pretransition_hold,
                         "pretransition_start_delay_seconds": pretransition_delay,
+                        "allow_lift_unloading_output": allow_lift_unloading,
+                        "lift_unloading_test_max_seconds": lift_unloading_seconds,
+                        "lift_unloading_target_speed": lift_unloading_speed,
+                        "lift_unloading_acceleration": lift_unloading_acceleration,
+                        "lift_unloading_hold_seconds": lift_unloading_hold,
+                        "lift_unloading_start_delay_seconds": lift_unloading_delay,
+                        "lift_unloading_maximum": lift_unloading_maximum,
                     }
                 ],
             ),

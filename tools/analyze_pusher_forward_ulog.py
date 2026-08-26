@@ -89,6 +89,12 @@ def main() -> None:
     parser.add_argument("--maximum-tilt-degrees", type=float, default=10.0)
     parser.add_argument("--maximum-cross-track", type=float, default=1.0)
     parser.add_argument("--expected-pusher-limit", type=float, default=0.10)
+    parser.add_argument(
+        "--minimum-lift-motor",
+        type=float,
+        default=0.0,
+        help="Minimum permitted finite output among the four lift motors",
+    )
     parser.add_argument("--minimum-peak-airspeed", type=float, default=0.0)
     parser.add_argument("--require-airspeed", action="store_true")
     args = parser.parse_args()
@@ -229,6 +235,11 @@ def main() -> None:
     pusher_enabled = parameter_at(ulog, "VT_EXT_PUSH_EN", start)
     pusher_max = parameter_at(ulog, "VT_EXT_PUSH_MAX", start)
     pusher_slew = parameter_at(ulog, "VT_EXT_PUSH_SLEW", start)
+    minimum_lift_motor = (
+        float(np.min(lift_motor_values))
+        if len(lift_motor_values)
+        else float("nan")
+    )
     try:
         pusher_enabled_ok = int(pusher_enabled) == 1
         pusher_max_ok = abs(
@@ -253,6 +264,10 @@ def main() -> None:
         <= peak_pusher
         <= args.expected_pusher_limit + 0.005,
         "pusher_returned_zero": final_pusher_value <= 0.005,
+        "lift_motor_minimum": (
+            np.isfinite(minimum_lift_motor)
+            and minimum_lift_motor >= args.minimum_lift_motor
+        ),
         "altitude": max_altitude_error <= args.maximum_altitude_error,
         "vertical_speed": max_vertical_speed <= args.maximum_vertical_speed,
         "tilt": max_tilt <= args.maximum_tilt_degrees,
@@ -285,6 +300,7 @@ def main() -> None:
             "lift_motor_range="
             f"[{np.min(lift_motor_values):.4f},{np.max(lift_motor_values):.4f}]"
         )
+    print(f"minimum_lift_motor={minimum_lift_motor:.4f}")
     print(
         "px4_pusher_parameters="
         f"[enabled={pusher_enabled},max={pusher_max},slew={pusher_slew}]"

@@ -13,6 +13,7 @@ from px4_mpc.controllers.standard_vtol_output import (
     govern_pusher_forward_envelope,
     govern_pusher_forward_lateral,
     limit_pusher_forward_command,
+    pretransition_lift_command,
     vertical_hover_lift,
 )
 from px4_mpc.models.mc_forward_profile import (
@@ -102,6 +103,12 @@ def main() -> None:
     parser.add_argument("--hold-seconds", type=float, default=2.0)
     parser.add_argument("--start-delay-seconds", type=float, default=2.0)
     parser.add_argument("--pusher-limit", type=float, default=0.10)
+    parser.add_argument(
+        "--maximum-lift-unloading",
+        type=float,
+        default=0.0,
+        help="B2 lift feedforward removed from hover collective at 8 m/s",
+    )
     parser.add_argument("--minimum-peak-speed", type=float, default=2.5)
     parser.add_argument("--maximum-speed", type=float, default=3.5)
     parser.add_argument("--maximum-final-speed", type=float, default=0.35)
@@ -177,6 +184,7 @@ def main() -> None:
         0, int(np.ceil(arguments.rate_delay_seconds / controller.dt))
     )
     rate_history = [command[2:5].copy()] * rate_delay_steps
+    lift_unloading_history = []
 
     for index in range(round(arguments.duration / controller.dt)):
         elapsed = index * controller.dt
@@ -217,11 +225,21 @@ def main() -> None:
         if valid:
             consecutive_failures = 0
             requested = solution.control.copy()
-            requested[0] = vertical_hover_lift(
-                plant.plant,
-                state[2] - hold_state[2],
-                state[5],
-            )
+            if arguments.maximum_lift_unloading > 0.0:
+                requested[0], lift_unloading = pretransition_lift_command(
+                    plant.plant,
+                    state[2] - hold_state[2],
+                    state[5],
+                    state[3],
+                    maximum_unloading=arguments.maximum_lift_unloading,
+                )
+            else:
+                requested[0] = vertical_hover_lift(
+                    plant.plant,
+                    state[2] - hold_state[2],
+                    state[5],
+                )
+                lift_unloading = 0.0
             previous_command = command.copy()
             command = limit_pusher_forward_command(
                 previous_command,
@@ -264,6 +282,8 @@ def main() -> None:
             solver_failures += 1
             consecutive_failures += 1
             raw_controls.append(np.full(5, np.nan))
+            lift_unloading = 0.0
+        lift_unloading_history.append(lift_unloading)
         if elapsed < 0.5:
             command = plant.hover_control()
         if consecutive_failures >= 3:
@@ -288,6 +308,7 @@ def main() -> None:
     applied_controls = np.asarray(applied_controls)
     state_references = np.asarray(state_references)
     solve_times = np.asarray(solve_times)
+    lift_unloading_history = np.asarray(lift_unloading_history)
     position_error = states[1:, 0:2] - state_references[:, 0:2]
     qw, qx, qy, qz = states[:, 6], states[:, 7], states[:, 8], states[:, 9]
     roll = np.arctan2(
@@ -318,6 +339,9 @@ def main() -> None:
         ),
         "max_pusher": float(np.max(controls[:, 1])),
         "final_pusher": float(abs(controls[-1, 1])),
+        "max_lift_unloading": float(np.max(lift_unloading_history)),
+        "final_lift_unloading": float(abs(lift_unloading_history[-1])),
+        "minimum_collective": float(np.min(controls[:, 0])),
         "solve_time_p99_ms": float(1000.0 * np.percentile(solve_times, 99)),
         "rate_delay_seconds": rate_delay_steps * controller.dt,
         "pusher_effectiveness": arguments.pusher_effectiveness,
@@ -341,6 +365,15 @@ def main() -> None:
         <= metrics["max_pusher"]
         <= arguments.pusher_limit + 1.0e-12
         and metrics["final_pusher"] <= 0.005
+        and (
+            arguments.maximum_lift_unloading <= 0.0
+            or (
+                metrics["max_lift_unloading"]
+                >= arguments.maximum_lift_unloading - 0.001
+                and metrics["final_lift_unloading"] <= 0.001
+                and metrics["minimum_collective"] >= 0.48
+            )
+        )
         and metrics["solve_time_p99_ms"] <= 40.0
     )
     arguments.output.mkdir(parents=True, exist_ok=True)
@@ -351,6 +384,7 @@ def main() -> None:
         raw_controls=raw_controls,
         state_references=state_references,
         solve_times=solve_times,
+        lift_unloading=lift_unloading_history,
     )
     for name, value in metrics.items():
         print(f"{name}={value:.6g}")

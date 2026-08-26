@@ -184,3 +184,49 @@ def vertical_hover_lift(plant, altitude_error: float, vertical_speed: float) -> 
         - velocity_gain * float(vertical_speed)
     )
     return float(hover + desired_acceleration / acceleration_per_command)
+
+
+def pretransition_lift_unloading(
+    forward_speed: float,
+    maximum_unloading: float = 0.020,
+) -> float:
+    """Return the B1-ULog-bounded MC lift-unloading feedforward.
+
+    The schedule is zero through 3 m/s, reaches the measured 0.010 command
+    reduction at 5 m/s, and is conservatively capped at 0.020 by 8 m/s. Cubic
+    smoothstep segments avoid a collective derivative discontinuity.
+    """
+    speed = max(0.0, float(forward_speed))
+    maximum_unloading = float(maximum_unloading)
+    if not np.isfinite(maximum_unloading) or not 0.0 <= maximum_unloading <= 0.03:
+        raise ValueError("maximum_unloading must be finite and within [0, 0.03]")
+
+    def smoothstep(value: float) -> float:
+        value = float(np.clip(value, 0.0, 1.0))
+        return value * value * (3.0 - 2.0 * value)
+
+    measured_at_five = min(0.010, maximum_unloading)
+    if speed <= 3.0:
+        return 0.0
+    if speed < 5.0:
+        return measured_at_five * smoothstep((speed - 3.0) / 2.0)
+    if speed < 8.0:
+        return measured_at_five + (
+            maximum_unloading - measured_at_five
+        ) * smoothstep((speed - 5.0) / 3.0)
+    return maximum_unloading
+
+
+def pretransition_lift_command(
+    plant,
+    altitude_error: float,
+    vertical_speed: float,
+    forward_speed: float,
+    maximum_unloading: float = 0.020,
+) -> tuple[float, float]:
+    """Combine proven altitude feedback with bounded B2 lift unloading."""
+    unloading = pretransition_lift_unloading(
+        forward_speed, maximum_unloading=maximum_unloading
+    )
+    command = vertical_hover_lift(plant, altitude_error, vertical_speed) - unloading
+    return float(np.clip(command, 0.48, 0.56)), unloading

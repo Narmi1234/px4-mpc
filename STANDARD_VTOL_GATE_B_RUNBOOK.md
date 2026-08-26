@@ -328,11 +328,46 @@ vraća se na nulu prije završnog hovera.
 
 ## B2 — 8 m/s MC pre-transition let
 
-B1 ULog je PASS, pa je neposredni rad B2 implementacija i offline disturbance
-provjera. Početni pusher limit je `0.20`. Na `8 m/s` se prvi put aktivira
-ULog-ograničeni lift-unloading feedforward uz altitude feedback. Još ne
-pokretati B2 let dok zaseban servis, OCP, simulator, watchdog i analyzer nisu
-implementirani i dokumentovani.
+B1 ULog je PASS. B2 implementacija i offline provjera su također završene.
+Početni pusher limit je `0.20`. Na `8 m/s` se prvi put aktivira
+ULog-ograničeni lift-unloading feedforward uz postojeći altitude feedback.
+Vozilo cijelo vrijeme ostaje MC; ovo još nije transition.
+
+Fiksna konfiguracija:
+
+```text
+target ground-forward speed: 8.0 m/s
+reference acceleration:      0.50 m/s^2
+hold:                        3.0 s
+pusher OCP/PX4 limit:        0.20
+lift unloading:              0 do 3 m/s; 0.010 na 5; 0.020 na 8 m/s
+collective hard bounds:      0.48 do 0.56
+timeout:                     60.0 s PX4 vremena
+VTOL state:                  MC cijelo vrijeme
+```
+
+Profil prelazi približno `225 m`. Potrebno je najmanje `300 m` potpuno čistog
+prostora ispred nosa i početna visina `20 m`.
+
+Offline nominalni rezultat:
+
+```text
+max_speed_m_s=7.986
+final_speed_m_s=0.00001
+max_tracking_error_m=0.399
+max_altitude_error_m=0.238
+max_tilt_deg=2.25
+max_pusher=0.200
+max_lift_unloading=0.020
+minimum_collective=0.497
+solver_failures=0
+offline_gate=PASS
+```
+
+Disturbance test uključuje `0.50 m/s` bočni udar, `0.30 m/s` forward gust,
+35% jači rate odziv i `-6 deg` pitch poremećaj. Prolazi sa peak horizontalnom
+brzinom `8.002 m/s`, cross-trackom `0.482 m`, altitude errorom `0.237 m`,
+tiltom `5.12 deg`, minimalnim collectiveom `0.480` i bez solver grešaka.
 
 PASS kriteriji ostaju najmanje jednako strogi:
 
@@ -349,5 +384,137 @@ VTOL state = MC cijelo vrijeme
 solver failures = 0
 ```
 
-Tek B1 i B2 PASS otvaraju Gate C, gdje stock PX4 izvodi transition, a NMPC radi
-shadow prediction bez preuzimanja transition aktuatora.
+### B2 postupak pokretanja
+
+Prvo uraditi ROS build samo jednom nakon ovog commita:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source /opt/ros/jazzy/setup.bash
+source .venv/bin/activate
+colcon build --packages-select px4_mpc --symlink-install
+```
+
+#### Terminal 1 — custom PX4/Gazebo
+
+Ne aktivirati `px4-mpc/.venv`:
+
+```bash
+cd /home/imran/Repositories/PX4-Autopilot
+git branch --show-current
+make px4_sitl gz_standard_vtol
+```
+
+Branch mora biti `nmpc-external-pusher`. U PX4 shellu prije armiranja:
+
+```text
+param set VT_EXT_PUSH_EN 1
+param set VT_EXT_PUSH_MAX 0.20
+param set VT_EXT_PUSH_SLEW 0.10
+param show VT_EXT_PUSH_EN
+param show VT_EXT_PUSH_MAX
+param show VT_EXT_PUSH_SLEW
+```
+
+Izlaz mora stvarno prikazati `1`, `0.20`, `0.10`.
+
+#### Terminal 2 — DDS Agent
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source scripts/setup_standard_vtol_nmpc.bash
+microxrce_agent_install/bin/MicroXRCEAgent udp4 -p 8888
+```
+
+#### Terminal 3 — B2 NMPC node
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+
+ros2 launch px4_mpc standard_vtol_nmpc_launch.py \
+  allow_offboard_output:=true \
+  allow_external_pusher_output:=true \
+  allow_lift_unloading_output:=true \
+  lift_unloading_test_max_seconds:=60.0 \
+  lift_unloading_target_speed:=8.0 \
+  lift_unloading_acceleration:=0.50 \
+  lift_unloading_hold_seconds:=3.0 \
+  lift_unloading_start_delay_seconds:=2.0 \
+  lift_unloading_maximum:=0.020
+```
+
+Sačekati poruku `guarded 8 m/s MC lift-unloading` i ostaviti terminal otvoren.
+
+#### Terminal 4 — provjera i let
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+ros2 topic hz /fmu/out/vehicle_odometry
+```
+
+Kad je frekvencija stabilna, prekinuti samo `hz` sa `Ctrl+C`. U QGC:
+
+1. vozilo mora biti MC i Position;
+2. armirati i podići na `20 m`;
+3. nos usmjeriti prema najmanje `300 m` potpuno čistog prostora;
+4. sačekati najmanje `5 s` u mirnom hoveru;
+5. držati QGC spreman za trenutni ručni povratak u Position.
+
+Zatim u Terminalu 4 pokrenuti tačno jednu skriptu:
+
+```bash
+bash scripts/run_pretransition_8mps_gate.bash
+```
+
+Kada zatraži potvrdu, unijeti `1,0.20,0.10` samo ako su to stvarno pokazale
+tri PX4 `param show` komande. Tokom testa gledati da nema rastuće oscilacije,
+velikog gubitka visine ili izlaska iz MC režima. U tim slučajevima odmah
+izabrati Position mode.
+
+Očekivani ROS završetak:
+
+```text
+abort_reason=pretransition_8mps_test_timeout
+last_offboard_duration=60.0s
+maxima=[...,forward_speed između 7.25 i 8.75,...
+airspeed najmanje 7.0,...commanded_pusher do 0.200,lift_unloading=0.020,...]
+solver_failures=0
+ROS_GATE=PASS
+```
+
+Svaki drugi `abort_reason` je FAIL. Ne ponavljati let prije analize.
+
+#### B2 ULog analiza
+
+Sletjeti, disarmirati i ugasiti PX4/Gazebo da se log zatvori. Pronaći najnoviji
+ULog i analizirati baš njegovu punu putanju:
+
+```bash
+find /home/imran/Repositories/PX4-Autopilot/build/px4_sitl_default/rootfs/log \
+  -type f -name '*.ulg' -printf '%T@ %s %p\n' | sort -nr | head
+
+cd /home/imran/Repositories/px4-mpc
+/usr/bin/python3 tools/analyze_pusher_forward_ulog.py \
+  /home/imran/Repositories/PX4-Autopilot/build/px4_sitl_default/rootfs/log/YYYY-MM-DD/HH_MM_SS.ulg \
+  --minimum-duration 56.0 \
+  --minimum-forward-speed 7.25 \
+  --maximum-forward-speed 8.75 \
+  --maximum-final-speed 0.50 \
+  --maximum-altitude-error 0.40 \
+  --maximum-vertical-speed 1.0 \
+  --maximum-tilt-degrees 12.0 \
+  --maximum-cross-track 1.5 \
+  --expected-pusher-limit 0.20 \
+  --minimum-peak-airspeed 7.0 \
+  --minimum-lift-motor 0.30 \
+  --require-airspeed
+```
+
+B2 je prihvaćen tek kada i `ROS_GATE=PASS` i `ulog_gate=PASS`. Tada se rezultat
+i hash prihvaćenog ULoga upisuju u novi summary; raw ULog se ne kopira u repo.
+
+Tek B2 PASS otvara Gate C: prvo PX4 transition uz NMPC shadow prediction, bez
+NMPC preuzimanja transition aktuatora. Nakon validacije shadow predikcije ide
+ograničeni NMPC transition gate.

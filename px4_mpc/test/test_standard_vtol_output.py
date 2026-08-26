@@ -10,6 +10,8 @@ from px4_mpc.controllers.standard_vtol_output import (
     limit_external_pusher_command,
     limit_mc_command,
     limit_pusher_forward_command,
+    pretransition_lift_command,
+    pretransition_lift_unloading,
     vertical_hover_lift,
 )
 from px4_mpc.models.standard_vtol_gz_model import StandardVtolGazeboModel
@@ -148,6 +150,26 @@ class TestStandardVtolOutput(unittest.TestCase):
             dt=0.05,
         )
         self.assertAlmostEqual(actual[2], -0.01)
+
+    def test_b2_lift_unloading_matches_ulog_bounded_schedule(self):
+        self.assertAlmostEqual(pretransition_lift_unloading(3.0), 0.0)
+        self.assertAlmostEqual(pretransition_lift_unloading(4.0), 0.005)
+        self.assertAlmostEqual(pretransition_lift_unloading(5.0), 0.010)
+        self.assertAlmostEqual(pretransition_lift_unloading(6.5), 0.015)
+        self.assertAlmostEqual(pretransition_lift_unloading(8.0), 0.020)
+        self.assertAlmostEqual(pretransition_lift_unloading(12.0), 0.020)
+
+    def test_b2_lift_command_preserves_altitude_feedback_and_hard_floor(self):
+        plant = StandardVtolGazeboModel()
+        hover_command, unloading = pretransition_lift_command(
+            plant, 0.0, 0.0, 8.0
+        )
+        self.assertAlmostEqual(unloading, 0.020)
+        self.assertAlmostEqual(hover_command, plant.hover_command - 0.020)
+        bounded, _ = pretransition_lift_command(
+            plant, 10.0, 10.0, 8.0
+        )
+        self.assertAlmostEqual(bounded, 0.48)
 
 
 
