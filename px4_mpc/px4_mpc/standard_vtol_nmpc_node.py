@@ -1001,9 +1001,9 @@ class StandardVtolNmpcNode(Node):
             response.success = False
             response.message = "gate_d_handover_speed_too_high"
             return response
-        if self.state[2] < 29.0:
+        if self.state[2] < 59.0:
             response.success = False
-            response.message = "gate_d_requires_at_least_30m_local_altitude"
+            response.message = "gate_d_requires_at_least_60m_local_altitude"
             return response
         if self.total_solver_failures != 0:
             response.success = False

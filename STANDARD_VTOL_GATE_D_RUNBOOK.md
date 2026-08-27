@@ -10,7 +10,7 @@ MC hover -> 8 m/s -> PX4 front transition -> kratki FW hold
 NMPC šalje collective, pusher i body-rate setpointe. PX4 i dalje posjeduje
 VTOL state machine, airspeed blend, control allocation i unutrašnji rate loop.
 NMPC ne komanduje pojedinačne motore. Ovo je prvi Gate koji mijenja VTOL state;
-ne pokretati ga bez najmanje 30 m visine i 500 m čistog prostora ispred nosa.
+ne pokretati ga bez najmanje 60 m visine i 500 m čistog prostora ispred nosa.
 
 Gate D zahtijeva custom PX4 `nmpc-external-pusher` build koji ažurira Standard
 VTOL transition timer i MC/FW weights u Offboard body-rate režimu. NMPC šalje
@@ -119,7 +119,8 @@ terminal otvoren. Warning za Matplotlib `Axes3D` nije razlog za prekid.
 ## QGC — priprema leta
 
 1. Vozilo mora biti MC i Position mode.
-2. Armirati i podići na najmanje 30 m iznad tla.
+2. Armirati i podići na najmanje 60 m iznad tla. Attempt 07 recovery izgubio
+   je skoro 30 m, zato node odbija Gate D ispod 60 m.
 3. Nos usmjeriti prema najmanje 500 m praznog prostora.
 4. Držati stabilan hover najmanje 10 s.
 5. Ne pritiskati QGC transition dugme tokom normalnog Gate D testa.

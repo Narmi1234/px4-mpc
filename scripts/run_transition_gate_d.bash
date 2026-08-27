@@ -43,7 +43,7 @@ if [[ "${PX4_GATE_D_CONFIRMED:-}" != "YES" ]]; then
   echo "  param show VT_EXT_PUSH_MAX"
   echo "  param show VT_EXT_PUSH_SLEW"
   echo
-  echo "Aircraft must be armed in MC Position hover at >=30 m, stable for 10 s,"
+  echo "Aircraft must be armed in MC Position hover at >=60 m, stable for 10 s,"
   echo "pointed toward >=500 m clear space. QGC must be ready for manual recovery."
   read -r -p "Type exactly GATE-D-READY after checking all items: " _CONFIRM
   if [[ "${_CONFIRM}" != "GATE-D-READY" ]]; then
