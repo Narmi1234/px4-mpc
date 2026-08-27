@@ -74,7 +74,7 @@ class TestGateDStateMachine(unittest.TestCase):
     def test_front_profile_uses_separate_stock_informed_pusher_envelope(self):
         gate = GateDStateMachine()
         self.assertAlmostEqual(gate.mc_pusher_limit, 0.30)
-        self.assertAlmostEqual(gate.front_pusher_command, 0.60)
+        self.assertAlmostEqual(gate.front_pusher_command, 0.40)
         self.assertAlmostEqual(gate.front_peak_acceleration, 2.0)
 
 

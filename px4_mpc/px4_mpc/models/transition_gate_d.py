@@ -61,7 +61,11 @@ class GateDStateMachine:
     condition_hold_seconds = 1.0
     recovery_stop_seconds = 2.0
     front_peak_acceleration = 2.0
-    front_pusher_command = 0.60
+    # Attempt 06 reached FW, but the former 0.60 floor accelerated through
+    # the 12 m/s reference and crossed the 14 m/s watchdog at FW entry.  A
+    # 0.40 ceiling still leaves margin above the validated 0.30 MC envelope
+    # while allowing the speed governor to remove thrust before overspeed.
+    front_pusher_command = 0.40
     mc_pusher_limit = 0.30
 
     def __init__(self) -> None:

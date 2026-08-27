@@ -113,8 +113,13 @@ def govern_transition_speed(
     """Remove pusher promptly when Gate D exceeds its speed reference."""
     previous = np.asarray(previous, dtype=float)
     result = np.asarray(limited, dtype=float).copy()
-    if float(forward_speed) > float(reference_speed) + 0.75:
-        result[1] = max(0.0, previous[1] - 0.10 * float(dt))
+    # Attempt 06 proved that a 0.75 m/s deadband and 0.10/s reduction were
+    # slower than the live Standard VTOL acceleration: the aircraft entered
+    # FW at 13.27 m/s and immediately crossed the 14 m/s watchdog.  Match the
+    # reduction to the independently enforced PX4 pusher slew once the
+    # measured speed is 0.25 m/s above reference.
+    if float(forward_speed) > float(reference_speed) + 0.25:
+        result[1] = max(0.0, previous[1] - 0.33 * float(dt))
     return result
 
 

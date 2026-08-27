@@ -136,7 +136,7 @@ class StandardVtolNmpcNode(Node):
         self.declare_parameter("lift_unloading_maximum", 0.020)
         self.declare_parameter("allow_transition_gate_d_output", False)
         self.declare_parameter("transition_gate_d_max_seconds", 90.0)
-        self.declare_parameter("transition_gate_d_pusher_max", 0.60)
+        self.declare_parameter("transition_gate_d_pusher_max", 0.40)
         self.allow_output = bool(self.get_parameter("allow_offboard_output").value)
         self.max_offboard_seconds = float(
             self.get_parameter("hover_offboard_max_seconds").value
@@ -267,7 +267,7 @@ class StandardVtolNmpcNode(Node):
             # with the generic 0.60 transition limit and clipping to 0.10
             # afterward invalidates NMPC's speed and braking prediction.
             build_name = (
-                "standard_vtol_nmpc_gate_d_pusher_030"
+                "standard_vtol_nmpc_gate_d_pusher_040"
                 if self.allow_transition_gate_d
                 else (
                     "standard_vtol_nmpc_gate_b2_pusher_020"
@@ -979,13 +979,13 @@ class StandardVtolNmpcNode(Node):
             and self.allow_external_pusher
             and self.allow_transition_gate_d
             and np.isclose(self.transition_gate_d_max_seconds, 90.0)
-            and np.isclose(self.transition_gate_d_pusher_max, 0.60)
+            and np.isclose(self.transition_gate_d_pusher_max, 0.40)
         )
         if not configured:
             response.success = False
             response.message = (
                 "launch Gate D with Offboard, external pusher, 90 s timeout "
-                "and 0.60 front-transition pusher envelope"
+                "and 0.40 front-transition pusher envelope"
             )
             return response
         ready, reason = self._ready_for_hover()
@@ -2000,7 +2000,16 @@ class StandardVtolNmpcNode(Node):
             control_dt = self._control_dt()
             if self.test_mode == "transition_gate_d":
                 previous_command = self.last_command.copy()
-                if self.gate_d.state == "front_transition":
+                forward_speed = float(
+                    np.dot(self.state[3:5], self.forward_direction)
+                )
+                reference_speed = float(
+                    np.dot(self.current_reference[3:5], self.forward_direction)
+                )
+                if (
+                    self.gate_d.state == "front_transition"
+                    and forward_speed <= reference_speed + 0.25
+                ):
                     requested_control[1] = max(
                         requested_control[1],
                         self.gate_d.front_pusher_command,
@@ -2052,12 +2061,6 @@ class StandardVtolNmpcNode(Node):
                     self._pitch_angle(),
                     reference_pitch,
                     control_dt,
-                )
-                forward_speed = float(
-                    np.dot(self.state[3:5], self.forward_direction)
-                )
-                reference_speed = float(
-                    np.dot(self.current_reference[3:5], self.forward_direction)
                 )
                 self.last_command = govern_transition_speed(
                     previous_command,

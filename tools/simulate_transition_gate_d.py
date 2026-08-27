@@ -78,7 +78,7 @@ def references(controller, gate, hold, state, elapsed, vtol_state):
     u_ref[:, 0] = controller.model.plant.hover_command
     for stage, sample in enumerate(samples[:-1]):
         mc = pusher_forward_feedforward(
-            controller.model.plant, sample.speed, sample.acceleration, 0.60
+            controller.model.plant, sample.speed, sample.acceleration, 0.40
         )
         fw_weight = 1.0 - weight
         u_ref[stage, 1] = (
@@ -96,9 +96,9 @@ def references(controller, gate, hold, state, elapsed, vtol_state):
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     controller = StandardVtolNmpc(
-        build_directory=root / "build/standard_vtol_nmpc_gate_d_pusher_030",
+        build_directory=root / "build/standard_vtol_nmpc_gate_d_pusher_040",
         control_lower_bounds=np.array([0.0, 0.0, -0.5, -0.5, -0.3]),
-        control_upper_bounds=np.array([0.65, 0.60, 0.5, 0.5, 0.3]),
+        control_upper_bounds=np.array([0.65, 0.40, 0.5, 0.5, 0.3]),
     )
     plant = StandardVtolTransitionRateModel(controller.model.plant)
     state = plant.hover_state()
@@ -168,13 +168,16 @@ def main() -> None:
             requested[0] = vertical_hover_lift(
                 plant.plant, state[2] - hold[2], state[5]
             )
-        if gate.state == "front_transition":
+        if (
+            gate.state == "front_transition"
+            and state[3] <= x_ref[0, 3] + 0.25
+        ):
             requested[1] = max(requested[1], gate.front_pusher_command)
         previous = command.copy()
         pusher_limit = (
             gate.mc_pusher_limit
             if gate.state == "mc_accelerate"
-            else 0.60
+            else 0.40
         )
         pusher_slew = 0.05 if gate.state == "mc_accelerate" else 0.33
         command = limit_transition_command(

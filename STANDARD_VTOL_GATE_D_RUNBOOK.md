@@ -24,7 +24,7 @@ MC transition trigger:     ground speed i CAS >= 7.5 m/s tokom 1 s
 front-transition timeout:  12 s
 FW hold nakon FW ulaska:   5 s
 referentna brzina:         0 -> 8 -> 12 -> 0 m/s
-pusher command:            MC <= 0.30; front transition <= 0.60
+pusher command:            MC <= 0.30; front transition <= 0.40
 apsolutna greška visine:   <= 2.0 m
 apsolutni roll/pitch:      <= 20 deg
 brzina:                    <= 14 m/s
@@ -79,14 +79,14 @@ rates` ili njegov potomak. U `pxh>` shellu:
 
 ```text
 param set VT_EXT_PUSH_EN 1
-param set VT_EXT_PUSH_MAX 0.60
+param set VT_EXT_PUSH_MAX 0.40
 param set VT_EXT_PUSH_SLEW 0.33
 param show VT_EXT_PUSH_EN
 param show VT_EXT_PUSH_MAX
 param show VT_EXT_PUSH_SLEW
 ```
 
-Mora prikazati `1`, `0.60`, `0.33`. Ne mijenjati PX4 stock transition
+Mora prikazati `1`, `0.40`, `0.33`. Ne mijenjati PX4 stock transition
 parametre `VT_ARSP_BLEND`, `VT_ARSP_TRANS`, `VT_TRANS_MIN_TM`,
 `VT_B_TRANS_RAMP` ili `VT_B_TRANS_DUR`.
 
@@ -110,7 +110,7 @@ ros2 launch px4_mpc standard_vtol_nmpc_launch.py \
   allow_external_pusher_output:=true \
   allow_transition_gate_d_output:=true \
   transition_gate_d_max_seconds:=90.0 \
-  transition_gate_d_pusher_max:=0.60
+  transition_gate_d_pusher_max:=0.40
 ```
 
 Startup poruka mora sadržati `guarded Gate D front/back transition`. Ostaviti
@@ -156,6 +156,12 @@ pređe `8 m/s`. Prikazani `collective` je sada raw NMPC zahtjev i treba ostati
 približno u hover rasponu `0.48..0.56`; PX4 interno množi taj zahtjev svojim
 weightom. Stvarno rasterećenje lift-motora potvrđuje se iz ULoga, ne padom raw
 collectivea u ROS statusu.
+
+Attempt 06 je prvi put dokazao cijeli PX4 slijed `3 -> 1 -> 4 -> 2 -> 3`,
+ali je stari forsirani front-pusher `0.60` doveo do FW ulaska pri CAS
+`13.27 m/s` i trenutnog prelaska sigurnosnog limita `14 m/s`. Zato ovaj gate
+sada koristi plafon `0.40`, ne forsira pusher kada je brzina iznad reference i
+smanjuje ga sa `0.33/s`. Ne vraćati `0.60` radi bržeg ulaska u tranziciju.
 
 Prikaz `pitch=actual/reference` koristi interni FLU znak. Tokom
 `front_transition` referenca je `0 deg`, prema uspješnom stock PX4 ULogu, a

@@ -193,9 +193,13 @@ class TestStandardVtolOutput(unittest.TestCase):
         limited = limit_transition_command(previous, requested, dt=1.0)
         np.testing.assert_allclose(limited, [0.48, 0.05, 0.12, -0.25, 0.15])
         governed = govern_transition_speed(
-            limited, limited, forward_speed=13.0, reference_speed=12.0, dt=0.05
+            limited, limited, forward_speed=12.3, reference_speed=12.0, dt=0.05
         )
-        self.assertLess(governed[1], limited[1])
+        self.assertAlmostEqual(governed[1], limited[1] - 0.33 * 0.05)
+        inside_deadband = govern_transition_speed(
+            limited, limited, forward_speed=12.2, reference_speed=12.0, dt=0.05
+        )
+        self.assertAlmostEqual(inside_deadband[1], limited[1])
 
     def test_gate_d_lift_blend_can_ramp_collective_below_hover_floor(self):
         previous = np.array([0.52, 0.20, 0.0, 0.0, 0.0])

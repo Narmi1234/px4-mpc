@@ -170,7 +170,7 @@ def main() -> None:
         external_pusher_disabled = False
     try:
         external_pusher_limit_correct = np.isclose(
-            float(external_pusher_max), 0.30, atol=1.0e-4
+            float(external_pusher_max), 0.40, atol=1.0e-4
         )
     except (TypeError, ValueError):
         external_pusher_limit_correct = False
@@ -190,7 +190,7 @@ def main() -> None:
             if args.gate_d else "stock_px4_owns_pusher"
         ): (not external_pusher_disabled if args.gate_d else external_pusher_disabled),
         "pusher_active": peak_pusher >= 0.10,
-        "pusher_bounded": peak_pusher <= 0.35 if args.gate_d else True,
+        "pusher_bounded": peak_pusher <= 0.45 if args.gate_d else True,
         "external_pusher_limit": (
             external_pusher_limit_correct if args.gate_d else True
         ),
