@@ -200,7 +200,20 @@ def main() -> None:
             np.clip(2.0 * (rw * ry - rz * rx), -1.0, 1.0)
         )
         command = govern_transition_pitch(
-            previous, command, pitch, reference_pitch, controller.dt
+            previous,
+            command,
+            pitch,
+            reference_pitch,
+            controller.dt,
+            rate_limit=(
+                0.65 if gate.state in ("fw_hold", "back_transition") else 0.10
+            ),
+            rate_slew=(
+                1.50 if gate.state in ("fw_hold", "back_transition") else 0.20
+            ),
+            position_gain=(
+                3.0 if gate.state in ("fw_hold", "back_transition") else 1.0
+            ),
         )
         command = govern_transition_speed(
             previous,

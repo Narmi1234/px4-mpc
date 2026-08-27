@@ -163,6 +163,14 @@ ali je stari forsirani front-pusher `0.60` doveo do FW ulaska pri CAS
 sada koristi plafon `0.40`, ne forsira pusher kada je brzina iznad reference i
 smanjuje ga sa `0.33/s`. Ne vraćati `0.60` radi bržeg ulaska u tranziciju.
 
+Attempt 07 je ušao u FW pri CAS `10.59 m/s`, ali je dotadašnji pitch-rate
+governor ostao na MC limitu `0.10 rad/s`. Stock PX4 ULog u istom trenutku
+koristi približno `0.44..0.55 rad/s`; uski limit nije mogao zaustaviti nagli
+pitch transient nakon gašenja lift-motora. Od ovog checkpointa `fw_hold`,
+`back_transition` i abort-recovery koriste stock-informisan limit `0.65
+rad/s`, slew `1.50 rad/s^2` i aktivno nivelisanje. `front_transition` prije FW
+potvrde ostaje na blagom, ranije validiranom `0.10 rad/s` limitu.
+
 Prikaz `pitch=actual/reference` koristi interni FLU znak. Tokom
 `front_transition` referenca je `0 deg`, prema uspješnom stock PX4 ULogu, a
 stvarni pitch treba ostati unutar približno `+/-4 deg`. Automatski recovery

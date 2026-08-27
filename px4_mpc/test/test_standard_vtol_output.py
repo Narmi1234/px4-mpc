@@ -201,6 +201,21 @@ class TestStandardVtolOutput(unittest.TestCase):
         )
         self.assertAlmostEqual(inside_deadband[1], limited[1])
 
+    def test_gate_d_fw_pitch_governor_matches_stock_rate_envelope(self):
+        previous = np.array([0.52, 0.30, 0.0, 0.0, 0.0])
+        governed = govern_transition_pitch(
+            previous,
+            previous,
+            pitch=np.deg2rad(12.0),
+            reference_pitch=np.deg2rad(-4.0),
+            dt=0.10,
+            rate_limit=0.65,
+            rate_slew=1.50,
+            position_gain=3.0,
+        )
+        self.assertAlmostEqual(governed[3], -0.15)
+        self.assertGreaterEqual(governed[3], -0.65)
+
     def test_gate_d_lift_blend_can_ramp_collective_below_hover_floor(self):
         previous = np.array([0.52, 0.20, 0.0, 0.0, 0.0])
         requested = np.array([0.0, 0.20, 0.0, 0.0, 0.0])

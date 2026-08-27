@@ -1856,6 +1856,7 @@ class StandardVtolNmpcNode(Node):
     def _publish_gate_d_recovery(self) -> None:
         """Bypass NMPC and publish a feasible command until MC is confirmed."""
         control_dt = self._control_dt()
+        previous_command = self.last_command.copy()
         self.last_raw_control = self._gate_d_recovery_command()
         self.last_command = limit_transition_command(
             self.last_command,
@@ -1865,6 +1866,21 @@ class StandardVtolNmpcNode(Node):
             pusher_slew=0.33,
             apply_lift_blend=False,
         )
+        # A zero body-rate recovery left the wing-borne vehicle uncontrolled
+        # while PX4 ramped the lift motors back in. Attempt 07 lost almost
+        # 30 m after the abort. Keep a stock-informed level-pitch correction
+        # active until PX4 confirms MC.
+        self.last_command = govern_transition_pitch(
+            previous_command,
+            self.last_command,
+            self._pitch_angle(),
+            0.0,
+            control_dt,
+            rate_limit=0.65,
+            rate_slew=1.50,
+            position_gain=3.0,
+        )
+        self._update_flight_metrics()
         diagnostic = Float64MultiArray()
         diagnostic.data = [
             *self.last_command.tolist(),
@@ -2061,6 +2077,21 @@ class StandardVtolNmpcNode(Node):
                     self._pitch_angle(),
                     reference_pitch,
                     control_dt,
+                    rate_limit=(
+                        0.65
+                        if self.gate_d.state in ("fw_hold", "back_transition")
+                        else 0.10
+                    ),
+                    rate_slew=(
+                        1.50
+                        if self.gate_d.state in ("fw_hold", "back_transition")
+                        else 0.20
+                    ),
+                    position_gain=(
+                        3.0
+                        if self.gate_d.state in ("fw_hold", "back_transition")
+                        else 1.0
+                    ),
                 )
                 self.last_command = govern_transition_speed(
                     previous_command,

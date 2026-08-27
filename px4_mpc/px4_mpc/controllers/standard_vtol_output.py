@@ -129,33 +129,56 @@ def govern_transition_pitch(
     pitch: float,
     reference_pitch: float,
     dt: float = 0.05,
+    rate_limit: float = 0.10,
+    rate_slew: float = 0.20,
+    position_gain: float = 1.0,
 ) -> np.ndarray:
     """Close a slow pitch loop around the rate-input transition model.
 
     The 10-state plant treats body rate as the inner-loop output. The live PX4
     rate loop and aerodynamic surfaces add a measured delay, so an unbounded
     NMPC rate reversal produced the Gate D attempt-02 pitch oscillation. This
-    governor limits the requested pitch rate to 0.10 rad/s and its slew to
-    0.20 rad/s^2. Inside a four-degree corridor NMPC retains authority for
-    altitude correction; at either edge only rates back into the corridor are
-    accepted.
+    The caller selects phase-specific rate and slew bounds. Front transition
+    keeps the validated 0.10 rad/s and 0.20 rad/s^2 envelope; confirmed FW and
+    back transition use the wider stock-PX4-informed envelope needed after
+    lift-motor shutdown. Inside a four-degree corridor NMPC retains authority;
+    outside it, only rates back into the corridor are accepted.
     """
     previous = np.asarray(previous, dtype=float)
     result = np.asarray(limited, dtype=float).copy()
     pitch = float(pitch)
     reference_pitch = float(reference_pitch)
+    rate_limit = float(rate_limit)
+    rate_slew = float(rate_slew)
+    position_gain = float(position_gain)
+    if rate_limit <= 0.0 or rate_slew <= 0.0 or position_gain <= 0.0:
+        raise ValueError("pitch governor limits and gain must be positive")
     soft_error = np.deg2rad(4.0)
     lower_rate = float(
-        np.clip(reference_pitch - soft_error - pitch, -0.10, 0.10)
+        np.clip(
+            position_gain * (reference_pitch - soft_error - pitch),
+            -rate_limit,
+            rate_limit,
+        )
     )
     upper_rate = float(
-        np.clip(reference_pitch + soft_error - pitch, -0.10, 0.10)
+        np.clip(
+            position_gain * (reference_pitch + soft_error - pitch),
+            -rate_limit,
+            rate_limit,
+        )
     )
     target_rate = float(
-        np.clip(np.clip(result[3], -0.10, 0.10), lower_rate, upper_rate)
+        np.clip(
+            np.clip(result[3], -rate_limit, rate_limit),
+            lower_rate,
+            upper_rate,
+        )
     )
     result[3] = previous[3] + np.clip(
-        target_rate - previous[3], -0.20 * float(dt), 0.20 * float(dt)
+        target_rate - previous[3],
+        -rate_slew * float(dt),
+        rate_slew * float(dt),
     )
     return result
 
