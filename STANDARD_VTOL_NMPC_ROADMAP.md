@@ -383,6 +383,17 @@ i rebuilda ograničeni PX4 `nmpc-external-pusher` patch za Standard VTOL
 Offboard-rate transition timing/weights; NMPC zatim mora ukloniti vlastiti
 eksplicitni lift blend da ne nastane double-blend.
 
+Korisnik je eksplicitno odobrio ovaj SITL-only firmware patch. Custom PX4
+branch sada poziva Standard transition update i u Offboard body-rate režimu;
+attitude-setpoint obrada se tada preskače, ali timer i MC/FW control weights
+ostaju aktivni. NMPC šalje raw hover collective, pa PX4 ponovo sam primjenjuje
+jedini lift/torque blend.
+
+PX4 checkpoint je `7558a3d188`; C++ style i `px4` SITL target prolaze. Upareni
+NMPC offline Gate D sa uklonjenim outgoing double-blendom prolazi za `53.05 s`:
+speed `12.088 m/s`, altitude error `1.029 m`, tilt `6.65 deg`, peak pusher
+`0.443`, solver failures `0`, završni MC.
+
 Gate D još nije PASS dok i ROS završetak i najnoviji ULog ne prođu. Gate E se
 ne pokreće prije tog checkpointa.
 

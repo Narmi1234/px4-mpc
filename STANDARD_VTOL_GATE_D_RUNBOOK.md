@@ -12,6 +12,10 @@ VTOL state machine, airspeed blend, control allocation i unutrašnji rate loop.
 NMPC ne komanduje pojedinačne motore. Ovo je prvi Gate koji mijenja VTOL state;
 ne pokretati ga bez najmanje 30 m visine i 500 m čistog prostora ispred nosa.
 
+Gate D zahtijeva custom PX4 `nmpc-external-pusher` build koji ažurira Standard
+VTOL transition timer i MC/FW weights u Offboard body-rate režimu. NMPC šalje
+raw collective; PX4 je jedini vlasnik lift blenda.
+
 ## Acceptance envelope
 
 ```text
@@ -45,9 +49,9 @@ colcon build --packages-select px4_mpc --symlink-install
 
 Build mora završiti bez greške. Svaki Terminal ispod otvori kao novi shell.
 
-Korigovani offline Gate D nakon Attempt 03 analize je prošao (`53.05 s`,
-`12.034 m/s`, visina `0.838 m`, tilt `6.28 deg`, stvarni peak pusher `0.443`,
-solver failures `0`, završni MC). Regresija se može ponoviti:
+Offline Gate D sa PX4-owned lift blendom je prošao (`53.05 s`, `12.088 m/s`,
+visina `1.029 m`, tilt `6.65 deg`, stvarni peak pusher `0.443`, solver
+failures `0`, završni MC). Regresija se može ponoviti:
 
 ```bash
 cd /home/imran/Repositories/px4-mpc
@@ -65,10 +69,13 @@ Ne sourceati ROS ni `px4-mpc/.venv` u ovom terminalu:
 ```bash
 cd /home/imran/Repositories/PX4-Autopilot
 git branch --show-current
+git log -1 --oneline
 make px4_sitl gz_standard_vtol
 ```
 
-Branch mora biti `nmpc-external-pusher`. U `pxh>` shellu:
+Branch mora biti `nmpc-external-pusher`.
+Commit mora biti `7558a3d188 fix(vtol): update standard transition in offboard
+rates` ili njegov potomak. U `pxh>` shellu:
 
 ```text
 param set VT_EXT_PUSH_EN 1

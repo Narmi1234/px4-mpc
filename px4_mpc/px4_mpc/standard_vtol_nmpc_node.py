@@ -1863,7 +1863,7 @@ class StandardVtolNmpcNode(Node):
             control_dt,
             pusher_limit=self.transition_gate_d_pusher_max,
             pusher_slew=0.33,
-            apply_lift_blend=True,
+            apply_lift_blend=False,
         )
         diagnostic = Float64MultiArray()
         diagnostic.data = [
@@ -1997,11 +1997,6 @@ class StandardVtolNmpcNode(Node):
             else:
                 requested_control[0] = self._vertical_hover_lift()
                 self.last_lift_unloading = 0.0
-            if (
-                self.test_mode == "transition_gate_d"
-                and self.gate_d.state != "mc_accelerate"
-            ):
-                requested_control[0] *= self._gate_d_lift_weight()
             control_dt = self._control_dt()
             if self.test_mode == "transition_gate_d":
                 previous_command = self.last_command.copy()
@@ -2026,7 +2021,7 @@ class StandardVtolNmpcNode(Node):
                     control_dt,
                     pusher_limit=gate_d_pusher_limit,
                     pusher_slew=gate_d_pusher_slew,
-                    apply_lift_blend=(self.gate_d.state != "mc_accelerate"),
+                    apply_lift_blend=False,
                 )
                 normal = np.array(
                     [-self.forward_direction[1], self.forward_direction[0]]
