@@ -78,7 +78,7 @@ def references(controller, gate, hold, state, elapsed, vtol_state):
     u_ref[:, 0] = controller.model.plant.hover_command
     for stage, sample in enumerate(samples[:-1]):
         mc = pusher_forward_feedforward(
-            controller.model.plant, sample.speed, sample.acceleration, 0.40
+            controller.model.plant, sample.speed, sample.acceleration, 0.60
         )
         fw_weight = 1.0 - weight
         u_ref[stage, 1] = (
@@ -96,9 +96,9 @@ def references(controller, gate, hold, state, elapsed, vtol_state):
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     controller = StandardVtolNmpc(
-        build_directory=root / "build/standard_vtol_nmpc_gate_d_pusher_040",
+        build_directory=root / "build/standard_vtol_nmpc_gate_d_pusher_060",
         control_lower_bounds=np.array([0.0, 0.0, -0.5, -0.5, -0.3]),
-        control_upper_bounds=np.array([0.65, 0.40, 0.5, 0.5, 0.3]),
+        control_upper_bounds=np.array([0.65, 0.60, 0.5, 0.5, 0.3]),
     )
     plant = StandardVtolTransitionRateModel(controller.model.plant)
     state = plant.hover_state()
@@ -173,12 +173,15 @@ def main() -> None:
             and state[3] <= x_ref[0, 3] + 0.25
         ):
             requested[1] = max(requested[1], gate.front_pusher_command)
+        if gate.state == "fw_hold" and airspeed < gate.fw_control_airspeed:
+            requested[1] = max(requested[1], gate.fw_pusher_command)
         previous = command.copy()
-        pusher_limit = (
-            gate.mc_pusher_limit
-            if gate.state == "mc_accelerate"
-            else 0.40
-        )
+        if gate.state == "mc_accelerate":
+            pusher_limit = gate.mc_pusher_limit
+        elif gate.state == "front_transition":
+            pusher_limit = gate.front_pusher_command
+        else:
+            pusher_limit = 0.60
         pusher_slew = 0.05 if gate.state == "mc_accelerate" else 0.33
         command = limit_transition_command(
             previous,
@@ -249,7 +252,7 @@ def main() -> None:
         gate.state == "complete"
         and vtol_state == VTOL_MC
         and solver_failures == 0
-        and maxima["speed"] <= 14.0
+        and maxima["speed"] <= 18.5
         and maxima["altitude"] <= 2.0
         and maxima["tilt"] <= 20.0
         and abs(command[1]) <= 0.005

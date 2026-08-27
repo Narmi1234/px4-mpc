@@ -23,11 +23,11 @@ Gate timeout:              90 s PX4 vremena
 MC transition trigger:     ground speed i CAS >= 7.5 m/s tokom 1 s
 front-transition timeout:  12 s
 FW hold nakon FW ulaska:   5 s
-referentna brzina:         0 -> 8 -> 12 -> 0 m/s
-pusher command:            MC <= 0.30; front transition <= 0.40
+referentna brzina:         0 -> 8 -> 15 -> 0 m/s
+pusher command:            MC <= 0.30; front <= 0.40; potvrđeni FW <= 0.60
 apsolutna greška visine:   <= 2.0 m
 apsolutni roll/pitch:      <= 20 deg
-brzina:                    <= 14 m/s
+brzina:                    <= 18.5 m/s
 cross-track:               <= 20 m
 solver failures:           0
 završno stanje:            MC, pusher 0, speed <= 0.5 m/s tokom 2 s
@@ -79,14 +79,14 @@ rates` ili njegov potomak. U `pxh>` shellu:
 
 ```text
 param set VT_EXT_PUSH_EN 1
-param set VT_EXT_PUSH_MAX 0.40
+param set VT_EXT_PUSH_MAX 0.60
 param set VT_EXT_PUSH_SLEW 0.33
 param show VT_EXT_PUSH_EN
 param show VT_EXT_PUSH_MAX
 param show VT_EXT_PUSH_SLEW
 ```
 
-Mora prikazati `1`, `0.40`, `0.33`. Ne mijenjati PX4 stock transition
+Mora prikazati `1`, `0.60`, `0.33`. Ne mijenjati PX4 stock transition
 parametre `VT_ARSP_BLEND`, `VT_ARSP_TRANS`, `VT_TRANS_MIN_TM`,
 `VT_B_TRANS_RAMP` ili `VT_B_TRANS_DUR`.
 
@@ -110,7 +110,7 @@ ros2 launch px4_mpc standard_vtol_nmpc_launch.py \
   allow_external_pusher_output:=true \
   allow_transition_gate_d_output:=true \
   transition_gate_d_max_seconds:=90.0 \
-  transition_gate_d_pusher_max:=0.40
+  transition_gate_d_pusher_max:=0.60
 ```
 
 Startup poruka mora sadržati `guarded Gate D front/back transition`. Ostaviti
@@ -160,9 +160,9 @@ collectivea u ROS statusu.
 
 Attempt 06 je prvi put dokazao cijeli PX4 slijed `3 -> 1 -> 4 -> 2 -> 3`,
 ali je stari forsirani front-pusher `0.60` doveo do FW ulaska pri CAS
-`13.27 m/s` i trenutnog prelaska sigurnosnog limita `14 m/s`. Zato ovaj gate
-sada koristi plafon `0.40`, ne forsira pusher kada je brzina iznad reference i
-smanjuje ga sa `0.33/s`. Ne vraćati `0.60` radi bržeg ulaska u tranziciju.
+`13.27 m/s` i trenutnog prelaska tadašnjeg sigurnosnog limita `14 m/s`. Zato
+front-transition ostaje zasebno ograničen na `0.40`, ne forsira pusher kada je
+brzina iznad reference i smanjuje ga sa `0.33/s`.
 
 Attempt 07 je ušao u FW pri CAS `10.59 m/s`, ali je dotadašnji pitch-rate
 governor ostao na MC limitu `0.10 rad/s`. Stock PX4 ULog u istom trenutku
@@ -171,6 +171,15 @@ pitch transient nakon gašenja lift-motora. Od ovog checkpointa `fw_hold`,
 `back_transition` i abort-recovery koriste stock-informisan limit `0.65
 rad/s`, slew `1.50 rad/s^2` i aktivno nivelisanje. `front_transition` prije FW
 potvrde ostaje na blagom, ranije validiranom `0.10 rad/s` limitu.
+
+Attempt 08 je potvrdio da je pitch-rate korekcija popravila recovery (gubitak
+visine `29.7 -> 5.45 m`), ali je otkrio da je `12 m/s` pogrešan FW corridor za
+ovaj Gazebo Standard VTOL. Nakon FW ulaska pri `10.33 m/s`, letjelica je ostala
+oko `11 m/s`; elevator je saturirao prije nego što su krila dobila dovoljno
+autoriteta. Stock ULog pri istom FW ulasku ubrza do `16.5..17.3 m/s` u prvih
+`0.6 s` i zaustavi propadanje. Zato je sada FW referenca `15 m/s`: front ostaje
+na `0.40`, a tek nakon PX4 potvrde `vtol=4` dozvoljeno je `0.60` do CAS `14
+m/s`, nakon čega NMPC ponovo zatvara speed feedback.
 
 Prikaz `pitch=actual/reference` koristi interni FLU znak. Tokom
 `front_transition` referenca je `0 deg`, prema uspješnom stock PX4 ULogu, a

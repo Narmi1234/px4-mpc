@@ -71,10 +71,21 @@ class TestGateDStateMachine(unittest.TestCase):
         gate.update(31.0, VTOL_MC, 0.1, 0.1, commanded_pusher=0.02)
         self.assertIsNone(gate.condition_since_s)
 
+    def test_confirmed_fw_reference_reaches_control_airspeed_corridor(self):
+        gate = GateDStateMachine()
+        gate.start(0.0)
+        gate.front_start_speed = 8.0
+        gate.front_started_s = 10.0
+        gate._enter("fw_hold", 12.1)
+        self.assertAlmostEqual(gate.sample(100.0).speed, 15.0)
+
     def test_front_profile_uses_separate_stock_informed_pusher_envelope(self):
         gate = GateDStateMachine()
         self.assertAlmostEqual(gate.mc_pusher_limit, 0.30)
         self.assertAlmostEqual(gate.front_pusher_command, 0.40)
+        self.assertAlmostEqual(gate.fw_pusher_command, 0.60)
+        self.assertAlmostEqual(gate.fw_control_airspeed, 14.0)
+        self.assertAlmostEqual(gate.fw_target_speed, 15.0)
         self.assertAlmostEqual(gate.front_peak_acceleration, 2.0)
 
 

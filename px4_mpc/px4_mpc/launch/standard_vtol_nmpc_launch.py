@@ -178,7 +178,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "pretransition_acceleration",
-                default_value="0.40",
+                default_value="0.60",
                 description="Gate B1 reference acceleration in m/s^2",
             ),
             DeclareLaunchArgument(

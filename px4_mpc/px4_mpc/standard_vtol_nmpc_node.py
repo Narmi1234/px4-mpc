@@ -136,7 +136,7 @@ class StandardVtolNmpcNode(Node):
         self.declare_parameter("lift_unloading_maximum", 0.020)
         self.declare_parameter("allow_transition_gate_d_output", False)
         self.declare_parameter("transition_gate_d_max_seconds", 90.0)
-        self.declare_parameter("transition_gate_d_pusher_max", 0.40)
+        self.declare_parameter("transition_gate_d_pusher_max", 0.60)
         self.allow_output = bool(self.get_parameter("allow_offboard_output").value)
         self.max_offboard_seconds = float(
             self.get_parameter("hover_offboard_max_seconds").value
@@ -267,7 +267,7 @@ class StandardVtolNmpcNode(Node):
             # with the generic 0.60 transition limit and clipping to 0.10
             # afterward invalidates NMPC's speed and braking prediction.
             build_name = (
-                "standard_vtol_nmpc_gate_d_pusher_040"
+                "standard_vtol_nmpc_gate_d_pusher_060"
                 if self.allow_transition_gate_d
                 else (
                     "standard_vtol_nmpc_gate_b2_pusher_020"
@@ -979,13 +979,13 @@ class StandardVtolNmpcNode(Node):
             and self.allow_external_pusher
             and self.allow_transition_gate_d
             and np.isclose(self.transition_gate_d_max_seconds, 90.0)
-            and np.isclose(self.transition_gate_d_pusher_max, 0.40)
+            and np.isclose(self.transition_gate_d_pusher_max, 0.60)
         )
         if not configured:
             response.success = False
             response.message = (
                 "launch Gate D with Offboard, external pusher, 90 s timeout "
-                "and 0.40 front-transition pusher envelope"
+                "and 0.60 confirmed-FW pusher envelope"
             )
             return response
         ready, reason = self._ready_for_hover()
@@ -1496,7 +1496,7 @@ class StandardVtolNmpcNode(Node):
         if abs(self.state[5]) > vertical_speed_limit:
             return "vertical_speed_limit"
         if self.test_mode == "transition_gate_d":
-            horizontal_speed_limit = 14.0
+            horizontal_speed_limit = 18.5
         elif self.test_mode == "mc_forward":
             horizontal_speed_limit = 2.7
         elif self.test_mode == "pusher_forward":
@@ -2030,11 +2030,22 @@ class StandardVtolNmpcNode(Node):
                         requested_control[1],
                         self.gate_d.front_pusher_command,
                     )
-                gate_d_pusher_limit = (
-                    self.gate_d.mc_pusher_limit
-                    if self.gate_d.state == "mc_accelerate"
-                    else self.transition_gate_d_pusher_max
-                )
+                airspeed = self._calibrated_airspeed()
+                if (
+                    self.gate_d.state == "fw_hold"
+                    and np.isfinite(airspeed)
+                    and airspeed < self.gate_d.fw_control_airspeed
+                ):
+                    requested_control[1] = max(
+                        requested_control[1],
+                        self.gate_d.fw_pusher_command,
+                    )
+                if self.gate_d.state == "mc_accelerate":
+                    gate_d_pusher_limit = self.gate_d.mc_pusher_limit
+                elif self.gate_d.state == "front_transition":
+                    gate_d_pusher_limit = self.gate_d.front_pusher_command
+                else:
+                    gate_d_pusher_limit = self.transition_gate_d_pusher_max
                 gate_d_pusher_slew = (
                     0.05
                     if self.gate_d.state == "mc_accelerate"

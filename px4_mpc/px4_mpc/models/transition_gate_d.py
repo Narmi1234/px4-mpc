@@ -66,6 +66,9 @@ class GateDStateMachine:
     # 0.40 ceiling still leaves margin above the validated 0.30 MC envelope
     # while allowing the speed governor to remove thrust before overspeed.
     front_pusher_command = 0.40
+    fw_pusher_command = 0.60
+    fw_control_airspeed = 14.0
+    fw_target_speed = 15.0
     mc_pusher_limit = 0.30
 
     def __init__(self) -> None:
@@ -77,7 +80,7 @@ class GateDStateMachine:
         self.front_start_distance = 0.0
         self.front_start_speed = 8.0
         self.brake_start_distance = 0.0
-        self.brake_start_speed = 12.0
+        self.brake_start_speed = self.fw_target_speed
         self.condition_since_s: float | None = None
         self.abort_reason = "none"
 
@@ -90,7 +93,7 @@ class GateDStateMachine:
         self.front_start_distance = 0.0
         self.front_start_speed = 8.0
         self.brake_start_distance = 0.0
-        self.brake_start_speed = 12.0
+        self.brake_start_speed = self.fw_target_speed
         self.condition_since_s = None
         self.abort_reason = "none"
 
@@ -197,7 +200,7 @@ class GateDStateMachine:
             elapsed = max(0.0, now_s - self.front_started_s)
             distance, speed, acceleration, _ = _half_cosine(
                 self.front_start_speed,
-                12.0,
+                self.fw_target_speed,
                 elapsed,
                 self.front_peak_acceleration,
             )
