@@ -76,7 +76,9 @@ def _status_tracking_values(
     return tracking_error, displacement
 
 
-def _state_age_limits(active: bool, test_mode: str) -> tuple[float, float]:
+def _state_age_limits(
+    active: bool, test_mode: str, profile_phase: str = "none"
+) -> tuple[float, float]:
     """Return wall/PX4 odometry limits for one operating mode."""
     if not active:
         return 0.20, 0.20
@@ -84,6 +86,11 @@ def _state_age_limits(active: bool, test_mode: str) -> tuple[float, float]:
         # The first B1 run recorded a 0.365 s DDS-only receive gap while PX4's
         # internal local-position log remained continuous at <=44 ms. Allow a
         # bounded bridge hiccup, but abort before 0.5 s of unobserved flight.
+        return 0.45, 0.45
+    if test_mode == "transition_gate_d" and profile_phase == "mc_accelerate":
+        # Attempt 04 recorded a 0.365 s DDS-only receive gap while the PX4
+        # ULog local position remained continuous at <=32 ms. Bridge only this
+        # benign MC phase; transition phases retain the strict limits below.
         return 0.45, 0.45
     return 0.30, 0.20
 
@@ -594,7 +601,9 @@ class StandardVtolNmpcNode(Node):
         )
 
     def _state_is_stale(self, active: bool) -> bool:
-        wall_limit, px4_limit = _state_age_limits(active, self.test_mode)
+        wall_limit, px4_limit = _state_age_limits(
+            active, self.test_mode, self.gate_d.state
+        )
         return (
             self.state is None
             or self._state_age() > wall_limit

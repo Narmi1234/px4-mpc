@@ -365,6 +365,13 @@ ali nakon front-transition zahtjeva koristi bounded feedforward do `0.60` i
 slew `0.33/s`; offline stvarni peak je samo `0.443`, uz altitude error
 `0.838 m`, tilt `6.28 deg` i nula solver grešaka.
 
+Četvrti pokušaj nije dosegao front transition: na CAS `6.0 m/s` prekinut je
+zbog jednog ROS/DDS odometry razmaka `0.365 s`. Let je bio miran (altitude
+`0.163 m`, tilt `1.73 deg`, vertikalna brzina `0.086 m/s`, solver `0`), dok je
+PX4 ULog imao kontinuiran local-position tok sa maksimalnim razmakom `0.032 s`
+i bez dropouta. Bounded `0.45 s` DDS bridge zato je omogućen samo u
+`mc_accelerate`; front/FW/back faze ostaju na strogim `0.30/0.20 s` limitima.
+
 Gate D još nije PASS dok i ROS završetak i najnoviji ULog ne prođu. Gate E se
 ne pokreće prije tog checkpointa.
 

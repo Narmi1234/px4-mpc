@@ -22,3 +22,12 @@ def test_pretransition_allows_only_the_measured_bounded_dds_gap():
     assert _state_age_limits(False, "pretransition_5mps") == (0.20, 0.20)
     assert _state_age_limits(True, "pusher_forward") == (0.30, 0.20)
     assert _state_age_limits(True, "pretransition_5mps") == (0.45, 0.45)
+
+
+def test_gate_d_relaxes_dds_gap_only_before_front_transition():
+    assert _state_age_limits(
+        True, "transition_gate_d", "mc_accelerate"
+    ) == (0.45, 0.45)
+    assert _state_age_limits(
+        True, "transition_gate_d", "front_transition"
+    ) == (0.30, 0.20)

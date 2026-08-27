@@ -156,6 +156,11 @@ stvarni pitch treba ostati unutar približno `+/-4 deg`. Automatski recovery
 sada počinje najkasnije na `10 deg` tilta ili `1.5 m/s` vertikalne brzine u toj
 fazi. Ne širiti te granice radi dobijanja PASS-a.
 
+U `mc_accelerate` je dozvoljen najviše `0.45 s` izolovanog DDS odometry
+razmaka, jer Attempt 04 ULog dokazuje da je pri izmjerenom ROS razmaku
+`0.365 s` PX4 local-position ostao kontinuiran na `<=0.032 s`. Od
+`front_transition` nadalje ostaju strogi wall/PX4 age limiti `0.30/0.20 s`.
+
 FW krug nije dio ovog testa. Vozilo treba nastaviti približno ravno i nakon 5 s
 FW stanja automatski zatražiti back transition. Ako počne kružiti, to obično
 znači da je napustilo Offboard; node tada mora prijaviti recovery. Ne pokretati
