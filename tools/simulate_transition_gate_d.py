@@ -155,9 +155,15 @@ def main() -> None:
             requested[0] = vertical_hover_lift(
                 plant.plant, state[2] - hold[2], state[5]
             )
+        if gate.state != "mc_accelerate":
+            requested[0] *= parameters[0, 4]
         previous = command.copy()
         command = limit_transition_command(
-            previous, requested, controller.dt, pusher_limit=0.30
+            previous,
+            requested,
+            controller.dt,
+            pusher_limit=0.30,
+            apply_lift_blend=(gate.state != "mc_accelerate"),
         )
         command = govern_pusher_forward_lateral(
             previous, command, state[1] - hold[1], state[4], 0.0, controller.dt
@@ -171,8 +177,12 @@ def main() -> None:
         )
         if elapsed < 0.5:
             command = plant.hover_control()
+        applied_parameters = parameters[0].copy()
+        # The live node now sends the blended collective explicitly because
+        # Offboard rate mode passes the raw z-thrust through this PX4 build.
+        applied_parameters[4] = 1.0
         state = rk4_step(
-            plant, state, command, parameters[0], controller.dt
+            plant, state, command, applied_parameters, controller.dt
         )
         qw, qx, qy, qz = state[6:10]
         roll = math.atan2(

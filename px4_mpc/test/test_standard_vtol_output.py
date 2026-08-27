@@ -183,6 +183,18 @@ class TestStandardVtolOutput(unittest.TestCase):
         )
         self.assertLess(governed[1], limited[1])
 
+    def test_gate_d_lift_blend_can_ramp_collective_below_hover_floor(self):
+        previous = np.array([0.52, 0.20, 0.0, 0.0, 0.0])
+        requested = np.array([0.0, 0.20, 0.0, 0.0, 0.0])
+        limited = limit_transition_command(
+            previous,
+            requested,
+            dt=0.05,
+            apply_lift_blend=True,
+        )
+        self.assertAlmostEqual(limited[0], 0.505)
+        self.assertLess(limited[0], 0.52)
+
 
 
 if __name__ == "__main__":

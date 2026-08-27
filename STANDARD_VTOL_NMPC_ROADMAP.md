@@ -337,9 +337,16 @@ ACK, state-dependent MC recovery, launch argumenti, automatska skripta i ULog
 `--gate-d` kriteriji su dodani. Jedini dozvoljeni postupak za prvi let je
 [`STANDARD_VTOL_GATE_D_RUNBOOK.md`](STANDARD_VTOL_GATE_D_RUNBOOK.md).
 
-Puni offline closed-loop Gate D PASS traje `58.95 s`: doseže `11.959 m/s`,
-maksimalnu altitude grešku `1.385 m`, tilt `7.70 deg`, pusher `0.300`, nula
+Puni korigovani offline closed-loop Gate D PASS traje `58.95 s`: doseže
+`11.964 m/s`, maksimalnu altitude grešku `0.903 m`, tilt `7.77 deg`, pusher `0.300`, nula
 solver grešaka i završava u MC sa `0.074 m/s` i pusherom `0.0001`.
+
+Prvi live pokušaj je sigurno vraćen u MC, ali je FAIL na penjanju od `2.343 m`:
+Offboard rate putanja nije primijenila očekivani PX4 lift weight, pa su lift
+motori ostali na hover collectiveu dok je rasla wing lift sila. Analiza i hash
+ULoga su u `validation_logs/TRANSITION_GATE_D_ATTEMPT_01_SUMMARY.md`. Gate D
+sada eksplicitno primjenjuje blend na outgoing collective; PX4 branch nije
+mijenjan.
 
 Gate D još nije PASS dok i ROS završetak i najnoviji ULog ne prođu. Gate E se
 ne pokreće prije tog checkpointa.

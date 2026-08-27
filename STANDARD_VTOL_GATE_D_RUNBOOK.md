@@ -45,8 +45,8 @@ colcon build --packages-select px4_mpc --symlink-install
 
 Build mora završiti bez greške. Svaki Terminal ispod otvori kao novi shell.
 
-Offline Gate D je već prošao (`58.95 s`, `11.959 m/s`, visina `1.385 m`,
-tilt `7.70 deg`, solver failures `0`, završni MC). Regresija se može ponoviti:
+Korigovani offline Gate D je prošao (`58.95 s`, `11.964 m/s`, visina `0.903 m`,
+tilt `7.77 deg`, solver failures `0`, završni MC). Regresija se može ponoviti:
 
 ```bash
 cd /home/imran/Repositories/px4-mpc
@@ -140,6 +140,14 @@ Normalan redoslijed statusa je:
 mc_accelerate -> front_transition -> fw_hold
               -> back_transition -> mc_recovered -> complete
 ```
+
+Terminal 4 tokom front tranzicije prikazuje i `lift_weight` i `collective`.
+U `mc_accelerate` oba ostaju približno na hover vrijednosti (`1.0` i `0.52`).
+Nakon ulaska u `front_transition`, `lift_weight` mora padati kako CAS raste, a
+`collective` mora sići ispod `0.48`. To potvrđuje da NMPC zaista rasterećuje
+lift-motore dok krilo preuzima uzgon. Ako collective ostane na `0.48..0.52`
+dok je brzina iznad `8 m/s`, ručno zatraži `Transition to Multicopter` i
+prekini test.
 
 FW krug nije dio ovog testa. Vozilo treba nastaviti približno ravno i nakon 5 s
 FW stanja automatski zatražiti back transition. Ako počne kružiti, to obično

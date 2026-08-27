@@ -80,16 +80,21 @@ def limit_transition_command(
     requested,
     dt: float = 0.05,
     pusher_limit: float = 0.30,
+    apply_lift_blend: bool = False,
 ) -> np.ndarray:
     """Bound Gate D commands without Gate A's near-level pitch barrier."""
     previous = np.asarray(previous, dtype=float)
     requested = np.asarray(requested, dtype=float).copy()
-    requested[0] = np.clip(requested[0], 0.48, 0.56)
+    collective_floor = 0.0 if apply_lift_blend else 0.48
+    requested[0] = np.clip(requested[0], collective_floor, 0.56)
     requested[1] = np.clip(requested[1], 0.0, pusher_limit)
     requested[2:5] = np.clip(
         requested[2:5], [-0.12, -0.25, -0.15], [0.12, 0.25, 0.15]
     )
-    slew_per_second = np.array([0.10, 0.05, 0.20, 0.35, 0.20])
+    collective_slew = 0.30 if apply_lift_blend else 0.10
+    slew_per_second = np.array(
+        [collective_slew, 0.05, 0.20, 0.35, 0.20]
+    )
     return previous + np.clip(
         requested - previous,
         -slew_per_second * dt,

@@ -326,6 +326,7 @@ class StandardVtolNmpcNode(Node):
         self.max_abs_vertical_speed = 0.0
         self.last_lift_unloading = 0.0
         self.max_lift_unloading = 0.0
+        self.min_commanded_collective = self.controller.model.plant.hover_command
         self.gate_d = GateDStateMachine()
         self.gate_d_last_transition_request = "none"
         self.gate_d_front_ack = False
@@ -739,6 +740,7 @@ class StandardVtolNmpcNode(Node):
         self.max_state_px4_age = 0.0
         self.last_lift_unloading = 0.0
         self.max_lift_unloading = 0.0
+        self.min_commanded_collective = self.controller.model.plant.hover_command
         self.gate_d_last_transition_request = "none"
         self.gate_d_front_ack = False
         self.gate_d_back_ack = False
@@ -1079,6 +1081,9 @@ class StandardVtolNmpcNode(Node):
             if self.vtol_status is None
             else int(self.vtol_status.vehicle_vtol_state)
         )
+        gate_d_lift_weight = (
+            self._gate_d_lift_weight() if self.state is not None else math.nan
+        )
         solve_time_p99 = (
             float(np.percentile(self.solve_times_ms, 99))
             if self.solve_times_ms
@@ -1119,6 +1124,7 @@ class StandardVtolNmpcNode(Node):
             f"timeout={self.transition_gate_d_max_seconds:.1f},"
             f"pusher_max={self.transition_gate_d_pusher_max:.3f}]"
             f", gate_d=[state={self.gate_d.state},vtol_state={vtol_state},"
+            f"lift_weight={gate_d_lift_weight:.3f},"
             f"last_request={self.gate_d_last_transition_request},"
             f"front_ack={self.gate_d_front_ack},back_ack={self.gate_d_back_ack},"
             f"recovery_reason={self.gate_d_recovery_reason}]"
@@ -1148,6 +1154,7 @@ class StandardVtolNmpcNode(Node):
             f"airspeed={self.max_calibrated_airspeed:.3f},"
             f"commanded_pusher={self.max_commanded_pusher:.3f},"
             f"lift_unloading={self.max_lift_unloading:.3f},"
+            f"min_collective={self.min_commanded_collective:.3f},"
             f"state_wall_gap={self.max_state_wall_age:.3f},"
             f"state_px4_gap={self.max_state_px4_age:.3f}]"
         )
@@ -1789,15 +1796,44 @@ class StandardVtolNmpcNode(Node):
 
     def _gate_d_recovery_command(self) -> np.ndarray:
         """Conservative command while PX4 completes an emergency back transition."""
-        vtol_state = (
-            VTOL_MC
-            if self.vtol_status is None
-            else int(self.vtol_status.vehicle_vtol_state)
-        )
-        pusher = 0.0 if vtol_state == VTOL_MC else min(self.last_command[1], 0.15)
         return np.array(
-            [self.controller.model.plant.hover_command, pusher, 0.0, 0.0, 0.0]
+            [self.controller.model.plant.hover_command, 0.0, 0.0, 0.0, 0.0]
         )
+
+    def _gate_d_lift_weight(self) -> float:
+        if self.vtol_status is None:
+            return 1.0
+        airspeed = self._calibrated_airspeed()
+        if not np.isfinite(airspeed):
+            airspeed = max(
+                0.0, float(np.dot(self.state[3:5], self.forward_direction))
+            )
+        return px4_mc_weight(
+            int(self.vtol_status.vehicle_vtol_state),
+            airspeed,
+            max(0.0, self._profile_elapsed() - self.gate_d.entered_s),
+        )
+
+    def _publish_gate_d_recovery(self) -> None:
+        """Bypass NMPC and publish a feasible command until MC is confirmed."""
+        control_dt = self._control_dt()
+        self.last_raw_control = self._gate_d_recovery_command()
+        self.last_command = limit_transition_command(
+            self.last_command,
+            self.last_raw_control,
+            control_dt,
+            pusher_limit=self.transition_gate_d_pusher_max,
+            apply_lift_blend=True,
+        )
+        diagnostic = Float64MultiArray()
+        diagnostic.data = [
+            *self.last_command.tolist(),
+            -1.0,
+            0.0,
+            *self.last_raw_control.tolist(),
+        ]
+        self.diagnostic_publisher.publish(diagnostic)
+        self._publish_setpoint(self.last_command)
 
     def _abort(self, reason: str) -> None:
         was_requested = self.output_requested or self.offboard_active
@@ -1849,6 +1885,18 @@ class StandardVtolNmpcNode(Node):
                     self._abort("odometry_stale")
             return
         if not self._update_gate_d_state():
+            return
+        if (
+            self.test_mode == "transition_gate_d"
+            and not self.output_requested
+            and self.gate_d.state in ("failed", "complete")
+        ):
+            return
+        if (
+            self.test_mode == "transition_gate_d"
+            and self.gate_d.state == "abort_recovery"
+        ):
+            self._publish_gate_d_recovery()
             return
         x_ref, u_ref, parameters = self._references()
         try:
@@ -1909,6 +1957,11 @@ class StandardVtolNmpcNode(Node):
             else:
                 requested_control[0] = self._vertical_hover_lift()
                 self.last_lift_unloading = 0.0
+            if (
+                self.test_mode == "transition_gate_d"
+                and self.gate_d.state != "mc_accelerate"
+            ):
+                requested_control[0] *= self._gate_d_lift_weight()
             control_dt = self._control_dt()
             if self.test_mode == "transition_gate_d":
                 previous_command = self.last_command.copy()
@@ -1917,6 +1970,7 @@ class StandardVtolNmpcNode(Node):
                     requested_control,
                     control_dt,
                     pusher_limit=self.transition_gate_d_pusher_max,
+                    apply_lift_blend=(self.gate_d.state != "mc_accelerate"),
                 )
                 normal = np.array(
                     [-self.forward_direction[1], self.forward_direction[0]]
@@ -1942,15 +1996,11 @@ class StandardVtolNmpcNode(Node):
                     reference_speed,
                     control_dt,
                 )
-                if self.gate_d.state == "abort_recovery":
-                    self.last_command = limit_transition_command(
-                        self.last_command,
-                        self._gate_d_recovery_command(),
-                        control_dt,
-                        pusher_limit=self.transition_gate_d_pusher_max,
-                    )
                 self.max_commanded_pusher = max(
                     self.max_commanded_pusher, self.last_command[1]
+                )
+                self.min_commanded_collective = min(
+                    self.min_commanded_collective, self.last_command[0]
                 )
             elif self.test_mode == "external_pusher":
                 pusher_sample = self.external_pusher_profile.sample(
