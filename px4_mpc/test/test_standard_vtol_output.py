@@ -209,6 +209,20 @@ class TestStandardVtolOutput(unittest.TestCase):
         self.assertAlmostEqual(limited[0], 0.505)
         self.assertLess(limited[0], 0.52)
 
+    def test_gate_d_front_pusher_uses_explicit_bounded_slew(self):
+        previous = np.array([0.40, 0.30, 0.0, 0.0, 0.0])
+        requested = np.array([0.40, 0.60, 0.0, 0.0, 0.0])
+        limited = limit_transition_command(
+            previous,
+            requested,
+            dt=0.05,
+            pusher_limit=0.60,
+            pusher_slew=0.33,
+            apply_lift_blend=True,
+        )
+        self.assertAlmostEqual(limited[1], 0.3165)
+        self.assertLessEqual(limited[1], 0.60)
+
 
 
 if __name__ == "__main__":

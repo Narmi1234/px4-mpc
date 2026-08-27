@@ -22,8 +22,8 @@ fi
 echo "Pre-flight NMPC status:"
 _PREFLIGHT="$(ros2 service call "${_STATUS_SERVICE}" std_srvs/srv/Trigger '{}')"
 printf '%s\n' "${_PREFLIGHT}"
-if [[ "${_PREFLIGHT}" != *"gate_d_config=[enabled=True,timeout=90.0,pusher_max=0.300]"* ||
-      "${_PREFLIGHT}" != *"nmpc_pusher_max=0.300"* ||
+if [[ "${_PREFLIGHT}" != *"gate_d_config=[enabled=True,timeout=90.0,pusher_max=0.600]"* ||
+      "${_PREFLIGHT}" != *"nmpc_pusher_max=0.600"* ||
       "${_PREFLIGHT}" != *"gate_d=[state=idle,vtol_state=3"* ||
       "${_PREFLIGHT}" != *"available=True"* ||
       "${_PREFLIGHT}" != *"solver_failures=0"* ||
@@ -37,8 +37,8 @@ if [[ "${PX4_GATE_D_CONFIRMED:-}" != "YES" ]]; then
   echo
   echo "In the live PX4 shell run and verify:"
   echo "  param set VT_EXT_PUSH_EN 1"
-  echo "  param set VT_EXT_PUSH_MAX 0.30"
-  echo "  param set VT_EXT_PUSH_SLEW 0.10"
+  echo "  param set VT_EXT_PUSH_MAX 0.60"
+  echo "  param set VT_EXT_PUSH_SLEW 0.33"
   echo "  param show VT_EXT_PUSH_EN"
   echo "  param show VT_EXT_PUSH_MAX"
   echo "  param show VT_EXT_PUSH_SLEW"

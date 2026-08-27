@@ -60,6 +60,9 @@ class GateDStateMachine:
     fw_hold_seconds = 5.0
     condition_hold_seconds = 1.0
     recovery_stop_seconds = 2.0
+    front_peak_acceleration = 2.0
+    front_pusher_command = 0.60
+    mc_pusher_limit = 0.30
 
     def __init__(self) -> None:
         self.state = "idle"
@@ -189,7 +192,10 @@ class GateDStateMachine:
         elif self.state in ("front_transition", "fw_hold"):
             elapsed = max(0.0, now_s - self.front_started_s)
             distance, speed, acceleration, _ = _half_cosine(
-                self.front_start_speed, 12.0, elapsed, 0.50
+                self.front_start_speed,
+                12.0,
+                elapsed,
+                self.front_peak_acceleration,
             )
             distance += self.front_start_distance
         elif self.state in ("back_transition", "mc_recovered"):

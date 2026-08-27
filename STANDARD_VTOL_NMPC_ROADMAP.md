@@ -356,6 +356,15 @@ nivelisan i ušao u FW za `2.58 s`. FW trim se zato više ne koristi prije FW
 potvrde; bounded pitch-rate governor drži level front-transition corridor, uz
 raniji recovery na `10 deg` ili `1.5 m/s`.
 
+Treći live pokušaj potvrdio je stabilizaciju pitcha (`5.85 deg` aktivni
+maksimum, solver failures `0`), ali je FAIL na vertikalnoj brzini jer je sa
+pusherom `0.30` proveo oko `3.25 s` u CAS blend zoni `8.3 -> 10.1 m/s` dok je
+collective padao do nule. Stock Gate C je istu zonu prošao za približno
+`0.5 s` uz pusher oko `0.85`. Sljedeći profil zato zadržava MC limit `0.30`,
+ali nakon front-transition zahtjeva koristi bounded feedforward do `0.60` i
+slew `0.33/s`; offline stvarni peak je samo `0.443`, uz altitude error
+`0.838 m`, tilt `6.28 deg` i nula solver grešaka.
+
 Gate D još nije PASS dok i ROS završetak i najnoviji ULog ne prođu. Gate E se
 ne pokreće prije tog checkpointa.
 

@@ -20,7 +20,7 @@ MC transition trigger:     ground speed i CAS >= 7.5 m/s tokom 1 s
 front-transition timeout:  12 s
 FW hold nakon FW ulaska:   5 s
 referentna brzina:         0 -> 8 -> 12 -> 0 m/s
-pusher command:            0.00 .. 0.30
+pusher command:            MC <= 0.30; front transition <= 0.60
 apsolutna greška visine:   <= 2.0 m
 apsolutni roll/pitch:      <= 20 deg
 brzina:                    <= 14 m/s
@@ -45,9 +45,9 @@ colcon build --packages-select px4_mpc --symlink-install
 
 Build mora završiti bez greške. Svaki Terminal ispod otvori kao novi shell.
 
-Korigovani offline Gate D nakon Attempt 02 analize je prošao (`57.20 s`,
-`11.753 m/s`, visina `1.187 m`, tilt `8.83 deg`, solver failures `0`, završni
-MC). Regresija se može ponoviti:
+Korigovani offline Gate D nakon Attempt 03 analize je prošao (`53.05 s`,
+`12.034 m/s`, visina `0.838 m`, tilt `6.28 deg`, stvarni peak pusher `0.443`,
+solver failures `0`, završni MC). Regresija se može ponoviti:
 
 ```bash
 cd /home/imran/Repositories/px4-mpc
@@ -72,14 +72,14 @@ Branch mora biti `nmpc-external-pusher`. U `pxh>` shellu:
 
 ```text
 param set VT_EXT_PUSH_EN 1
-param set VT_EXT_PUSH_MAX 0.30
-param set VT_EXT_PUSH_SLEW 0.10
+param set VT_EXT_PUSH_MAX 0.60
+param set VT_EXT_PUSH_SLEW 0.33
 param show VT_EXT_PUSH_EN
 param show VT_EXT_PUSH_MAX
 param show VT_EXT_PUSH_SLEW
 ```
 
-Mora prikazati `1`, `0.30`, `0.10`. Ne mijenjati PX4 stock transition
+Mora prikazati `1`, `0.60`, `0.33`. Ne mijenjati PX4 stock transition
 parametre `VT_ARSP_BLEND`, `VT_ARSP_TRANS`, `VT_TRANS_MIN_TM`,
 `VT_B_TRANS_RAMP` ili `VT_B_TRANS_DUR`.
 
@@ -103,7 +103,7 @@ ros2 launch px4_mpc standard_vtol_nmpc_launch.py \
   allow_external_pusher_output:=true \
   allow_transition_gate_d_output:=true \
   transition_gate_d_max_seconds:=90.0 \
-  transition_gate_d_pusher_max:=0.30
+  transition_gate_d_pusher_max:=0.60
 ```
 
 Startup poruka mora sadržati `guarded Gate D front/back transition`. Ostaviti

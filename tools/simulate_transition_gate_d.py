@@ -78,13 +78,15 @@ def references(controller, gate, hold, state, elapsed, vtol_state):
     u_ref[:, 0] = controller.model.plant.hover_command
     for stage, sample in enumerate(samples[:-1]):
         mc = pusher_forward_feedforward(
-            controller.model.plant, sample.speed, sample.acceleration, 0.30
+            controller.model.plant, sample.speed, sample.acceleration, 0.60
         )
         fw_weight = 1.0 - weight
         u_ref[stage, 1] = (
             (1.0 - fw_weight) * mc
             + transition_pusher_trim(sample.speed, weight)
         )
+        if gate.state == "front_transition":
+            u_ref[stage, 1] = gate.front_pusher_command
     parameters = np.zeros((controller.N + 1, controller.model.parameter_size))
     parameters[:, 3] = elevators
     parameters[:, 4] = weight
@@ -96,7 +98,7 @@ def main() -> None:
     controller = StandardVtolNmpc(
         build_directory=root / "build/standard_vtol_nmpc_gate_d_pusher_030",
         control_lower_bounds=np.array([0.0, 0.0, -0.5, -0.5, -0.3]),
-        control_upper_bounds=np.array([0.65, 0.30, 0.5, 0.5, 0.3]),
+        control_upper_bounds=np.array([0.65, 0.60, 0.5, 0.5, 0.3]),
     )
     plant = StandardVtolTransitionRateModel(controller.model.plant)
     state = plant.hover_state()
@@ -168,12 +170,21 @@ def main() -> None:
             )
         if gate.state != "mc_accelerate":
             requested[0] *= parameters[0, 4]
+        if gate.state == "front_transition":
+            requested[1] = max(requested[1], gate.front_pusher_command)
         previous = command.copy()
+        pusher_limit = (
+            gate.mc_pusher_limit
+            if gate.state == "mc_accelerate"
+            else 0.60
+        )
+        pusher_slew = 0.05 if gate.state == "mc_accelerate" else 0.33
         command = limit_transition_command(
             previous,
             requested,
             controller.dt,
-            pusher_limit=0.30,
+            pusher_limit=pusher_limit,
+            pusher_slew=pusher_slew,
             apply_lift_blend=(gate.state != "mc_accelerate"),
         )
         command = govern_pusher_forward_lateral(

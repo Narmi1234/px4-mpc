@@ -238,7 +238,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "transition_gate_d_pusher_max",
-                default_value="0.30",
+                default_value="0.60",
                 description="Gate D NMPC/external-pusher command ceiling",
             ),
             Node(

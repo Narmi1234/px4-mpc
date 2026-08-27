@@ -70,6 +70,12 @@ class TestGateDStateMachine(unittest.TestCase):
         gate.update(31.0, VTOL_MC, 0.1, 0.1, commanded_pusher=0.02)
         self.assertIsNone(gate.condition_since_s)
 
+    def test_front_profile_uses_separate_stock_informed_pusher_envelope(self):
+        gate = GateDStateMachine()
+        self.assertAlmostEqual(gate.mc_pusher_limit, 0.30)
+        self.assertAlmostEqual(gate.front_pusher_command, 0.60)
+        self.assertAlmostEqual(gate.front_peak_acceleration, 2.0)
+
 
 if __name__ == "__main__":
     unittest.main()

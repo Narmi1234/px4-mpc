@@ -129,7 +129,7 @@ class StandardVtolNmpcNode(Node):
         self.declare_parameter("lift_unloading_maximum", 0.020)
         self.declare_parameter("allow_transition_gate_d_output", False)
         self.declare_parameter("transition_gate_d_max_seconds", 90.0)
-        self.declare_parameter("transition_gate_d_pusher_max", 0.30)
+        self.declare_parameter("transition_gate_d_pusher_max", 0.60)
         self.allow_output = bool(self.get_parameter("allow_offboard_output").value)
         self.max_offboard_seconds = float(
             self.get_parameter("hover_offboard_max_seconds").value
@@ -970,13 +970,13 @@ class StandardVtolNmpcNode(Node):
             and self.allow_external_pusher
             and self.allow_transition_gate_d
             and np.isclose(self.transition_gate_d_max_seconds, 90.0)
-            and np.isclose(self.transition_gate_d_pusher_max, 0.30)
+            and np.isclose(self.transition_gate_d_pusher_max, 0.60)
         )
         if not configured:
             response.success = False
             response.message = (
                 "launch Gate D with Offboard, external pusher, 90 s timeout "
-                "and 0.30 pusher envelope"
+                "and 0.60 front-transition pusher envelope"
             )
             return response
         ready, reason = self._ready_for_hover()
@@ -1368,6 +1368,8 @@ class StandardVtolNmpcNode(Node):
                 (1.0 - fw_weight) * mc_feedforward
                 + transition_pusher_trim(sample.speed, weights[stage])
             )
+            if self.gate_d.state == "front_transition":
+                u_ref[stage, 1] = self.gate_d.front_pusher_command
         parameters = np.zeros(
             (self.controller.N + 1, self.controller.model.parameter_size)
         )
@@ -1851,6 +1853,7 @@ class StandardVtolNmpcNode(Node):
             self.last_raw_control,
             control_dt,
             pusher_limit=self.transition_gate_d_pusher_max,
+            pusher_slew=0.33,
             apply_lift_blend=True,
         )
         diagnostic = Float64MultiArray()
@@ -1993,11 +1996,27 @@ class StandardVtolNmpcNode(Node):
             control_dt = self._control_dt()
             if self.test_mode == "transition_gate_d":
                 previous_command = self.last_command.copy()
+                if self.gate_d.state == "front_transition":
+                    requested_control[1] = max(
+                        requested_control[1],
+                        self.gate_d.front_pusher_command,
+                    )
+                gate_d_pusher_limit = (
+                    self.gate_d.mc_pusher_limit
+                    if self.gate_d.state == "mc_accelerate"
+                    else self.transition_gate_d_pusher_max
+                )
+                gate_d_pusher_slew = (
+                    0.05
+                    if self.gate_d.state == "mc_accelerate"
+                    else 0.33
+                )
                 self.last_command = limit_transition_command(
                     self.last_command,
                     requested_control,
                     control_dt,
-                    pusher_limit=self.transition_gate_d_pusher_max,
+                    pusher_limit=gate_d_pusher_limit,
+                    pusher_slew=gate_d_pusher_slew,
                     apply_lift_blend=(self.gate_d.state != "mc_accelerate"),
                 )
                 normal = np.array(
