@@ -216,6 +216,9 @@ def px4_mc_weight(vtol_state: int, airspeed: float, phase_seconds: float) -> flo
     if vtol_state == VTOL_FW:
         return 0.0
     if vtol_state == VTOL_TRANSITION_TO_FW:
+        # PX4 Standard starts airspeed blending only after VT_TRANS_MIN_TM.
+        if phase_seconds <= 2.0:
+            return 1.0
         return float(np.clip((10.0 - airspeed) / 2.0, 0.0, 1.0))
     if vtol_state == VTOL_TRANSITION_TO_MC:
         return float(np.clip(phase_seconds / 3.0, 0.0, 1.0))

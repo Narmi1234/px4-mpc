@@ -391,7 +391,7 @@ jedini lift/torque blend.
 
 PX4 checkpoint je `7558a3d188`; C++ style i `px4` SITL target prolaze. Upareni
 NMPC offline Gate D sa uklonjenim outgoing double-blendom prolazi za `53.05 s`:
-speed `12.088 m/s`, altitude error `1.029 m`, tilt `6.65 deg`, peak pusher
+speed `12.926 m/s`, altitude error `1.029 m`, tilt `5.93 deg`, peak pusher
 `0.443`, solver failures `0`, završni MC.
 
 Gate D još nije PASS dok i ROS završetak i najnoviji ULog ne prođu. Gate E se

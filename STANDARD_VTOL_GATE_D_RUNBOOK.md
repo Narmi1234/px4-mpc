@@ -49,8 +49,8 @@ colcon build --packages-select px4_mpc --symlink-install
 
 Build mora završiti bez greške. Svaki Terminal ispod otvori kao novi shell.
 
-Offline Gate D sa PX4-owned lift blendom je prošao (`53.05 s`, `12.088 m/s`,
-visina `1.029 m`, tilt `6.65 deg`, stvarni peak pusher `0.443`, solver
+Offline Gate D sa PX4-owned lift blendom je prošao (`53.05 s`, `12.926 m/s`,
+visina `1.029 m`, tilt `5.93 deg`, stvarni peak pusher `0.443`, solver
 failures `0`, završni MC). Regresija se može ponoviti:
 
 ```bash
@@ -151,11 +151,11 @@ mc_accelerate -> front_transition -> fw_hold
 
 Terminal 4 tokom front tranzicije prikazuje i `lift_weight` i `collective`.
 U `mc_accelerate` oba ostaju približno na hover vrijednosti (`1.0` i `0.52`).
-Nakon ulaska u `front_transition`, `lift_weight` mora padati kako CAS raste, a
-`collective` mora sići ispod `0.48`. To potvrđuje da NMPC zaista rasterećuje
-lift-motore dok krilo preuzima uzgon. Ako collective ostane na `0.48..0.52`
-dok je brzina iznad `8 m/s`, ručno zatraži `Transition to Multicopter` i
-prekini test.
+Nakon najmanje `2 s` u `front_transition`, `lift_weight` mora pasti kada CAS
+pređe `8 m/s`. Prikazani `collective` je sada raw NMPC zahtjev i treba ostati
+približno u hover rasponu `0.48..0.56`; PX4 interno množi taj zahtjev svojim
+weightom. Stvarno rasterećenje lift-motora potvrđuje se iz ULoga, ne padom raw
+collectivea u ROS statusu.
 
 Prikaz `pitch=actual/reference` koristi interni FLU znak. Tokom
 `front_transition` referenca je `0 deg`, prema uspješnom stock PX4 ULogu, a
