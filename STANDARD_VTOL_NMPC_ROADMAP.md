@@ -372,6 +372,17 @@ PX4 ULog imao kontinuiran local-position tok sa maksimalnim razmakom `0.032 s`
 i bez dropouta. Bounded `0.45 s` DDS bridge zato je omogućen samo u
 `mc_accelerate`; front/FW/back faze ostaju na strogim `0.30/0.20 s` limitima.
 
+Peti pokušaj je uklonio posljednju nepoznanicu: stabilan Gate D je dosegao
+`14.3 m/s` ground speed i `13.4 m/s` aktivni CAS (tilt `3.88 deg`, altitude
+`1.024 m`, solver `0`), ali PX4 nikad nije objavio FW stanje. U PX4 kodu je
+potvrđeno da se `Standard::update_transition_state()` poziva samo na novi
+MC/FW attitude setpoint. Offboard body-rate režim ih ne objavljuje, pa
+`_time_since_trans_start` ostaje nula i `VT_TRANS_MIN_TM` uslov nikad ne može
+proći. Naredni Gate D let je zabranjen dok se eksplicitno ne odobri, implementira
+i rebuilda ograničeni PX4 `nmpc-external-pusher` patch za Standard VTOL
+Offboard-rate transition timing/weights; NMPC zatim mora ukloniti vlastiti
+eksplicitni lift blend da ne nastane double-blend.
+
 Gate D još nije PASS dok i ROS završetak i najnoviji ULog ne prođu. Gate E se
 ne pokreće prije tog checkpointa.
 
