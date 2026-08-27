@@ -348,6 +348,14 @@ ULoga su u `validation_logs/TRANSITION_GATE_D_ATTEMPT_01_SUMMARY.md`. Gate D
 sada eksplicitno primjenjuje blend na outgoing collective; PX4 branch nije
 mijenjan.
 
+Drugi live pokušaj je također sigurno vraćen u MC (`31.05 s` Offboard), ali je
+FAIL na gubitku visine. ULog je pokazao da je front-transition pitch oscilirao
+od približno `+6 deg` do `-15 deg`, vertikalna brzina došla do `3.34 m/s`, a
+collective se spustio na `0.032`. Stock PX4 Gate C je u istoj fazi ostao gotovo
+nivelisan i ušao u FW za `2.58 s`. FW trim se zato više ne koristi prije FW
+potvrde; bounded pitch-rate governor drži level front-transition corridor, uz
+raniji recovery na `10 deg` ili `1.5 m/s`.
+
 Gate D još nije PASS dok i ROS završetak i najnoviji ULog ne prođu. Gate E se
 ne pokreće prije tog checkpointa.
 

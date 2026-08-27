@@ -49,6 +49,10 @@ class TestGateDStateMachine(unittest.TestCase):
         pitch, elevator = transition_pitch_and_elevator(10.0, 0.0)
         self.assertLess(pitch, 0.0)
         self.assertGreater(elevator, 0.0)
+        pitch, elevator = transition_pitch_and_elevator(
+            10.0, 0.0, VTOL_TRANSITION_TO_FW
+        )
+        self.assertEqual((pitch, elevator), (0.0, 0.0))
         self.assertAlmostEqual(transition_pusher_trim(12.0, 0.0), 0.2660)
         self.assertAlmostEqual(transition_pusher_trim(12.0, 1.0), 0.0)
 

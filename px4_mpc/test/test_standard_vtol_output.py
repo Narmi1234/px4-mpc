@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 
 from px4_mpc.controllers.standard_vtol_output import (
+    govern_transition_pitch,
     govern_transition_speed,
     govern_pusher_forward_envelope,
     govern_pusher_forward_lateral,
@@ -20,6 +21,19 @@ from px4_mpc.models.standard_vtol_gz_model import StandardVtolGazeboModel
 
 
 class TestStandardVtolOutput(unittest.TestCase):
+    def test_transition_pitch_governor_is_slow_and_opposes_error(self):
+        previous = np.array([0.30, 0.20, 0.0, 0.0, 0.0])
+        limited = np.array([0.30, 0.20, 0.0, 0.25, 0.0])
+        governed = govern_transition_pitch(
+            previous,
+            limited,
+            pitch=np.deg2rad(6.0),
+            reference_pitch=0.0,
+            dt=0.05,
+        )
+        self.assertAlmostEqual(governed[3], -0.01)
+        self.assertLess(governed[3], 0.0)
+
     def test_external_pusher_limiter_allows_only_slow_bounded_pulse(self):
         previous = np.array([0.52, 0.0, 0.0, 0.0, 0.0])
         requested = np.array([0.52, 0.4, 0.0, 0.0, 0.0])

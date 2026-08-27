@@ -11,6 +11,7 @@ import numpy as np
 from px4_mpc.controllers.standard_vtol_nmpc import StandardVtolNmpc
 from px4_mpc.controllers.standard_vtol_output import (
     govern_pusher_forward_lateral,
+    govern_transition_pitch,
     govern_transition_speed,
     limit_transition_command,
     pretransition_lift_command,
@@ -67,7 +68,9 @@ def references(controller, gate, hold, state, elapsed, vtol_state):
         reference = pusher_forward_speed_reference_state(
             hold, state, direction, samples[0], sample
         )
-        pitch, elevator = transition_pitch_and_elevator(sample.speed, weight)
+        pitch, elevator = transition_pitch_and_elevator(
+            sample.speed, weight, vtol_state
+        )
         reference[6:10] = yaw_pitch_quaternion(pitch)
         x_ref.append(reference)
         elevators.append(elevator)
@@ -105,7 +108,15 @@ def main() -> None:
     vtol_state = VTOL_MC
     transition_started = math.nan
     solver_failures = 0
-    maxima = dict(speed=0.0, altitude=0.0, tilt=0.0, pusher=0.0)
+    maxima = dict(
+        speed=0.0,
+        altitude=0.0,
+        altitude_signed=0.0,
+        altitude_time=0.0,
+        altitude_phase="none",
+        tilt=0.0,
+        pusher=0.0,
+    )
 
     for index in range(round(90.0 / controller.dt)):
         elapsed = index * controller.dt
@@ -168,6 +179,17 @@ def main() -> None:
         command = govern_pusher_forward_lateral(
             previous, command, state[1] - hold[1], state[4], 0.0, controller.dt
         )
+        qw, qx, qy, qz = state[6:10]
+        pitch = math.asin(
+            np.clip(2.0 * (qw * qy - qz * qx), -1.0, 1.0)
+        )
+        rw, rx, ry, rz = x_ref[0, 6:10]
+        reference_pitch = math.asin(
+            np.clip(2.0 * (rw * ry - rz * rx), -1.0, 1.0)
+        )
+        command = govern_transition_pitch(
+            previous, command, pitch, reference_pitch, controller.dt
+        )
         command = govern_transition_speed(
             previous,
             command,
@@ -191,7 +213,12 @@ def main() -> None:
         )
         pitch = math.asin(np.clip(2.0 * (qw * qy - qz * qx), -1.0, 1.0))
         maxima["speed"] = max(maxima["speed"], float(state[3]))
-        maxima["altitude"] = max(maxima["altitude"], abs(state[2] - hold[2]))
+        altitude_error = float(state[2] - hold[2])
+        if abs(altitude_error) > maxima["altitude"]:
+            maxima["altitude"] = abs(altitude_error)
+            maxima["altitude_signed"] = altitude_error
+            maxima["altitude_time"] = elapsed
+            maxima["altitude_phase"] = gate.state
         maxima["tilt"] = max(maxima["tilt"], math.degrees(max(abs(roll), abs(pitch))))
         maxima["pusher"] = max(maxima["pusher"], float(command[1]))
     else:
@@ -212,6 +239,11 @@ def main() -> None:
     print(f"solver_failures={solver_failures}")
     print(f"maximum_speed={maxima['speed']:.3f}m/s")
     print(f"maximum_altitude_error={maxima['altitude']:.3f}m")
+    print(
+        "maximum_altitude_location="
+        f"{maxima['altitude_signed']:.3f}m@{maxima['altitude_time']:.2f}s"
+        f",phase={maxima['altitude_phase']}"
+    )
     print(f"maximum_tilt={maxima['tilt']:.2f}deg")
     print(f"maximum_pusher={maxima['pusher']:.3f}")
     print(f"final_speed={state[3]:.3f}m/s")

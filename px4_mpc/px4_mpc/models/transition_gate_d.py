@@ -217,9 +217,17 @@ def px4_mc_weight(vtol_state: int, airspeed: float, phase_seconds: float) -> flo
 
 
 def transition_pitch_and_elevator(
-    airspeed: float, lift_weight: float
+    airspeed: float, lift_weight: float, vtol_state: int | None = None
 ) -> tuple[float, float]:
-    """Return ULog/model-corridor pitch and elevator schedules."""
+    """Return phase-correct pitch and elevator schedules.
+
+    The identified trim corridor belongs to established wing-borne flight.
+    Stock-PX4 ULogs show that the Standard VTOL stays essentially level during
+    the short front transition. Applying the FW trim before FW confirmation
+    excites the live inner rate loop just as lift-rotor authority is removed.
+    """
+    if vtol_state == VTOL_TRANSITION_TO_FW:
+        return 0.0, 0.0
     speeds = np.array([0.0, 8.0, 9.0, 10.0, 11.0, 12.0, 15.0])
     pitch_deg = np.array([0.0, -8.25, -8.0, -7.319, -5.463, -4.049, -1.365])
     elevator_deg = np.array([0.0, 44.25, 43.88, 41.63, 32.06, 25.14, 12.91])

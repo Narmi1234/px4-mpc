@@ -45,8 +45,9 @@ colcon build --packages-select px4_mpc --symlink-install
 
 Build mora završiti bez greške. Svaki Terminal ispod otvori kao novi shell.
 
-Korigovani offline Gate D je prošao (`58.95 s`, `11.964 m/s`, visina `0.903 m`,
-tilt `7.77 deg`, solver failures `0`, završni MC). Regresija se može ponoviti:
+Korigovani offline Gate D nakon Attempt 02 analize je prošao (`57.20 s`,
+`11.753 m/s`, visina `1.187 m`, tilt `8.83 deg`, solver failures `0`, završni
+MC). Regresija se može ponoviti:
 
 ```bash
 cd /home/imran/Repositories/px4-mpc
@@ -148,6 +149,12 @@ Nakon ulaska u `front_transition`, `lift_weight` mora padati kako CAS raste, a
 lift-motore dok krilo preuzima uzgon. Ako collective ostane na `0.48..0.52`
 dok je brzina iznad `8 m/s`, ručno zatraži `Transition to Multicopter` i
 prekini test.
+
+Prikaz `pitch=actual/reference` koristi interni FLU znak. Tokom
+`front_transition` referenca je `0 deg`, prema uspješnom stock PX4 ULogu, a
+stvarni pitch treba ostati unutar približno `+/-4 deg`. Automatski recovery
+sada počinje najkasnije na `10 deg` tilta ili `1.5 m/s` vertikalne brzine u toj
+fazi. Ne širiti te granice radi dobijanja PASS-a.
 
 FW krug nije dio ovog testa. Vozilo treba nastaviti približno ravno i nakon 5 s
 FW stanja automatski zatražiti back transition. Ako počne kružiti, to obično

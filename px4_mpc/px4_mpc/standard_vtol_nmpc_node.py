@@ -28,6 +28,7 @@ from rclpy.qos import (
 )
 from px4_mpc.controllers.standard_vtol_nmpc import StandardVtolNmpc
 from px4_mpc.controllers.standard_vtol_output import (
+    govern_transition_pitch,
     govern_transition_speed,
     govern_pusher_forward_lateral,
     govern_pusher_forward_envelope,
@@ -1084,6 +1085,18 @@ class StandardVtolNmpcNode(Node):
         gate_d_lift_weight = (
             self._gate_d_lift_weight() if self.state is not None else math.nan
         )
+        gate_d_pitch_degrees = (
+            math.degrees(self._pitch_angle())
+            if self.state is not None
+            else math.nan
+        )
+        if self.current_reference is None:
+            gate_d_reference_pitch_degrees = math.nan
+        else:
+            rw, rx, ry, rz = self.current_reference[6:10]
+            gate_d_reference_pitch_degrees = math.degrees(
+                math.asin(np.clip(2.0 * (rw * ry - rz * rx), -1.0, 1.0))
+            )
         solve_time_p99 = (
             float(np.percentile(self.solve_times_ms, 99))
             if self.solve_times_ms
@@ -1125,6 +1138,8 @@ class StandardVtolNmpcNode(Node):
             f"pusher_max={self.transition_gate_d_pusher_max:.3f}]"
             f", gate_d=[state={self.gate_d.state},vtol_state={vtol_state},"
             f"lift_weight={gate_d_lift_weight:.3f},"
+            f"pitch_deg={gate_d_pitch_degrees:.2f},"
+            f"pitch_ref_deg={gate_d_reference_pitch_degrees:.2f},"
             f"last_request={self.gate_d_last_transition_request},"
             f"front_ack={self.gate_d_front_ack},back_ack={self.gate_d_back_ack},"
             f"recovery_reason={self.gate_d_recovery_reason}]"
@@ -1325,7 +1340,7 @@ class StandardVtolNmpcNode(Node):
             )
             stage_weight = lift_weight
             pitch, elevator = transition_pitch_and_elevator(
-                sample.speed, stage_weight
+                sample.speed, stage_weight, vtol_state
             )
             reference[6:10] = self._yaw_pitch_quaternion(
                 self.hold_state[6:10], pitch
@@ -1454,11 +1469,19 @@ class StandardVtolNmpcNode(Node):
             altitude_limit = 0.5
         if abs(self.state[2] - self.hold_state[2]) > altitude_limit:
             return "altitude_error"
-        vertical_speed_limit = 3.0 if self.test_mode == "transition_gate_d" else (
+        if (
+            self.test_mode == "transition_gate_d"
+            and self.gate_d.state == "front_transition"
+        ):
+            vertical_speed_limit = 1.5
+        elif self.test_mode == "transition_gate_d":
+            vertical_speed_limit = 3.0
+        else:
+            vertical_speed_limit = (
             1.0
             if self.test_mode in ("pretransition_5mps", "pretransition_8mps")
             else 0.75
-        )
+            )
         if abs(self.state[5]) > vertical_speed_limit:
             return "vertical_speed_limit"
         if self.test_mode == "transition_gate_d":
@@ -1562,7 +1585,12 @@ class StandardVtolNmpcNode(Node):
         elif np.linalg.norm(delta_xy) > 5.0:
             return "horizontal_geofence"
         tilt_limit = (
-            20.0
+            10.0
+            if (
+                self.test_mode == "transition_gate_d"
+                and self.gate_d.state == "front_transition"
+            )
+            else 20.0
             if self.test_mode == "transition_gate_d"
             else (
                 12.0
@@ -1981,6 +2009,25 @@ class StandardVtolNmpcNode(Node):
                     float(np.dot(self.state[0:2] - self.hold_state[0:2], normal)),
                     float(np.dot(self.state[3:5], normal)),
                     self._roll_angle(),
+                    control_dt,
+                )
+                reference_quaternion = self.current_reference[6:10]
+                reference_pitch = math.asin(
+                    np.clip(
+                        2.0
+                        * (
+                            reference_quaternion[0] * reference_quaternion[2]
+                            - reference_quaternion[3] * reference_quaternion[1]
+                        ),
+                        -1.0,
+                        1.0,
+                    )
+                )
+                self.last_command = govern_transition_pitch(
+                    previous_command,
+                    self.last_command,
+                    self._pitch_angle(),
+                    reference_pitch,
                     control_dt,
                 )
                 forward_speed = float(

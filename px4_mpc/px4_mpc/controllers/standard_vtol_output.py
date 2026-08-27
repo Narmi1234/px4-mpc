@@ -117,6 +117,43 @@ def govern_transition_speed(
     return result
 
 
+def govern_transition_pitch(
+    previous,
+    limited,
+    pitch: float,
+    reference_pitch: float,
+    dt: float = 0.05,
+) -> np.ndarray:
+    """Close a slow pitch loop around the rate-input transition model.
+
+    The 10-state plant treats body rate as the inner-loop output. The live PX4
+    rate loop and aerodynamic surfaces add a measured delay, so an unbounded
+    NMPC rate reversal produced the Gate D attempt-02 pitch oscillation. This
+    governor limits the requested pitch rate to 0.10 rad/s and its slew to
+    0.20 rad/s^2. Inside a four-degree corridor NMPC retains authority for
+    altitude correction; at either edge only rates back into the corridor are
+    accepted.
+    """
+    previous = np.asarray(previous, dtype=float)
+    result = np.asarray(limited, dtype=float).copy()
+    pitch = float(pitch)
+    reference_pitch = float(reference_pitch)
+    soft_error = np.deg2rad(4.0)
+    lower_rate = float(
+        np.clip(reference_pitch - soft_error - pitch, -0.10, 0.10)
+    )
+    upper_rate = float(
+        np.clip(reference_pitch + soft_error - pitch, -0.10, 0.10)
+    )
+    target_rate = float(
+        np.clip(np.clip(result[3], -0.10, 0.10), lower_rate, upper_rate)
+    )
+    result[3] = previous[3] + np.clip(
+        target_rate - previous[3], -0.20 * float(dt), 0.20 * float(dt)
+    )
+    return result
+
+
 def govern_pusher_forward_envelope(
     previous,
     limited,

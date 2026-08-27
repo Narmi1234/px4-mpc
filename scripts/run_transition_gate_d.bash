@@ -78,9 +78,11 @@ for _POLL in $(seq 1 130); do
     _GATE_STATE="$(printf '%s\n' "${_STATUS}" | sed -n 's/.*gate_d=\[state=\([^,]*\).*/\1/p')"
     _VTOL_STATE="$(printf '%s\n' "${_STATUS}" | sed -n 's/.*vtol_state=\([^,]*\).*/\1/p')"
     _LIFT_WEIGHT="$(printf '%s\n' "${_STATUS}" | sed -n 's/.*gate_d=\[[^]]*lift_weight=\([^,]*\).*/\1/p')"
+    _PITCH="$(printf '%s\n' "${_STATUS}" | sed -n 's/.*gate_d=\[[^]]*pitch_deg=\([^,]*\).*/\1/p')"
+    _PITCH_REF="$(printf '%s\n' "${_STATUS}" | sed -n 's/.*gate_d=\[[^]]*pitch_ref_deg=\([^,]*\).*/\1/p')"
     _COLLECTIVE="$(printf '%s\n' "${_STATUS}" | sed -n 's/.*, control=\[\([^,]*\).*/\1/p')"
     _PX4_ELAPSED="$(printf '%s\n' "${_STATUS}" | sed -n 's/.*px4_elapsed=\([^,]*\).*/\1/p')"
-    echo "  gate=${_GATE_STATE:-unknown}, vtol=${_VTOL_STATE:-unknown}, lift_weight=${_LIFT_WEIGHT:-unknown}, collective=${_COLLECTIVE:-unknown}, px4_elapsed=${_PX4_ELAPSED:-unknown}"
+    echo "  gate=${_GATE_STATE:-unknown}, vtol=${_VTOL_STATE:-unknown}, lift_weight=${_LIFT_WEIGHT:-unknown}, collective=${_COLLECTIVE:-unknown}, pitch=${_PITCH:-unknown}/${_PITCH_REF:-unknown}deg, px4_elapsed=${_PX4_ELAPSED:-unknown}"
   fi
 done
 
