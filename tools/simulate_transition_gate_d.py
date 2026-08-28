@@ -99,6 +99,8 @@ def main() -> None:
         build_directory=root / "build/standard_vtol_nmpc_gate_d_pusher_060",
         control_lower_bounds=np.array([0.0, 0.0, -0.5, -0.5, -0.3]),
         control_upper_bounds=np.array([0.65, 0.60, 0.5, 0.5, 0.3]),
+        attitude_lower_degrees=np.array([-35.0, -35.0]),
+        attitude_upper_degrees=np.array([35.0, 35.0]),
     )
     plant = StandardVtolTransitionRateModel(controller.model.plant)
     state = plant.hover_state()
@@ -182,7 +184,12 @@ def main() -> None:
             pusher_limit = gate.front_pusher_command
         else:
             pusher_limit = 0.60
-        pusher_slew = 0.05 if gate.state == "mc_accelerate" else 0.33
+        if gate.state == "mc_accelerate":
+            pusher_slew = 0.05
+        elif gate.state == "fw_hold":
+            pusher_slew = 2.0
+        else:
+            pusher_slew = 0.33
         command = limit_transition_command(
             previous,
             requested,
@@ -224,6 +231,7 @@ def main() -> None:
             state[3],
             x_ref[0, 3],
             controller.dt,
+            reduction_slew=2.0 if gate.state == "fw_hold" else 0.33,
         )
         if elapsed < 0.5:
             command = plant.hover_control()

@@ -35,6 +35,8 @@ class StandardVtolNmpc:
         build_directory: str | Path = "build/standard_vtol_nmpc",
         control_lower_bounds: np.ndarray | None = None,
         control_upper_bounds: np.ndarray | None = None,
+        attitude_lower_degrees: np.ndarray | None = None,
+        attitude_upper_degrees: np.ndarray | None = None,
     ) -> None:
         try:
             from acados_template import AcadosOcp, AcadosOcpSolver
@@ -105,8 +107,29 @@ class StandardVtolNmpc:
         sin_roll = 2.0 * (qw * qx + qy * qz)
         sin_pitch = 2.0 * (qw * qy - qz * qx)
         ocp.model.con_h_expr = cs.vertcat(sin_roll, sin_pitch)
-        ocp.constraints.lh = np.sin(np.deg2rad([-20.0, -20.0]))
-        ocp.constraints.uh = np.sin(np.deg2rad([20.0, 15.0]))
+        attitude_lower = np.asarray(
+            [-20.0, -20.0]
+            if attitude_lower_degrees is None
+            else attitude_lower_degrees,
+            dtype=float,
+        )
+        attitude_upper = np.asarray(
+            [20.0, 15.0]
+            if attitude_upper_degrees is None
+            else attitude_upper_degrees,
+            dtype=float,
+        )
+        if attitude_lower.shape != (2,) or attitude_upper.shape != (2,):
+            raise ValueError("attitude bounds must contain roll and pitch")
+        if (
+            not np.all(np.isfinite(attitude_lower))
+            or not np.all(attitude_lower < attitude_upper)
+            or np.any(attitude_lower <= -90.0)
+            or np.any(attitude_upper >= 90.0)
+        ):
+            raise ValueError("attitude bounds must be finite and inside +/-90 deg")
+        ocp.constraints.lh = np.sin(np.deg2rad(attitude_lower))
+        ocp.constraints.uh = np.sin(np.deg2rad(attitude_upper))
 
         ocp.parameter_values = np.zeros(self.model.parameter_size)
         ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"

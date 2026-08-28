@@ -287,6 +287,16 @@ class StandardVtolNmpcNode(Node):
                 control_upper_bounds=np.array(
                     [0.65, self.nmpc_pusher_max, 0.50, 0.50, 0.30]
                 ),
+                attitude_lower_degrees=(
+                    np.array([-35.0, -35.0])
+                    if self.allow_transition_gate_d
+                    else None
+                ),
+                attitude_upper_degrees=(
+                    np.array([35.0, 35.0])
+                    if self.allow_transition_gate_d
+                    else None
+                ),
             )
         else:
             self.controller = StandardVtolNmpc()
@@ -2046,11 +2056,12 @@ class StandardVtolNmpcNode(Node):
                     gate_d_pusher_limit = self.gate_d.front_pusher_command
                 else:
                     gate_d_pusher_limit = self.transition_gate_d_pusher_max
-                gate_d_pusher_slew = (
-                    0.05
-                    if self.gate_d.state == "mc_accelerate"
-                    else 0.33
-                )
+                if self.gate_d.state == "mc_accelerate":
+                    gate_d_pusher_slew = 0.05
+                elif self.gate_d.state == "fw_hold":
+                    gate_d_pusher_slew = 2.0
+                else:
+                    gate_d_pusher_slew = 0.33
                 self.last_command = limit_transition_command(
                     self.last_command,
                     requested_control,
@@ -2110,6 +2121,9 @@ class StandardVtolNmpcNode(Node):
                     forward_speed,
                     reference_speed,
                     control_dt,
+                    reduction_slew=(
+                        2.0 if self.gate_d.state == "fw_hold" else 0.33
+                    ),
                 )
                 self.max_commanded_pusher = max(
                     self.max_commanded_pusher, self.last_command[1]

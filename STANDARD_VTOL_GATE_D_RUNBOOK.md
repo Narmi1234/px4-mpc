@@ -181,6 +181,15 @@ autoriteta. Stock ULog pri istom FW ulasku ubrza do `16.5..17.3 m/s` u prvih
 na `0.40`, a tek nakon PX4 potvrde `vtol=4` dozvoljeno je `0.60` do CAS `14
 m/s`, nakon čega NMPC ponovo zatvara speed feedback.
 
+Attempt 09 je pokazao da sama dozvola `0.60` nije dovoljna: u potvrđenom FW
+stanju stvarni Offboard thrust setpoint je porastao samo `0.086 -> 0.254` prije
+recoveryja, tačno u skladu sa dotadašnjim ROS slewom `0.33/s`. PX4 FW izlaz je
+ispravno pratio taj setpoint; nije bio firmware blocker. `fw_hold` zato sada
+koristi simetričan pusher slew `2.0/s` za ulazak i izlazak iz control-authority
+corridora, dok MC/front faze ostaju na `0.05/0.33/s`. Gate D OCP attitude domen
+je proširen na `+/-35 deg` samo da hard constraint ne učini recovery solve
+infeasible; zasebni live watchdog i dalje prekida na `20 deg`.
+
 Prikaz `pitch=actual/reference` koristi interni FLU znak. Tokom
 `front_transition` referenca je `0 deg`, prema uspješnom stock PX4 ULogu, a
 stvarni pitch treba ostati unutar približno `+/-4 deg`. Automatski recovery

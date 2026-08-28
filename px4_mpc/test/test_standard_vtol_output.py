@@ -200,6 +200,15 @@ class TestStandardVtolOutput(unittest.TestCase):
             limited, limited, forward_speed=12.2, reference_speed=12.0, dt=0.05
         )
         self.assertAlmostEqual(inside_deadband[1], limited[1])
+        fw_governed = govern_transition_speed(
+            limited,
+            limited,
+            forward_speed=12.3,
+            reference_speed=12.0,
+            dt=0.05,
+            reduction_slew=2.0,
+        )
+        self.assertAlmostEqual(fw_governed[1], max(0.0, limited[1] - 0.10))
 
     def test_gate_d_fw_pitch_governor_matches_stock_rate_envelope(self):
         previous = np.array([0.52, 0.30, 0.0, 0.0, 0.0])

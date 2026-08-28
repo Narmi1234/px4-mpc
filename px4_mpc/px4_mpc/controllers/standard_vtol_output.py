@@ -109,6 +109,7 @@ def govern_transition_speed(
     forward_speed: float,
     reference_speed: float,
     dt: float = 0.05,
+    reduction_slew: float = 0.33,
 ) -> np.ndarray:
     """Remove pusher promptly when Gate D exceeds its speed reference."""
     previous = np.asarray(previous, dtype=float)
@@ -118,8 +119,11 @@ def govern_transition_speed(
     # FW at 13.27 m/s and immediately crossed the 14 m/s watchdog.  Match the
     # reduction to the independently enforced PX4 pusher slew once the
     # measured speed is 0.25 m/s above reference.
+    reduction_slew = float(reduction_slew)
+    if reduction_slew <= 0.0:
+        raise ValueError("reduction_slew must be positive")
     if float(forward_speed) > float(reference_speed) + 0.25:
-        result[1] = max(0.0, previous[1] - 0.33 * float(dt))
+        result[1] = max(0.0, previous[1] - reduction_slew * float(dt))
     return result
 
 
