@@ -11,17 +11,20 @@ blend nisu dovoljni za pouzdanu tranziciju.
 
 ## Šta će na kraju raditi NMPC
 
-NMPC na 20 Hz optimizira cijeli hover-to-forward-flight manevar. Njegovo stanje
-je najmanje
+NMPC na 20 Hz optimizira cijeli hover-to-forward-flight manevar. ULog replay je
+pokazao da se tri spora control-surface zgloba ne smiju tretirati kao trenutni,
+pa je aktivno stanje
 
 ```text
 x = [p_N, p_E, p_D, v_N, v_E, v_D,
-     q_w, q_x, q_y, q_z, p, q, r] in R^13.
+     q_w, q_x, q_y, q_z, p, q, r,
+     delta_left, delta_right, delta_elevator] in R^16.
 ```
 
-To je **13 state varijabli, a ne 13 DoF**. Letjelica i dalje ima šest fizičkih
+To je **16 state varijabli, a ne 16 DoF**. Letjelica i dalje ima šest fizičkih
 stepeni slobode. Kvaternion koristi četiri broja za tri rotaciona stepena i
-mora zadovoljavati `q' q = 1`.
+mora zadovoljavati `q' q = 1`; zadnja tri stanja opisuju odziv servoa, a ne
+nove stepene slobode.
 
 NMPC izlaz je
 
@@ -128,6 +131,10 @@ Minimalne kontinuirane jednačine su
 -\omega_B\times(J\omega_B)\right),
 ```
 
+```math
+\dot\delta_i=(k_i\delta_{cmd,i}-\delta_i)/\tau_i.
+```
+
 ```text
 tau_MC = lambda * allocator_MC(PID_MC(omega_sp-omega))
 tau_FW = (1-lambda) * allocator_FW(PID_FW(omega_sp-omega), airspeed).
@@ -137,7 +144,9 @@ Ovo zamjenjuje netačnu pretpostavku `omega = omega_sp`. Prvi pokušaj
 identifikacije čistog first-order closed-loop modela prošao je MC, ali nije
 prošao blend/FW validaciju. Zato model eksplicitno zadržava rigid-body moment,
 PX4 rate-controller saturaciju i SDF aerodinamički moment, bez dodavanja
-pojedinačnih RPM stanja. Rezultati su u
+pojedinačnih RPM stanja. Identificirani servo odziv je približno `1.03 s` za
+oba elevona i `0.72 s` za elevator; zato su ta tri stanja zadržana u OCP-u.
+Rezultati su u
 [`STANDARD_VTOL_RATE_IDENTIFICATION.md`](STANDARD_VTOL_RATE_IDENTIFICATION.md).
 
 Za robusnu formulaciju model dodatno koristi:
@@ -150,8 +159,10 @@ kao procijenjeni poremećaj/parametar. Prva implementacija može koristiti
 bounded scenario NMPC ili constraint tightening; ne treba odmah praviti puni
 min-max optimizer.
 
-Actuator/rate lag se identificira iz ULogova. Pojedinačni rotor RPM ostaje samo
-u 18-state validation plantu, ne u online OCP-u.
+Pojedinačni rotor RPM ostaje samo u 18-state validation plantu, ne u online
+OCP-u. Lift-motor time constant je `0.0125/0.025 s`, dok je identificirani
+surface lag reda `1 s`; zbog te razlike rotor speed ostaje algebraički, a
+surface ugao je stanje.
 
 ## Implementacijski put
 
@@ -189,9 +200,9 @@ transient. Aktivni nastavak Faze 1 je torque-informed rigid-body model opisan u
 rate-identification dokumentu. On se prihvata tek kada pravilno predviđa znak,
 fazno kašnjenje i vrh pitch-ratea kroz FW ulazak.
 
-### Faza 2 — novi 13-state model i OCP, samo offline
+### Faza 2 — novi 16-state model i OCP, samo offline
 
-- Dodati `omega_B` u CasADi/acados stanje.
+- Dodati `omega_B` i tri surface-angle stanja u CasADi/acados model.
 - Dodati `lambda` kao šestu optimiziranu komandu.
 - Ukloniti PX4 lift weight iz external parametara modela.
 - Dodati constraintove na `lambda`, `Delta lambda`, angle of attack, altitude,
@@ -274,8 +285,11 @@ Ne pokreće se novi let. Redoslijed je:
 1. [x] napisati ULog alat za rate-setpoint/measured-rate/torque dataset;
 2. [x] generisati odvojeni train/validation report i odbiti neadekvatne
    first-order kandidate;
-3. [ ] implementirati torque-informed 13-state NumPy validation model;
-4. [ ] nakon rotational replay PASS-a prenijeti model u CasADi/acados;
+3. [x] implementirati torque-informed 16-state NumPy validation model sa PX4
+   rate PID-om, allocatorom i identificiranim surface lagom;
+4. [ ] završiti 0.5 s pitch-rate rollout acceptance: MC prolazi, FW je blizu
+   (`0.0624`), blend je blocker (`0.1104 rad/s`); tek zatim prenijeti model u
+   CasADi/acados;
 5. [ ] tek nakon offline replay PASS-a implementirati PX4 `lambda` interfejs;
 6. [ ] pokrenuti L1, ne punu tranziciju.
 

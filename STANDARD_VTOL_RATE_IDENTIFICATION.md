@@ -11,7 +11,7 @@ omega_B = omega_sp
 unutar svakog predikcijskog koraka. Gate D ULogovi su pokazali da to nije
 tačno pri gašenju lift motora i preuzimanju kontrole aerodinamičkim površinama.
 Ova faza provjerava može li jednostavni closed-loop rate model zamijeniti tu
-pretpostavku prije izgradnje novog 13-state OCP-a.
+pretpostavku prije izgradnje novog OCP-a.
 
 ## Dataset i odvojena validacija
 
@@ -109,17 +109,73 @@ tau_MC = lambda * allocator_MC(PID_MC(omega_sp - omega))
 tau_FW = (1-lambda) * allocator_FW(PID_FW(omega_sp - omega), airspeed)
 ```
 
-i SDF aerodinamičkim momentom površina. PID integrator se inicijalizira iz PX4
+i identificiranim efektivnim aerodinamičkim momentom površina. PID integrator se inicijalizira iz PX4
 statusa i unutar kratkog horizonta može biti bounded parametar; ne moramo zbog
 njega odmah dodati pojedinačne RPM stateove.
 
+## Implementirani torque-informed lanac
+
+NumPy model sada reproducira:
+
+```text
+rate_sp -> PX4 MC/FW PID+FF -> control allocator
+        -> lift motori / tri servo komande -> rigid-body moment
+```
+
+PX4 rate-controller reprodukcija na FW logu ima pitch torque RMSE `0.0052`, a
+sa tačnim 1 s filtriranjem calibrated airspeeda `0.0106` kroz transition blend.
+Allocator iz trening ULoga predviđa četiri lift-motor komande na netaknutom
+logu sa RMSE manjim od `0.002`; surface mapping odgovara PX4 Standard VTOL
+geometriji unutar `0.31 deg`.
+
+Gazebo `JointPositionController` ne postavlja zglob trenutno. ULog
+identifikacija, sa lijevim/desnim elevonom prisilno jednakim, daje:
+
+| Površina | time constant [s] | static gain |
+|---|---:|---:|
+| lijevi/desni elevon | 1.0289 | 1.3140 |
+| elevator | 0.7224 | 1.1489 |
+
+Na odvojenom validation letu taj lag smanjuje roll angular-acceleration RMSE
+sa `4.230` na `0.151 rad/s^2`. Zbog sporog odziva model je proširen sa 13
+rigid-body varijabli na tri surface-angle stanja: ukupno **16 state varijabli**.
+Motor RPM i dalje nije OCP stanje.
+
+Čisti SDF pitch moment je preosjetljiv na malu grešku skrivenog elevator
+zgloba. Zato je na trening letu identificiran dimenzionalni model
+
+```math
+M_y=\bar q(c_0+c_\alpha\alpha+c_{\alpha2}\alpha|\alpha|
+          +c_q q/V+c_{\delta_e}\delta_e).
+```
+
+Na netaknutom validation letu FW pitch-moment RMSE pada sa `0.478` na
+`0.098 Nm` za FW fit; stabilni zone-balanced model smanjuje blend RMSE sa
+`0.421` na `0.236 Nm`. Direktni blend-only fit je odbijen iako ima bolji
+pointwise correlation: naučio je aerodinamičko anti-prigušenje i postao
+nestabilan u 0.5 s rolloutu.
+
+Strogi 0.5 s test ne koristi budući logged torque ni servo izlaz. Rezultat je:
+
+| Zona | rate-sp model p/q/r RMSE [rad/s] | ZOH p/q/r | Odluka |
+|---|---:|---:|---|
+| MC | 0.0053 / 0.0075 / 0.0019 | 0.0436 / 0.0525 / 0.0097 | PASS |
+| blend | 0.0277 / 0.1104 / 0.0342 | 0.2410 / 0.1234 / 0.0648 | FAIL |
+| FW | 0.0288 / 0.0624 / 0.0208 | 0.1552 / 0.0808 / 0.0275 | blizu, FAIL |
+
+Plant-only dijagnostika sa budućim logged actuator komandama daje blend pitch
+RMSE `0.4602 rad/s`, pa preostali blocker nije rate PID/allocator nego
+efektivni mixed-authority pitch plant. Nema novog leta dok blend rollout ne
+prođe.
+
 ## Sljedeći implementacijski gate
 
-Prvo se pravi NumPy 13-state rotational validation model, još bez acadosa:
+NumPy 16-state rotational validation model postoji, još bez acadosa:
 
 1. reproducirati MC i FW PX4 rate PID/FF i saturacije iz aktivnih parametara;
 2. algebraički mapirati MC torque na lift motore i FW torque na tri površine;
-3. koristiti postojeći SDF `motor_wrench()` i `aerodynamic_wrench()`;
+3. koristiti SDF motor/force model, identificirani surface lag i efektivni
+   pitch-moment model;
 4. prvo validirati `logged torque -> angular acceleration` da se izoluje plant;
 5. zatim validirati `rate_sp -> predicted torque -> angular acceleration`;
 6. tek nakon pravilnog pitch-transient znaka prenijeti jednačinu u CasADi.
@@ -147,3 +203,22 @@ Piecewise kandidat pokreće `tools/fit_standard_vtol_rate_dynamics.py`, a LPV
 kandidat `tools/fit_standard_vtol_rate_lpv.py`; oba zahtijevaju eksplicitne
 `--train`, `--validate` i `--output` argumente. Tačan split je gore zapisan da
 rezultat ostane ponovljiv.
+
+Torque-informed provjere su:
+
+```bash
+python tools/validate_standard_vtol_rate_controller.py TRAIN.csv VALIDATE.csv \
+  --output results/rate_controller_check
+
+python tools/identify_standard_vtol_surface_dynamics.py \
+  --train TRAIN.csv --validate VALIDATE.csv --output results/surface_dynamics
+
+python tools/identify_standard_vtol_pitch_moment.py \
+  --train TRAIN.csv --validate VALIDATE.csv --output results/pitch_moment
+
+python tools/validate_standard_vtol_rotational_replay.py TRAIN.csv VALIDATE.csv \
+  --output results/rotational_replay
+
+python tools/validate_standard_vtol_rotational_rollout.py TRAIN.csv VALIDATE.csv \
+  --zones blend fw --output results/rotational_rollout
+```

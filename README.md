@@ -9,7 +9,7 @@ Standard VTOL plant i MC gateovi A/B su potvrđeni, a Gate C je dao stock PX4
 transition baseline. Eksperimentalni Gate D sa 10-state modelom i PX4-owned
 lift blendom je povučen: ULogovi su pokazali da taj model ne predviđa rate
 transient i da PX4, a ne NMPC, bira ključni dio tranzicije. Aktivni pravac je
-13-state robustni NMPC sa eksplicitnim NMPC-owned lift weightom `lambda`.
+16-state robustni NMPC sa eksplicitnim NMPC-owned lift weightom `lambda`.
 Za nastavak rada prvo čitaj:
 
 1. [`STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md`](STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md)
@@ -17,7 +17,7 @@ Za nastavak rada prvo čitaj:
    faze do pune NMPC tranzicije.
 2. [`STANDARD_VTOL_RATE_IDENTIFICATION.md`](STANDARD_VTOL_RATE_IDENTIFICATION.md)
    — aktivna Faza 1, train/validation rezultati i razlog prelaska sa
-   first-order laga na torque-informed 13-state rotacijski model.
+   first-order laga na torque-informed 16-state rotacijski model.
 3. [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md) — historija
    prihvaćenih gateova i razlog povlačenja starog Gate D pristupa.
 4. [`STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md`](STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md)
