@@ -1,5 +1,11 @@
 # Gate D — prva NMPC-koordinisana VTOL tranzicija
 
+> **POVUČENO — NE POKRETATI NOVI LET.** Ovaj gate je arhivirani eksperiment sa
+> 10-state modelom i PX4-owned lift blendom. ULogovi su dokazali da ta
+> arhitektura ne daje NMPC-u vlasništvo tranzicije i ne modelira rate transient.
+> Aktivni plan je
+> [`STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md`](STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md).
+
 Gate D izvodi jednu automatsku sekvencu:
 
 ```text

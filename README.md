@@ -5,18 +5,18 @@ The MPC uses the [acados framework](https://github.com/acados/acados)
 
 ## Standard VTOL hover-to-forward-flight rad
 
-Standard VTOL plant, trim corridor, CasADi/acados OCP i zaštićeni ROS 2
-Offboard node su implementirani. Hover je potvrđen kroz 30 sekundi, Gate A je
-potvrdio zatvorenu NMPC pusher-speed petlju do `3.127 m/s`, a Gate B1 stvarni
-pusher i airspeed feedback do `5.076 m/s`, a Gate B2 stabilan MC let do
-`8.111 m/s` sa postepenim lift-unloadingom, sigurnim kočenjem i povratkom u
-hover. Gate C je potvrdio stock PX4 front/back transition uz shadow model;
-prva NMPC-koordinisana tranzicija još nije odobrena. Za nastavak rada prvo
-čitaj:
+Standard VTOL plant i MC gateovi A/B su potvrđeni, a Gate C je dao stock PX4
+transition baseline. Eksperimentalni Gate D sa 10-state modelom i PX4-owned
+lift blendom je povučen: ULogovi su pokazali da taj model ne predviđa rate
+transient i da PX4, a ne NMPC, bira ključni dio tranzicije. Aktivni pravac je
+13-state robustni NMPC sa eksplicitnim NMPC-owned lift weightom `lambda`.
+Za nastavak rada prvo čitaj:
 
-1. [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md) — trenutno
-   stanje, vlasništvo komandi, prihvaćeni 3 m/s pusher-feedback gate i svi
-   naredni acceptance gateovi do pune tranzicije.
+1. [`STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md`](STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md)
+   — aktivna arhitektura, tačna podjela NMPC/PX4 odgovornosti, jednačine i
+   faze do pune NMPC tranzicije.
+2. [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md) — historija
+   prihvaćenih gateova i razlog povlačenja starog Gate D pristupa.
 2. [`STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md`](STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md)
    — zaključani Gate A postupak i prihvaćeni rezultat.
 3. [`STANDARD_VTOL_GATE_B_RUNBOOK.md`](STANDARD_VTOL_GATE_B_RUNBOOK.md) —
@@ -24,8 +24,7 @@ prva NMPC-koordinisana tranzicija još nije odobrena. Za nastavak rada prvo
 4. [`STANDARD_VTOL_GATE_C_RUNBOOK.md`](STANDARD_VTOL_GATE_C_RUNBOOK.md) —
    prihvaćeni stock PX4 front/back transition uz NMPC shadow računanje.
 5. [`STANDARD_VTOL_GATE_D_RUNBOOK.md`](STANDARD_VTOL_GATE_D_RUNBOOK.md) —
-   aktivni prvi NMPC-koordinisani front/back transition gate i kompletne
-   komande za četiri terminala.
+   arhivirani eksperimentalni postupak; nije dozvoljen za novi let.
 
 Pozadinski dokumenti su:
 

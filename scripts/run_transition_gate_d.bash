@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Run Gate D: one guarded NMPC-coordinated front/back VTOL transition.
 
+echo "Gate D je povucen: 10-state/PX4-owned-blend arhitektura nije kandidat za puni NMPC."
+echo "Ne saljem Offboard, pusher niti transition komandu."
+echo "Prati STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md; sljedeci live test je staged lambda Gate L1."
+exit 2
+
 _PX4_MPC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${_PX4_MPC_ROOT}" || exit 1
 source scripts/source_ros2_nmpc.bash || exit 1

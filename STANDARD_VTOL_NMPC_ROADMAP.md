@@ -1,12 +1,19 @@
 # Put od potvrđenog pushera do NMPC tranzicije
 
+> **Status 2026-08-29:** stari Gate D pristup je povučen. Njegov 10-state
+> model pretpostavlja trenutno rate praćenje, a PX4 sam raspoređuje lift/MC/FW
+> autoritet. Više se ne pokušava dobiti PASS podešavanjem limita. Aktivna
+> arhitektura i naredne faze su u
+> [`STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md`](STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md).
+
 Ovo je glavni dokument za nastavak rada. Ne pokretati proizvoljne kombinacije
 starih skripti niti ručno povećavati pusher. Svaki naredni let ima jedan cilj,
 fiksnu konfiguraciju i jasan PASS/FAIL kriterij.
 
 ## Krajnji cilj
 
-Jedan NMPC na 20 Hz vodi Standard VTOL iz hovera u stabilan forward flight:
+Jedan NMPC na 20 Hz vodi Standard VTOL iz hovera u stabilan forward flight i
+sam optimizira raspodjelu lift/FW autoriteta:
 
 ```text
 hover
@@ -15,14 +22,16 @@ hover
   -> wing-borne forward flight
 ```
 
-NMPC izlaz ostaje
+Novi NMPC izlaz je
 
 ```text
-u = [collective_lift, pusher, roll_rate, pitch_rate, yaw_rate].
+u = [collective_lift, pusher, roll_rate, pitch_rate, yaw_rate, lambda].
 ```
 
-NMPC ne komanduje pojedinačne motore ni elevone. PX4 zadržava body-rate
-regulatore, control allocator, VTOL state machine i failsafe zaštite.
+`lambda` je NMPC-owned lift/control-allocation weight. NMPC ne komanduje
+pojedinačne motore ni elevone. PX4 zadržava body-rate regulatore, control
+allocator, estimaciju i failsafe, ali u NMPC transition modu ne bira stock
+transition schedule niti lift blend.
 
 ## Trenutni dokazani checkpoint
 
@@ -260,6 +269,10 @@ lift motora ostaju na punoj komandi.
 
 ## Gate D — prva NMPC front tranzicija
 
+**Arhivirani negativni eksperiment — ne izvoditi novi let.** Donji opis čuva
+historiju testirane hibridne arhitekture; zamijenjen je staged `lambda`
+gateovima L1–L4 iz aktivnog arhitekturnog dokumenta.
+
 Početni uslovi:
 
 ```text
@@ -330,6 +343,22 @@ Node mora imati eksplicitna stanja `idle`, `mc_accelerate`, `front_transition`,
 tranziciju kao jedan timeout bez provjere PX4 potvrda.
 
 ## Šta se radi sada
+
+Gate D sa PX4-owned blendom je završen kao negativan rezultat. Višestruki
+ULogovi su pokazali kratki FW ulazak, pitch/rate mismatch i vertikalni gubitak,
+iako je translacijski dio dosezao potreban airspeed. To je dokaz da se ne treba
+dalje baviti širenjem abort limita. Sada se, bez novog leta:
+
+1. iz postojećih ULogova identificira closed-loop PX4 rate dinamika;
+2. 10-state model zamjenjuje 13-state modelom sa stvarnim `omega_B`;
+3. `lambda` postaje šesta NMPC komanda;
+4. pravi PX4 external-allocation interfejs sa sigurnim MC fallbackom;
+5. live testiranje nastavlja tek sa ograničenim Gateom L1 (`1 -> 0.8 -> 1`).
+
+Tačne jednačine, ownership i acceptance kriteriji su u
+[`STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md`](STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md).
+
+### Historijski Gate D zapis
 
 Gate D software je implementiran i čeka prvi live let. State machine,
 efektivni PX4 lift-weight u 10-state modelu, transition limiter, PX4 command

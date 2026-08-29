@@ -1,5 +1,12 @@
 # Standard VTOL transition NMPC
 
+> **Legacy model reference.** Ovaj dokument ostaje izvor za 18-state Gazebo
+> plant i prvobitni 10-state model. Live Gate D je dokazao da pretpostavka
+> trenutnog body-rate praćenja nije dovoljna i da PX4-owned lift blend nije
+> puna NMPC tranzicija. Aktivna 13-state arhitektura sa NMPC-owned `lambda` je
+> u
+> [`STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md`](STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md).
+
 ## Objective
 
 Control the PX4 Gazebo `standard_vtol` from multicopter hover through the
