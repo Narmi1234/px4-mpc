@@ -124,13 +124,21 @@ Minimalne kontinuirane jednačine su
 ```
 
 ```math
-\dot\omega_B = K_\omega(V,\lambda)
-(\omega_{sp}-\omega_B)+b_\omega(V,\lambda).
+\dot\omega_B=J^{-1}\left(\tau_{MC}+\tau_{FW}+\tau_{aero}
+-\omega_B\times(J\omega_B)\right),
 ```
 
-Posljednja jednačina je identificirani closed-loop PX4 rate model. Ona
-zamjenjuje netačnu pretpostavku `omega = omega_sp`. Parametri zavise od
-airspeeda i `lambda`, jer rate autoritet nije isti u hoveru, blendu i FW-u.
+```text
+tau_MC = lambda * allocator_MC(PID_MC(omega_sp-omega))
+tau_FW = (1-lambda) * allocator_FW(PID_FW(omega_sp-omega), airspeed).
+```
+
+Ovo zamjenjuje netačnu pretpostavku `omega = omega_sp`. Prvi pokušaj
+identifikacije čistog first-order closed-loop modela prošao je MC, ali nije
+prošao blend/FW validaciju. Zato model eksplicitno zadržava rigid-body moment,
+PX4 rate-controller saturaciju i SDF aerodinamički moment, bez dodavanja
+pojedinačnih RPM stanja. Rezultati su u
+[`STANDARD_VTOL_RATE_IDENTIFICATION.md`](STANDARD_VTOL_RATE_IDENTIFICATION.md).
 
 Za robusnu formulaciju model dodatno koristi:
 
@@ -175,9 +183,11 @@ blend:    7 <= V <= 12 m/s, 0 < lambda < 1
 FW:       V > 12 m/s, lambda blizu 0
 ```
 
-Validacija mora biti na odvojenom ULogu. Prihvatiti tek kada model pravilno
-predviđa znak, fazno kašnjenje i vrh pitch-ratea kroz FW ulazak; izvještaj mora
-navesti RMSE i 95-percentil greške za sva tri ratea.
+Validacija mora biti na odvojenom ULogu. Čisti first-order i LPV kandidati su
+testirani i odbijeni: MC prolazi, ali blend/FW ne predviđaju pouzdano pitch
+transient. Aktivni nastavak Faze 1 je torque-informed rigid-body model opisan u
+rate-identification dokumentu. On se prihvata tek kada pravilno predviđa znak,
+fazno kašnjenje i vrh pitch-ratea kroz FW ulazak.
 
 ### Faza 2 — novi 13-state model i OCP, samo offline
 
@@ -261,11 +271,13 @@ robustne constraintove, umjesto PX4-ovog fiksnog airspeed/time blenda.
 
 Ne pokreće se novi let. Redoslijed je:
 
-1. napisati ULog alat za rate-setpoint/measured-rate dataset;
-2. generisati train/validation report iz postojećih logova;
-3. implementirati i testirati 13-state CasADi model;
-4. tek nakon offline replay PASS-a implementirati PX4 `lambda` interfejs;
-5. pokrenuti L1, ne punu tranziciju.
+1. [x] napisati ULog alat za rate-setpoint/measured-rate/torque dataset;
+2. [x] generisati odvojeni train/validation report i odbiti neadekvatne
+   first-order kandidate;
+3. [ ] implementirati torque-informed 13-state NumPy validation model;
+4. [ ] nakon rotational replay PASS-a prenijeti model u CasADi/acados;
+5. [ ] tek nakon offline replay PASS-a implementirati PX4 `lambda` interfejs;
+6. [ ] pokrenuti L1, ne punu tranziciju.
 
 ## Definicija konačnog uspjeha
 

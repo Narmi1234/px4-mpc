@@ -15,15 +15,18 @@ Za nastavak rada prvo čitaj:
 1. [`STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md`](STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md)
    — aktivna arhitektura, tačna podjela NMPC/PX4 odgovornosti, jednačine i
    faze do pune NMPC tranzicije.
-2. [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md) — historija
+2. [`STANDARD_VTOL_RATE_IDENTIFICATION.md`](STANDARD_VTOL_RATE_IDENTIFICATION.md)
+   — aktivna Faza 1, train/validation rezultati i razlog prelaska sa
+   first-order laga na torque-informed 13-state rotacijski model.
+3. [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md) — historija
    prihvaćenih gateova i razlog povlačenja starog Gate D pristupa.
-2. [`STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md`](STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md)
+4. [`STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md`](STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md)
    — zaključani Gate A postupak i prihvaćeni rezultat.
-3. [`STANDARD_VTOL_GATE_B_RUNBOOK.md`](STANDARD_VTOL_GATE_B_RUNBOOK.md) —
+5. [`STANDARD_VTOL_GATE_B_RUNBOOK.md`](STANDARD_VTOL_GATE_B_RUNBOOK.md) —
    prihvaćeni odvojeni 5 m/s i 8 m/s MC gateovi.
-4. [`STANDARD_VTOL_GATE_C_RUNBOOK.md`](STANDARD_VTOL_GATE_C_RUNBOOK.md) —
+6. [`STANDARD_VTOL_GATE_C_RUNBOOK.md`](STANDARD_VTOL_GATE_C_RUNBOOK.md) —
    prihvaćeni stock PX4 front/back transition uz NMPC shadow računanje.
-5. [`STANDARD_VTOL_GATE_D_RUNBOOK.md`](STANDARD_VTOL_GATE_D_RUNBOOK.md) —
+7. [`STANDARD_VTOL_GATE_D_RUNBOOK.md`](STANDARD_VTOL_GATE_D_RUNBOOK.md) —
    arhivirani eksperimentalni postupak; nije dozvoljen za novi let.
 
 Pozadinski dokumenti su:
