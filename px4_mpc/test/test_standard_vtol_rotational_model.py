@@ -62,6 +62,22 @@ class TestStandardVtolTorqueInformedModel(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(neutral)))
         self.assertLess(deflected[1], neutral[1])
 
+    def test_blend_pitch_model_contains_motor_wing_coupling(self):
+        velocity = np.array([10.0, 0.0, 0.0])
+        omega = np.zeros(3)
+        _, without_motor_drag = self.model.aerodynamic_wrench(
+            np.zeros(3), velocity, omega, lift_fraction=1.0,
+            motor_pitch_moment=0.0,
+        )
+        _, with_motor_drag = self.model.aerodynamic_wrench(
+            np.zeros(3), velocity, omega, lift_fraction=1.0,
+            motor_pitch_moment=-0.25,
+        )
+        expected = self.model.pitch_moment_coefficients_blend[-1] * -0.25
+        self.assertAlmostEqual(
+            with_motor_drag[1] - without_motor_drag[1], expected, places=10
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -115,6 +115,7 @@ def rollout_logged_actuators(rows, initial_surfaces, initial_rotors, start, step
         _, aero_torque = model.aerodynamic_wrench(
             surface_state, velocity, omega,
             lift_fraction=float(row["lift_fraction_proxy"]),
+            motor_pitch_moment=float(motor_torque[1]),
         )
         alpha = np.linalg.solve(
             model.plant.inertia_b,

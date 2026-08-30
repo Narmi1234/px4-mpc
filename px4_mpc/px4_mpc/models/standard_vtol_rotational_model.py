@@ -29,18 +29,23 @@ class StandardVtolTorqueInformedModel:
     # Identified on run_01 with identical left/right parameters enforced, then
     # frozen and checked on run_02. The approximately 1 s elevon response also
     # agrees with the SDF joint damping and default position-controller scale.
-    surface_time_constants = np.array([1.02890081, 1.02890081, 0.72238436])
-    surface_static_gains = np.array([1.31398637, 1.31398637, 1.14892674])
+    surface_time_constants = np.ones(3)
+    surface_static_gains = np.ones(3)
 
     # Effective dimensional pitch-moment coefficients identified on run_01
     # and frozen before run_02 validation. Features are qbar times
-    # [1, alpha, alpha*abs(alpha), q/V, elevator_angle].
+    # [qbar, qbar*alpha, qbar*alpha*abs(alpha), qbar*q/V,
+    #  qbar*elevator_angle, motor_pitch_moment].  The final term captures the
+    # coupled wing-lift cancellation of the rotor-drag pitch moment.  Treating
+    # those two large opposing moments independently produced a poor blend
+    # rollout even when future logged actuator commands were supplied.
     pitch_moment_coefficients_blend = np.array([
-        0.00108942425,
-        0.00342173818,
-        0.430010062,
-        0.0309923693,
-        -0.00461003363,
+        0.000339290375,
+        -0.0100809491,
+        0.0777383470,
+        0.0,
+        -0.000615907819,
+        -1.01509702,
     ])
     pitch_moment_coefficients_fw = np.array([
         0.000979764100,
@@ -48,6 +53,7 @@ class StandardVtolTorqueInformedModel:
         -0.370752710,
         -0.00604469791,
         -0.00396339069,
+        0.0,
     ])
 
     # Least-squares reconstruction of PX4 control allocation on training ULog
@@ -165,6 +171,7 @@ class StandardVtolTorqueInformedModel:
         aero_force, aero_torque = self.aerodynamic_wrench(
             state[13:16], velocity_body, omega_body, wind_body,
             lift_fraction=float(np.clip(control[5], 0.0, 1.0)),
+            motor_pitch_moment=float(motor_torque[1]),
         )
         total_force = motor_force + aero_force
         total_torque = motor_torque + aero_torque
@@ -192,6 +199,7 @@ class StandardVtolTorqueInformedModel:
         omega_body: np.ndarray,
         wind_body: np.ndarray | None = None,
         lift_fraction: float = 0.0,
+        motor_pitch_moment: float = 0.0,
     ) -> tuple[np.ndarray, np.ndarray]:
         """SDF force/roll/yaw plus the ULog-identified pitch moment."""
         wind_body = np.zeros(3) if wind_body is None else np.asarray(wind_body, dtype=float)
@@ -204,13 +212,13 @@ class StandardVtolTorqueInformedModel:
         dynamic_pressure = (
             0.5 * self.plant.aero_surfaces[0].air_density * forward_speed * forward_speed
         )
-        features = dynamic_pressure * np.asarray([
+        features = np.r_[dynamic_pressure * np.asarray([
             1.0,
             alpha,
             alpha * abs(alpha),
             float(omega_body[1]) / max(forward_speed, 1.0),
             float(surface_angles[2]),
-        ])
+        ]), float(motor_pitch_moment)]
         lift_fraction = float(np.clip(lift_fraction, 0.0, 1.0))
         # Keep the stable mixed-authority fit through most of the blend and
         # move continuously to the FW fit only near complete lift unloading.

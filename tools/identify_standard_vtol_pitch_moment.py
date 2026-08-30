@@ -78,7 +78,7 @@ def load(path: Path, model: StandardVtolTorqueInformedModel):
         rigid_body_torque = model.plant.inertia_b @ omega_dot + np.cross(
             omega, model.plant.inertia_b @ omega
         )
-        features.append(phi)
+        features.append(np.r_[phi, motor_torque[1]])
         required_moment.append(rigid_body_torque[1] - motor_torque[1])
         sdf_prediction.append(aero_torque[1])
         zone.append(row["zone"] if int(row["valid"]) == 1 else "invalid")
@@ -112,8 +112,16 @@ def fit(train):
         def residual(scaled_coefficients):
             return weights * ((x / scale) @ scaled_coefficients - y)
 
+        lower = np.full(x.shape[1], -np.inf)
+        upper = np.full(x.shape[1], np.inf)
+        # Feature 3 is qbar*q/V. Positive aerodynamic pitch damping is
+        # nonphysical and made earlier multi-step rollouts diverge.
+        upper[3] = 0.0
+        initial = np.zeros(x.shape[1])
+        initial[3] = -1.0e-3 * scale[3]
         result = least_squares(
-            residual, np.zeros(x.shape[1]), loss="soft_l1", f_scale=0.1,
+            residual, initial, bounds=(lower, upper),
+            loss="soft_l1", f_scale=0.1,
             max_nfev=100,
         )
         coefficients[selected_zone] = result.x / scale
@@ -147,7 +155,10 @@ def main():
     train = load(options.train, model)
     validate = load(options.validate, model)
     coefficients, optimizers = fit(train)
-    names = ["qbar", "qbar_alpha", "qbar_alpha_abs", "qbar_q_over_v", "qbar_elevator"]
+    names = [
+        "qbar", "qbar_alpha", "qbar_alpha_abs", "qbar_q_over_v",
+        "qbar_elevator", "motor_pitch_residual",
+    ]
     result = {
         "feature_names": names,
         "coefficients": {
@@ -177,6 +188,7 @@ def main():
         "```text",
         "M_y = qbar * (c0 + c_alpha*alpha + c_alpha2*alpha*abs(alpha)",
         "                + c_q*q/V + c_de*delta_elevator)",
+        "      + c_motor*M_motor,y",
         "```",
         "",
         "| feature | coefficient |",

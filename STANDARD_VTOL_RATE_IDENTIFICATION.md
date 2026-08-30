@@ -141,6 +141,10 @@ sa `4.230` na `0.151 rad/s^2`. Zbog sporog odziva model je proširen sa 13
 rigid-body varijabli na tri surface-angle stanja: ukupno **16 state varijabli**.
 Motor RPM i dalje nije OCP stanje.
 
+Aktivni kandidat koristi fizički SDF-consistent `tau=1 s, gain=1` za sva tri
+zgloba. Empirijski parametri iz tabele ostaju dokumentovan sensitivity
+rezultat, ali nisu zamrznuti kao fizički servo parametri.
+
 Čisti SDF pitch moment je preosjetljiv na malu grešku skrivenog elevator
 zgloba. Zato je na trening letu identificiran dimenzionalni model
 
@@ -163,10 +167,27 @@ Strogi 0.5 s test ne koristi budući logged torque ni servo izlaz. Rezultat je:
 | blend | 0.0277 / 0.1104 / 0.0342 | 0.2410 / 0.1234 / 0.0648 | FAIL |
 | FW | 0.0288 / 0.0624 / 0.0208 | 0.1552 / 0.0808 / 0.0275 | blizu, FAIL |
 
-Plant-only dijagnostika sa budućim logged actuator komandama daje blend pitch
-RMSE `0.4602 rad/s`, pa preostali blocker nije rate PID/allocator nego
-efektivni mixed-authority pitch plant. Nema novog leta dok blend rollout ne
-prođe.
+Veliki rotor-drag pitch moment i wing-lift moment se u transition trimu skoro
+poništavaju. Kada je taj coupling dodat kao šesti efektivni pitch feature,
+blend pointwise moment RMSE na development letu pada sa `0.239` na `0.067 Nm`,
+a korelacija raste na `0.978`. Novi 0.5 s rezultat je:
+
+| Zona | rate-sp model p/q/r RMSE [rad/s] | logged-actuator plant p/q/r | Odluka |
+|---|---:|---:|---|
+| blend | 0.0256 / 0.0854 / 0.0337 | 0.0153 / 0.0827 / 0.0156 | FAIL |
+| FW | 0.0099 / 0.0697 / 0.0192 | 0.0164 / 0.0745 / 0.0182 | FAIL |
+
+Plant-only blend pitch je time poboljšan sa približno `0.469` na `0.083
+rad/s`, ali acceptance `0.05 rad/s` još nije dostignut. Direktni endpoint fit
+je odbijen: training `q` RMSE `0.052`, development `0.117 rad/s`. Nema novog
+leta dok blend/FW rollout ne prođe i parametri ne budu zamrznuti prije novog
+holdout testa.
+
+Ekstrapolacijski 18 m/s `run_04`, ponovo izvučen trenutnim extractorom, daje
+blend/FW pitch RMSE `0.1003 / 0.1210 rad/s`; FW ZOH baseline je `0.0780`.
+Globalni koeficijenti zato ne prolaze promjenu airspeeda. Sljedeći kandidat je
+mali airspeed/`lambda`-scheduled residual fitovan na 12+15 m/s, uz 15+18 m/s
+development provjeru i potpuno novi let kao završni holdout.
 
 ## Sljedeći implementacijski gate
 
@@ -221,4 +242,7 @@ python tools/validate_standard_vtol_rotational_replay.py TRAIN.csv VALIDATE.csv 
 
 python tools/validate_standard_vtol_rotational_rollout.py TRAIN.csv VALIDATE.csv \
   --zones blend fw --output results/rotational_rollout
+
+python tools/fit_standard_vtol_pitch_rollout.py \
+  --train TRAIN.csv --validate VALIDATE.csv --output results/pitch_rollout
 ```
