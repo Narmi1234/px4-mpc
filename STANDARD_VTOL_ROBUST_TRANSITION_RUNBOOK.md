@@ -40,6 +40,17 @@ Očekivano: svi testovi `OK`.
 
 ## Gate R1 — nominalni offline front transition
 
+Za cijeli prihvaćeni R1/R2 matrix dovoljna je jedna naredba:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_transition_offline_gate.bash
+```
+
+Završna linija mora biti `ROBUST_TRANSITION_MATRIX=PASS`.
+
+Pojedinačni nominalni slučaj se pokreće ovako:
+
 ```bash
 cd /home/imran/Repositories/px4-mpc
 source .venv/bin/activate
