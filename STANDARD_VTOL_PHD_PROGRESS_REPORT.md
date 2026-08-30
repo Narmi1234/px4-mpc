@@ -148,8 +148,9 @@ u_old = [collective, pusher, p_sp, q_sp, r_sp].
 
 Pretpostavlja da se body rate realizira trenutno. Taj model je bio dovoljan za
 hover i MC forward gateove, ali nije dovoljan za tranzicijski pitch transient.
-Postojeći CasADi/acados OCP i live ROS node još koriste ovu staru formulaciju;
-zato se stari Gate D više ne leti.
+Postojeći **live** ROS node još koristi ovu staru formulaciju; zato se stari
+Gate D više ne leti. Odvojeni 16-state CasADi/acados OCP sada postoji samo za
+offline razvoj i ne može slučajno slati komande letjelici.
 
 ### 5.3 Novi torque-informed tranzicijski model
 
@@ -170,8 +171,16 @@ To je **16 stanja, ne 16 DoF**. Letjelica ima šest fizičkih stepeni slobode;
 kvaternion koristi četiri varijable za tri rotacijska stepena, a tri dodatna
 stanja opisuju sporu dinamiku površina.
 
-Novi model trenutno postoji u NumPy formi za replay/identifikaciju. Još nije
-prenesen u CasADi/acados niti spojen na live node.
+NumPy model ostaje replay/identifikacijski plant. Novi LPV pitch-rate residual
+i 16-state model preneseni su i u CasADi/acados:
+
+```text
+px4_mpc/px4_mpc/models/standard_vtol_pitch_rate_model.py
+px4_mpc/px4_mpc/models/standard_vtol_robust_casadi_model.py
+px4_mpc/px4_mpc/controllers/standard_vtol_robust_nmpc.py
+```
+
+Model još nije spojen na live node.
 
 ## 6. Jednačine novog modela
 
@@ -378,11 +387,16 @@ Radi i dokumentovano je:
 - 16-state NumPy torque-informed model;
 - automatizovani 0.5 s rollout gate;
 - siguran koncept buduće podjele NMPC/PX4 odgovornosti.
+- stabilni airspeed/`lambda`-scheduled pitch-rate LPV model;
+- 16-state CasADi model i odvojeni šest-inputni acados OCP;
+- nominalni offline hover→15 m/s→`lambda=0` prolaz;
+- offline prolaz za poznatu blend perturbaciju ±0.235 rad/s² i nepoznatu
+  perturbaciju ±0.10 rad/s².
 
 Još ne radi:
 
-- blend/FW pitch rollout nije ispod `0.05 rad/s`;
-- 16-state model nije prenesen u CasADi/acados;
+- LPV pitch kandidat je bounded/stable, ali strogi rollout prag od
+  `0.05 rad/s` nije zadovoljen u svim holdout režimima;
 - `lambda` još nije eksplicitni OCP control u live solveru;
 - PX4 nema timestamped external allocation-weight ulaz;
 - nije izveden L1/L2/L3/L4 staged NMPC allocation let;
@@ -392,10 +406,10 @@ Zbog toga se trenutno **ne smije ponavljati** `scripts/run_transition_gate_d.bas
 
 ## 11. Predloženi naredni koraci
 
-### Korak 1 — zatvoriti offline pitch model
+### Korak 1 — zamrznuti offline pitch model
 
-1. Fitovati mali airspeed/`lambda`-scheduled pitch residual na `run_03` (12
-   m/s) + `run_01` (15 m/s), bez budućih actuator komandi.
+1. [x] Fitovati mali airspeed/`lambda`-scheduled pitch residual na `run_03`
+   (12 m/s) + `run_01` (15 m/s), bez budućih actuator komandi.
 2. Razdvojiti stvarni pitch plant residual od estimator/filter faznog pomaka.
 3. `run_02` (15 m/s) i `run_04` (18 m/s) koristiti samo kao development
    provjeru znaka, stabilnosti i ekstrapolacije.
@@ -410,13 +424,27 @@ model prije ovog testa.
 
 ### Korak 2 — prenijeti 16-state model u CasADi/acados
 
-- dodati `omega(3)` i `surface_state(3)`;
-- dodati `lambda` kao šestu kontrolu;
+- [x] dodati `omega(3)` i `surface_state(3)`;
+- [x] dodati `lambda` kao šestu kontrolu;
 - ukloniti PX4-owned lift weight iz OCP parametara;
 - dodati bounds/slew na `lambda`, collective, pusher, rate, alpha, pitch,
   altitude i vertical speed;
 - generisati trim corridor sa eksplicitnim `lambda`;
-- provjeriti solver p99 < 40 ms prije live rada na 20 Hz.
+- [x] provjeriti solver p99 < 40 ms: trenutni offline maksimum u prihvaćenim
+  scenarijima je ispod 10 ms.
+
+Prvi front-transition offline rezultat na 15 m/s:
+
+```text
+nominal:                    PASS, |z-z_ref|max=0.081 m, p99=7.52 ms
+estimated blend d_q=+0.235: PASS, |z-z_ref|max=0.159 m
+estimated blend d_q=-0.235: PASS, |z-z_ref|max=0.009 m
+unmodeled d_q=+0.10:        PASS, |z-z_ref|max=0.151 m
+unmodeled d_q=-0.10:        PASS, |z-z_ref|max=0.023 m
+```
+
+Konstantni ekstrem `+0.47 rad/s²` je FAIL i ostaje razvojna granica. Vrijednost
+0.47 je p95 fit residual, a ne identificirani konstantni FW moment.
 
 ### Korak 3 — robustna offline zatvorena petlja
 

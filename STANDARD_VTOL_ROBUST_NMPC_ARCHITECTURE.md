@@ -202,17 +202,18 @@ fazno kašnjenje i vrh pitch-ratea kroz FW ulazak.
 
 ### Faza 2 — novi 16-state model i OCP, samo offline
 
-- Dodati `omega_B` i tri surface-angle stanja u CasADi/acados model.
-- Dodati `lambda` kao šestu optimiziranu komandu.
+- [x] Dodati `omega_B` i tri surface-angle stanja u CasADi/acados model.
+- [x] Dodati `lambda` kao šestu optimiziranu komandu.
 - Ukloniti PX4 lift weight iz external parametara modela.
 - Dodati constraintove na `lambda`, `Delta lambda`, angle of attack, altitude,
   vertical speed, attitude, rate, collective i pusher.
 - Regenerisati trim corridor koji uključuje `lambda` i elevator trim.
 - Replay svakog postojećeg Gate C/D loga raditi bez slanja komandi.
 
-Prvi offline cilj nije PASS cijelog leta, nego da predikcija uhvati pitch i
-vertical transient koji je stari model promašivao. Tek zatim closed-loop
-simulacija mora proći MC -> FW -> MC uz vjetar i parametarske varijacije.
+Prvi front-transition closed loop sada prolazi nominalno do 15 m/s i potpuno
+unloaduje lift (`lambda≈0`). Prolaze i poznate blend perturbacije ±0.235
+rad/s² te nepoznate ±0.10 rad/s². Back transition, vjetar, masa/inercija i
+nezavisni Gazebo shadow još nisu završeni.
 
 Minimalni offline acceptance:
 
@@ -287,11 +288,11 @@ Ne pokreće se novi let. Redoslijed je:
    first-order kandidate;
 3. [x] implementirati torque-informed 16-state NumPy validation model sa PX4
    rate PID-om, allocatorom i identificiranim surface lagom;
-4. [ ] završiti 0.5 s pitch-rate rollout acceptance: MC prolazi, FW je blizu
-   (`0.0624`), blend je blocker (`0.1104 rad/s`); tek zatim prenijeti model u
-   CasADi/acados;
-5. [ ] tek nakon offline replay PASS-a implementirati PX4 `lambda` interfejs;
-6. [ ] pokrenuti L1, ne punu tranziciju.
+4. [x] zamrznuti stabilni LPV pitch kandidat i prenijeti ga u CasADi/acados;
+5. [x] proći nominalni i ograničeni disturbance front-transition offline gate;
+6. [ ] validirati 16-state predikciju u Gazebo shadow režimu bez komandi;
+7. [ ] završiti PX4 timestamped `lambda` interfejs i bench mapiranje;
+8. [ ] pokrenuti L1, ne punu tranziciju.
 
 ## Definicija konačnog uspjeha
 

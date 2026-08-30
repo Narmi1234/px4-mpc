@@ -15,6 +15,12 @@ try:
     )
 except ImportError:  # CasADi is optional for plant validation utilities.
     StandardVtolTransitionCasadiModel = None
+try:
+    from px4_mpc.models.standard_vtol_robust_casadi_model import (
+        StandardVtolRobustCasadiModel,
+    )
+except ImportError:  # CasADi is optional for plant validation utilities.
+    StandardVtolRobustCasadiModel = None
 
 __all__ = [
     "ExternalPusherProfile",
@@ -27,4 +33,5 @@ __all__ = [
     "StandardVtolTrimSolver",
     "TransitionTrimPoint",
     "StandardVtolTransitionCasadiModel",
+    "StandardVtolRobustCasadiModel",
 ]
