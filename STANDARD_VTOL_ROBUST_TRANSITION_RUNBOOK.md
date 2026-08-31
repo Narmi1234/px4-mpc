@@ -187,6 +187,29 @@ Aktivna real-time konfiguracija koristi 25 shooting intervala na horizontu od
 2.0 s. Cijela offline matrica je ponovo prošla s tom konfiguracijom. Prvih 40
 solveova poslije capturea su warm-up i ne ulaze u p99 statistiku.
 
+### Prihvaćeni R3a rezultat — 2026-08-31
+
+```text
+ROBUST_HOVER_SHADOW=PASS
+read_only=True
+publishes_fmu=False
+armed=True, nav_state=4 (Position)
+state_age=0.012 s
+solver_status=0
+solver_failures=0
+warmup_remaining=0
+solve_time=17.21 ms
+solve_time_p99=30.43 ms
+control=[0.4560, 0.0001, -0.0733, 0.0320, 0.0232, 0.9889]
+```
+
+Jedan međustatus je imao p99 `40.96 ms`, ali nije bilo solver failurea, a
+završni steady-state prozor je ostao ispod 40 ms. R3a potvrđuje komunikaciju i
+računanje, ne validira još primijenjenu NMPC komandu.
+
+Naredni gate R3b je guarded robust-NMPC hover output sa zaključanim
+`pusher=0` i `lambda=1`. Tek nakon R3b PASS-a smije početi L1 allocation test.
+
 ## Gate R4 — prvi live allocation test
 
 Tek nakon R3 PASS-a koristi se PX4 offboard-rate/allocation branch. Prvi let

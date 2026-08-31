@@ -392,6 +392,8 @@ Radi i dokumentovano je:
 - nominalni offline hover→15 m/s→`lambda=0` prolaz;
 - offline prolaz za poznatu blend perturbaciju ±0.235 rad/s² i nepoznatu
   perturbaciju ±0.10 rad/s².
+- ROS/Gazebo read-only 16-state hover shadow: 0 solver failurea, završni
+  solve-time p99 `30.43 ms`, bez ijednog PX4 input publishera.
 
 Još ne radi:
 
