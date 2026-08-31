@@ -7,10 +7,31 @@ _R3B_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${_R3B_ROOT}"
 source "${_R3B_ROOT}/scripts/source_ros2_nmpc.bash"
 
+wait_for_service() {
+    local target="$1"
+    local attempt
+    local discovered
+
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        discovered="$(ros2 service list --no-daemon --spin-time 2 2>/dev/null || true)"
+        if grep -qx "${target}" <<< "${discovered}"; then
+            return 0
+        fi
+        echo "Waiting for ROS discovery (${attempt}/10)..."
+    done
+    return 1
+}
+
 echo "Checking the guarded robust-hover node..."
-if ! ros2 service list | grep -qx \
-    "/standard_vtol_robust_shadow/enable_hover_offboard"; then
+if ! wait_for_service "/standard_vtol_robust_shadow/enable_hover_offboard"; then
     echo "R3b node is unavailable. No Offboard command was sent."
+    echo "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-unset}"
+    echo "Nodes visible without the ROS CLI daemon:"
+    ros2 node list --no-daemon --spin-time 3 2>&1 || true
+    echo "Robust-NMPC services visible without the ROS CLI daemon:"
+    discovered="$(ros2 service list --no-daemon --spin-time 3 2>/dev/null || true)"
+    grep "standard_vtol_robust" <<< "${discovered}" || echo "  none"
+    echo "Keep Terminal 3 open and check it for a traceback or process-exited message."
     exit 1
 fi
 

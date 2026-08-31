@@ -7,10 +7,28 @@ _SHADOW_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${_SHADOW_ROOT}"
 source "${_SHADOW_ROOT}/scripts/source_ros2_nmpc.bash"
 
+wait_for_service() {
+    local target="$1"
+    local attempt
+    local discovered
+
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+        discovered="$(ros2 service list --no-daemon --spin-time 2 2>/dev/null || true)"
+        if grep -qx "${target}" <<< "${discovered}"; then
+            return 0
+        fi
+        echo "Waiting for ROS discovery (${attempt}/10)..."
+    done
+    return 1
+}
+
 echo "Checking the read-only robust shadow node..."
-if ! ros2 service list | grep -qx "/standard_vtol_robust_shadow/status"; then
+if ! wait_for_service "/standard_vtol_robust_shadow/status"; then
     echo "R3a shadow node is unavailable. No command was sent."
     echo "Start Terminal 3 from STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md."
+    echo "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-unset}"
+    echo "Nodes visible without the ROS CLI daemon:"
+    ros2 node list --no-daemon --spin-time 3 2>&1 || true
     exit 1
 fi
 
