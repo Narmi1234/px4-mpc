@@ -210,6 +210,41 @@ računanje, ne validira još primijenjenu NMPC komandu.
 Naredni gate R3b je guarded robust-NMPC hover output sa zaključanim
 `pusher=0` i `lambda=1`. Tek nakon R3b PASS-a smije početi L1 allocation test.
 
+### R3b — guarded pet-sekundni robust-NMPC hover
+
+R3b prvi put primjenjuje komande novog 16-state kontrolera. Pusher je fizički
+zaključan na nulu, `lambda` je zaključana na jedan, collective koristi već
+validirani vertikalni safety loop, a rate komande prolaze MC bounds i slew
+limiter. Timeout ili safety prekršaj traži PX4 Position mode.
+
+Pokrenuti PX4/Gazebo i Micro XRCE Agent kao za R3a. Ugasiti R3a node ako još
+radi. Terminal 3:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+ros2 launch px4_mpc standard_vtol_robust_hover_gate_launch.py
+```
+
+Mora pisati `guarded 5 s hover mode`. U QGC armati, poletjeti u Position modu
+na 5–7 m i potpuno smiriti letjelicu. Terminal 4:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_hover_output_gate.bash
+```
+
+Nakon provjere upisati `YES`. Držati QGC spreman za ručni Position fallback.
+Očekivana završna linija je:
+
+```text
+ROBUST_HOVER_OUTPUT=PASS
+```
+
+PASS zahtijeva `abort_reason=robust_hover_test_timeout`, povratak iz Offboarda,
+nula solver failurea i ugašen output. Svaki drugi abort je FAIL; sletjeti i ne
+ponavljati prije analize statusa.
+
 ## Gate R4 — prvi live allocation test
 
 Tek nakon R3 PASS-a koristi se PX4 offboard-rate/allocation branch. Prvi let
