@@ -127,6 +127,62 @@ solver p99 < 40 ms
 bez NaN, stale state ili constraint violation
 ```
 
+### R3a — prvi read-only hover test
+
+Ovaj test još ne radi tranziciju. Dokazuje ROS/DDS state mapping, 20 Hz solve i
+da novi node nema PX4 output publisher.
+
+Terminal 1 — PX4/Gazebo:
+
+```bash
+cd /home/imran/Repositories/PX4-Autopilot
+make px4_sitl gz_standard_vtol
+```
+
+Terminal 2 — Micro XRCE Agent:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+"${MICRO_XRCE_AGENT_DIR}/bin/MicroXRCEAgent" udp4 -p 8888
+```
+
+Terminal 3 — novi read-only shadow node:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+ros2 launch px4_mpc standard_vtol_robust_shadow_launch.py
+```
+
+Mora ispisati:
+
+```text
+Robust Standard VTOL NMPC started in read-only shadow mode;
+no /fmu/in publisher exists in this node
+```
+
+U QGC armati letjelicu, poletjeti u **Position** modu na 5–7 m i sačekati da
+se vertikalna brzina smiri. Ne uključivati Offboard i ne raditi tranziciju.
+
+Terminal 4:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_hover_shadow_gate.bash
+```
+
+Očekivana završna linija:
+
+```text
+ROBUST_HOVER_SHADOW=PASS
+```
+
+Status mora sadržavati `read_only=True`, `publishes_fmu=False`,
+`solver_failures=0` i `solve_time_p99<40 ms`. Ako capture vrati
+`vehicle_not_armed` ili `odometry_stale`, ne pokušavati Offboard; popraviti
+PX4/DDS stanje i ponoviti samo R3a.
+
 ## Gate R4 — prvi live allocation test
 
 Tek nakon R3 PASS-a koristi se PX4 offboard-rate/allocation branch. Prvi let

@@ -30,6 +30,7 @@ setup(
                 'test_setpoints = px4_mpc.test.test_setpoints:main',
                 'rviz_pos_marker = px4_mpc.rviz_pos_marker:main',
                 'standard_vtol_nmpc = px4_mpc.standard_vtol_nmpc_node:main',
+                'standard_vtol_robust_shadow = px4_mpc.standard_vtol_robust_shadow_node:main',
         ],
     },
 )
