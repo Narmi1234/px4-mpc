@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 import math
+from pathlib import Path
 
 import numpy as np
 from px4_mpc.controllers.standard_vtol_robust_nmpc import (
@@ -32,12 +33,20 @@ class StandardVtolRobustShadow(Node):
 
     def __init__(self) -> None:
         super().__init__("standard_vtol_robust_shadow")
-        self.declare_parameter("horizon_steps", 30)
+        self.declare_parameter("horizon_steps", 25)
         self.declare_parameter("horizon_seconds", 2.0)
         self.declare_parameter("max_state_age_seconds", 0.20)
+        horizon_steps = int(self.get_parameter("horizon_steps").value)
+        horizon_seconds = float(self.get_parameter("horizon_seconds").value)
+        root = Path(__file__).resolve().parents[2]
+        build_name = (
+            f"standard_vtol_robust_nmpc_n{horizon_steps}_"
+            f"tf{int(round(1000.0 * horizon_seconds))}ms"
+        )
         self.controller = StandardVtolRobustNmpc(
-            horizon_steps=int(self.get_parameter("horizon_steps").value),
-            horizon_seconds=float(self.get_parameter("horizon_seconds").value),
+            horizon_steps=horizon_steps,
+            horizon_seconds=horizon_seconds,
+            build_directory=root / "build" / build_name,
         )
         self.max_state_age = float(
             self.get_parameter("max_state_age_seconds").value
@@ -52,6 +61,8 @@ class StandardVtolRobustShadow(Node):
         self.last_solver_status = -1
         self.last_solve_time_ms = math.nan
         self.solver_failures = 0
+        self.solve_count = 0
+        self.warmup_solve_count = 40
         self.solve_times_ms: deque[float] = deque(maxlen=2000)
         self.model_function = self.controller.model.function()
 
@@ -151,6 +162,7 @@ class StandardVtolRobustShadow(Node):
         self.last_control = self.controller.model.hover_control()
         self.last_solver_status = -1
         self.solver_failures = 0
+        self.solve_count = 0
         self.solve_times_ms.clear()
         response.success = True
         response.message = (
@@ -189,12 +201,14 @@ class StandardVtolRobustShadow(Node):
             and self.solver_failures == 0
             and p99 <= 40.0
         )
+        warmup_remaining = max(0, self.warmup_solve_count - self.solve_count)
         response.message = (
             "read_only=True,publishes_fmu=False,"
             f"reference_captured={self.reference is not None},"
             f"armed={armed},nav_state={nav_state},state_age={state_age:.3f}s,"
             f"solver_status={self.last_solver_status},"
             f"solver_failures={self.solver_failures},"
+            f"warmup_remaining={warmup_remaining},"
             f"solve_time={self.last_solve_time_ms:.2f}ms,"
             f"solve_time_p99={p99:.2f}ms,"
             f"control={np.round(self.last_control, 4).tolist()}"
@@ -218,7 +232,9 @@ class StandardVtolRobustShadow(Node):
         solution = self.controller.solve(self.state, x_ref, u_ref, parameters)
         self.last_solver_status = solution.status
         self.last_solve_time_ms = 1000.0 * solution.solve_time
-        self.solve_times_ms.append(self.last_solve_time_ms)
+        self.solve_count += 1
+        if self.solve_count > self.warmup_solve_count:
+            self.solve_times_ms.append(self.last_solve_time_ms)
         if solution.status != 0:
             self.solver_failures += 1
             return

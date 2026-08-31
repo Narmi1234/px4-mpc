@@ -119,6 +119,8 @@ def main() -> None:
     parser.add_argument("--target-speed", type=float, default=15.0)
     parser.add_argument("--acceleration", type=float, default=0.60)
     parser.add_argument("--duration", type=float, default=34.0)
+    parser.add_argument("--horizon-steps", type=int, default=30)
+    parser.add_argument("--horizon-seconds", type=float, default=2.0)
     parser.add_argument("--pitch-disturbance", type=float, default=0.0)
     parser.add_argument(
         "--unmodeled-disturbance",
@@ -135,8 +137,14 @@ def main() -> None:
     corridor = load_corridor(
         root / "results/standard_vtol_trim_corridor/trim_corridor.csv"
     )
+    build_name = (
+        f"standard_vtol_robust_nmpc_n{args.horizon_steps}_"
+        f"tf{int(round(1000.0 * args.horizon_seconds))}ms"
+    )
     controller = StandardVtolRobustNmpc(
-        build_directory=root / "build/standard_vtol_robust_nmpc"
+        horizon_steps=args.horizon_steps,
+        horizon_seconds=args.horizon_seconds,
+        build_directory=root / "build" / build_name,
     )
     function = controller.model.function()
     state = controller.model.hover_state()
@@ -199,6 +207,8 @@ def main() -> None:
     )
     metrics = {
         "target_speed_m_s": args.target_speed,
+        "horizon_steps": args.horizon_steps,
+        "horizon_seconds": args.horizon_seconds,
         "pitch_disturbance_amplitude_frd_rad_s2": float(disturbance_amplitude),
         "disturbance_estimated_by_ocp": not args.unmodeled_disturbance,
         "solver_failures": int(np.count_nonzero(statuses)),

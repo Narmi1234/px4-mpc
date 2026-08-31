@@ -183,6 +183,10 @@ Status mora sadržavati `read_only=True`, `publishes_fmu=False`,
 `vehicle_not_armed` ili `odometry_stale`, ne pokušavati Offboard; popraviti
 PX4/DDS stanje i ponoviti samo R3a.
 
+Aktivna real-time konfiguracija koristi 25 shooting intervala na horizontu od
+2.0 s. Cijela offline matrica je ponovo prošla s tom konfiguracijom. Prvih 40
+solveova poslije capturea su warm-up i ne ulaze u p99 statistiku.
+
 ## Gate R4 — prvi live allocation test
 
 Tek nakon R3 PASS-a koristi se PX4 offboard-rate/allocation branch. Prvi let
