@@ -40,8 +40,8 @@ if [[ "${capture}" != *"success=True"* ]]; then
     exit 1
 fi
 
-echo "Warming the solver for three seconds before enabling any output..."
-sleep 3
+echo "Warming and measuring the solver for eight seconds before output..."
+sleep 8
 warm_status="$(ros2 service call \
     /standard_vtol_robust_shadow/status std_srvs/srv/Trigger '{}')"
 echo "${warm_status}"

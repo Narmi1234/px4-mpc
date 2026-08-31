@@ -14,7 +14,7 @@ def generate_launch_description():
                 output="screen",
                 parameters=[
                     {
-                        "horizon_steps": 25,
+                        "horizon_steps": 20,
                         "horizon_seconds": 2.0,
                         "allow_hover_output": True,
                         "hover_test_seconds": 5.0,

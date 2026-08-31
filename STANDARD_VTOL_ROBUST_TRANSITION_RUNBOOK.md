@@ -183,9 +183,10 @@ Status mora sadržavati `read_only=True`, `publishes_fmu=False`,
 `vehicle_not_armed` ili `odometry_stale`, ne pokušavati Offboard; popraviti
 PX4/DDS stanje i ponoviti samo R3a.
 
-Aktivna real-time konfiguracija koristi 25 shooting intervala na horizontu od
-2.0 s. Cijela offline matrica je ponovo prošla s tom konfiguracijom. Prvih 40
-solveova poslije capturea su warm-up i ne ulaze u p99 statistiku.
+Aktivna real-time konfiguracija koristi 20 shooting intervala na horizontu od
+2.0 s. Cijela offline matrica je ponovo prošla s tom konfiguracijom. Prvih 100
+solveova poslije capturea su warm-up i ne ulaze u p99 statistiku; R3b skripta
+čeka ukupno osam sekundi prije nego što uopšte dozvoli output.
 
 ### Prihvaćeni R3a rezultat — 2026-08-31
 

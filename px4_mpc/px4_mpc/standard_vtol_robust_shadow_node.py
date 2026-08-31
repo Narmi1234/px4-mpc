@@ -43,7 +43,7 @@ class StandardVtolRobustShadow(Node):
 
     def __init__(self) -> None:
         super().__init__("standard_vtol_robust_shadow")
-        self.declare_parameter("horizon_steps", 25)
+        self.declare_parameter("horizon_steps", 20)
         self.declare_parameter("horizon_seconds", 2.0)
         self.declare_parameter("max_state_age_seconds", 0.20)
         self.declare_parameter("allow_hover_output", False)
@@ -82,7 +82,7 @@ class StandardVtolRobustShadow(Node):
         self.last_solve_time_ms = math.nan
         self.solver_failures = 0
         self.solve_count = 0
-        self.warmup_solve_count = 40
+        self.warmup_solve_count = 100
         self.solve_times_ms: deque[float] = deque(maxlen=2000)
         self.model_function = self.controller.model.function()
         self.output_requested = False
@@ -197,6 +197,15 @@ class StandardVtolRobustShadow(Node):
             self.get_clock().now().nanoseconds - self.state_received_ns
         ) * 1.0e-9
 
+    @staticmethod
+    def _level_yaw_quaternion(quaternion: np.ndarray) -> np.ndarray:
+        qw, qx, qy, qz = quaternion
+        yaw = math.atan2(
+            2.0 * (qw * qz + qx * qy),
+            1.0 - 2.0 * (qy * qy + qz * qz),
+        )
+        return np.array([math.cos(0.5 * yaw), 0.0, 0.0, math.sin(0.5 * yaw)])
+
     def _capture_hover_reference(self, _request, response):
         if self.state is None or self._state_age() > self.max_state_age:
             response.success = False
@@ -212,6 +221,7 @@ class StandardVtolRobustShadow(Node):
             return response
         self.reference = self.state.copy()
         self.reference[3:6] = 0.0
+        self.reference[6:10] = self._level_yaw_quaternion(self.state[6:10])
         self.reference[10:16] = 0.0
         self.surface_state[:] = 0.0
         self.last_control = self.controller.model.hover_control()
@@ -540,6 +550,9 @@ class StandardVtolRobustShadow(Node):
         requested[5] = 1.0
         limited = limit_mc_command(
             self.published_control[0:5], requested[0:5], dt
+        )
+        limited[2:5] = np.clip(
+            limited[2:5], [-0.08, -0.08, -0.05], [0.08, 0.08, 0.05]
         )
         self.published_control = np.r_[limited, 1.0]
         if elapsed < 0.50:

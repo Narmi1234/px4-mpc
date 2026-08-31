@@ -16,7 +16,7 @@ run_case() {
     echo
     echo "ROBUST_CASE=${name}"
     python tools/simulate_standard_vtol_robust_transition.py \
-        --horizon-steps 25 \
+        --horizon-steps 20 \
         --output "results/standard_vtol_robust_transition/${name}" "$@"
 }
 

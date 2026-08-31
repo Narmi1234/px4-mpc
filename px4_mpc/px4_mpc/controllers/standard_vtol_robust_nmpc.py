@@ -35,7 +35,7 @@ class StandardVtolRobustNmpc:
 
     def __init__(
         self,
-        horizon_steps: int = 25,
+        horizon_steps: int = 20,
         horizon_seconds: float = 2.0,
         altitude_floor: float = -1000.0,
         build_directory: str | Path = "build/standard_vtol_robust_nmpc",
