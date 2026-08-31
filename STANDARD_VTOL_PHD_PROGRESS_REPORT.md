@@ -1,531 +1,410 @@
-# Standard VTOL NMPC — presjek rada za mentorski sastanak
+# Standard VTOL NMPC — progress report za mentorski sastanak
 
-Datum presjeka: **30. august 2026.**  
-Repo: `/home/imran/Repositories/px4-mpc`  
-Aktivni branch: `standard-vtol-identification`  
-Posljednji stabilni commit prije tekućeg modeliranja: `23c8311`
+Datum: **31. august 2026.**
 
-## 1. Cilj istraživanja
+Repo/branch: `px4-mpc / standard-vtol-identification`
 
-Cilj nije da NMPC samo zatraži tranziciju koju zatim izvrši stock PX4 VTOL
-kontroler. Cilj je da NMPC optimizira i komanduje samu hover-to-forward-flight
-putanju, uključujući raspodjelu vertikalnog i aerodinamičkog autoriteta, dok
-PX4 ostaje brzi i sigurni izvršni sloj.
+Posljednji potvrđeni checkpoint: `3263d8a` (`R3b robust hover PASS`)
 
-Planirani NMPC izlaz je
+## 1. Sažetak koji treba iznijeti mentoru
+
+Cilj je NMPC koji **sam optimizira hover-to-forward-flight tranziciju**.
+NMPC treba određivati putanju, pusher, ukupni uzgon, body-rate reference i
+raspodjelu MC/FW autoriteta. Stock PX4 transition scheduler ne smije odlučivati
+kada se lift motori gase u konačnom rješenju.
 
 ```text
-u = [c_lift, c_push, p_sp, q_sp, r_sp, lambda],
+u = [c_lift, c_push, p_sp, q_sp, r_sp, lambda]
+lambda=1: puni MC autoritet; lambda=0: puni FW autoritet.
 ```
 
-gdje su `c_lift` aggregate collective vertikalnih motora, `c_push` pusher,
-`p_sp/q_sp/r_sp` reference ugaonih brzina, a `lambda in [0,1]` NMPC-ov
-allocation weight (`1` = MC, `0` = FW).
+NMPC ne komanduje pojedinačne RPM-ove ni pojedinačne servo izlaze. PX4
+zadržava rate petlje, control allocation, estimator i failsafe.
 
-NMPC neće optimizirati pojedinačne RPM-ove ni pojedinačne servo uglove. PX4
-će zatvarati body-rate petlju i preko control allocatora realizirati pojedine
-motore i površine. Time istraživački doprinos ostaje na robusnoj tranzicijskoj
-kontroli, a ne na zamjeni svih PX4 low-level funkcija.
+Do sada je:
 
-## 2. Predložena konačna podjela odgovornosti
+1. Gazebo/SDF plant preslikan u 18-state validation model;
+2. iz ULogova identificirana rate i servo dinamika;
+3. eksperimentalno odbačen nedovoljan 10-state tranzicijski model;
+4. implementiran 16-state CasADi/acados NMPC sa `lambda` kontrolom;
+5. offline front tranzicija prošla nominalni i četiri disturbance scenarija;
+6. novi solver prošao read-only Gazebo shadow (`R3a`);
+7. NMPC body-rate izlaz primijenjen u hoveru 5.05 s (`R3b`), bez solver
+   failurea, uz poseban vertikalni safety loop;
+8. započet eksplicitni PX4 `lambda`/allocation kanal.
+
+Nije još urađeno:
+
+- novi NMPC nije izveo tranziciju u letu;
+- u R3b je bilo `pusher=0`, `lambda=1`;
+- PX4 `lambda` patch je WIP, nije buildan, bench-testiran ni commitovan;
+- back transition, vjetar i novi nezavisni holdout nisu završeni;
+- optimizer je nominalni NMPC testiran na disturbance scenarijima, a ne još
+  formalni min–max/tube robustni NMPC.
+
+Korektna tvrdnja je:
+
+> Implementiran je i djelimično u hoveru verificiran novi 16-state transition
+> NMPC, ali NMPC-owned allocation i puna tranzicija još nisu eksperimentalno
+> potvrđeni.
+
+## 2. Šta radi NMPC, a šta PX4
 
 | Funkcija | NMPC | PX4 |
 |---|---:|---:|
-| Putanja položaja, brzine, attitudea i airspeeda | optimizira | mjeri |
-| Collective lift i pusher | komanduje | limitira i izvršava |
-| MC/FW allocation weight `lambda` | optimizira | primjenjuje |
-| Body-rate reference | komanduje | prati unutrašnjom petljom |
-| Pojedinačni motori i servo izlazi | ne | control allocator |
-| Estimator, airspeed, arm/disarm i Offboard | ne | autoritet |
-| Watchdog i failsafe recovery | dodatni gateovi | konačni autoritet |
-| Stock PX4 transition schedule | ne u NMPC modu | samo fallback |
+| Prediction horizon i referentna putanja | vlasnik | ne |
+| Aggregate collective `c_lift` | računa | limitira/alocira |
+| Pusher `c_push` | računa | limitira/izvršava |
+| Body rates `p_sp,q_sp,r_sp` | računa | prati rate PID-om |
+| MC/FW weight `lambda` | računa | primjenjuje |
+| Pojedinačni motori i površine | ne | control allocator |
+| EKF, attitude, airspeed | ne | vlasnik |
+| Arm, watchdog, failsafe | dodatni gate | konačni autoritet |
+| Stock transition schedule | ne u NMPC modu | fallback/recovery |
 
-Ovo je bitna razlika u odnosu na stari Gate D: u tom eksperimentu je PX4 i
-dalje birao lift blend i trenutak završetka tranzicije. Gate D je zato koristan
-negativan eksperiment, ali nije konačno PhD rješenje.
+Istraživački doprinos je tranzicijska putanja i koordinirani allocation, ne
+zamjena svih low-level funkcija PX4-a.
 
-## 3. Repozitoriji i reproducibilni checkpointi
+## 3. Gdje je model u kodu
 
-### `px4-mpc`
+### 3.1 Fizički validation plant
 
-Branch `standard-vtol-identification`:
-
-```text
-7fc9452  docs: define full NMPC transition ownership
-314bb20  analysis: identify VTOL closed-loop rate dynamics
-23c8311  model: add torque-informed VTOL rotational replay
-```
-
-Raniji commitovi sadrže hover, pusher, Gate A/B/C i povučeni Gate D. Veliki
-ULogovi i generisani CSV rezultati su namjerno izvan gita.
-
-### `PX4-Autopilot`
-
-Repo: `/home/imran/Repositories/PX4-Autopilot`  
-Branch: `nmpc-external-pusher`  
-Base PX4 revision: `5f1eae330b`
-
-```text
-0ea3b45221  feat(vtol): allow guarded offboard pusher input
-7558a3d188  fix(vtol): update standard transition in offboard rates
-```
-
-PX4 branch je čist osim neversioniranog lokalnog `install/` direktorija.
-
-## 4. Šta je promijenjeno u PX4-u
-
-Commit `0ea3b45221` dodaje kontrolisani vanjski pusher u Standard VTOL:
-
-- `VT_EXT_PUSH_EN`: eksplicitno enable, default siguran;
-- `VT_EXT_PUSH_MAX`: hard limit pusher komande;
-- `VT_EXT_PUSH_SLEW`: slew-rate limit;
-- prihvatanje samo u armed Offboard body-rate režimu;
-- stale/non-finite komanda vraća pusher prema nuli;
-- stock put ostaje nepromijenjen kada override nije aktivan.
-
-Commit `7558a3d188` omogućava da Standard VTOL transition state update radi i u
-Offboard-rate režimu bez zahtjeva za zastarjelim MC/FW attitude setpointima i
-bez prepisivanja vanjske body-rate putanje stock attitude referencom.
-
-Izmijenjeni PX4 fajlovi su:
-
-```text
-src/modules/vtol_att_control/standard.cpp
-src/modules/vtol_att_control/standard.h
-src/modules/vtol_att_control/standard_params.yaml
-src/modules/vtol_att_control/vtol_att_control_main.cpp
-```
-
-Važno ograničenje: trenutni PX4 patch **još nema eksplicitni NMPC-owned
-`lambda` ulaz**. On dokazuje pusher put i Offboard-rate kompatibilnost. Novi
-timestamped `lambda`/allocation interfejs, applied-value telemetrija i stale
-recovery tek trebaju biti implementirani nakon offline validacije modela.
-
-## 5. Gdje je model letjelice u kodu
-
-Ne postoji samo jedan model; postoje tri nivoa, svaki s drugom svrhom.
-
-### 5.1 Gazebo/SDF plant — izvor fizičkih parametara
-
-Izvorni PX4 model:
+Izvor parametara:
 
 ```text
 /home/imran/Repositories/PX4-Autopilot/
   Tools/simulation/gz/models/standard_vtol/model.sdf
 ```
 
-NumPy preslikavanje:
+Implementacija:
 
 ```text
 px4_mpc/px4_mpc/models/standard_vtol_gz_model.py
 ```
-
-`StandardVtolGazeboModel` je 18-state validation plant:
 
 ```text
 x_plant = [position(3), velocity(3), quaternion(4), omega(3), rotor_speed(5)]
-u_plant = [motor_0..motor_4, servo_0..servo_2].
 ```
 
-Koristi se samo offline da reprodukuje Gazebo sile i momente. RPM stanja nisu
-planirana u online NMPC-u.
+Ovaj 18-state model reprodukuje SDF sile, momente i rotore. Koristi se za
+offline validaciju, ne kao online OCP.
 
-### 5.2 Stari reducirani model i postojeći OCP
+### 3.2 Povučeni 10-state model
 
 ```text
-px4_mpc/px4_mpc/models/standard_vtol_gz_model.py
-  StandardVtolTransitionRateModel
+x_old = [position(3), velocity(3), quaternion(4)]
+u_old = [collective, pusher, p_sp, q_sp, r_sp]
+```
+
+```text
 px4_mpc/px4_mpc/models/standard_vtol_casadi_model.py
 px4_mpc/px4_mpc/controllers/standard_vtol_nmpc.py
 ```
 
-To je 10-state model:
+Nema body-rate i surface stanja ni `lambda`. Prošao je hover/MC ubrzanje, ali
+ne i tranzicijski pitch transient. Stari Gate D je zato povučen.
+
+### 3.3 Aktivni 16-state NMPC model
 
 ```text
-x_old = [position(3), velocity(3), quaternion(4)]
-u_old = [collective, pusher, p_sp, q_sp, r_sp].
+x = [p_W(3), v_W(3), q_WB(4), omega_B(3), delta(3)] in R^16
+u = [c_lift, c_push, p_sp, q_sp, r_sp, lambda] in R^6
 ```
 
-Pretpostavlja da se body rate realizira trenutno. Taj model je bio dovoljan za
-hover i MC forward gateove, ali nije dovoljan za tranzicijski pitch transient.
-Postojeći **live** ROS node još koristi ovu staru formulaciju; zato se stari
-Gate D više ne leti. Odvojeni 16-state CasADi/acados OCP sada postoji samo za
-offline razvoj i ne može slučajno slati komande letjelici.
-
-### 5.3 Novi torque-informed tranzicijski model
+To je 16 state varijabli, **ne 16 fizičkih DoF**. Letjelica ima šest fizičkih
+stepeni slobode. Kvaternion koristi četiri broja za tri rotacijska stepena, a
+`delta` su tri spora stanja aerodinamičkih površina.
 
 ```text
-px4_mpc/px4_mpc/models/standard_vtol_rotational_model.py
-  StandardVtolTorqueInformedModel
-px4_mpc/px4_mpc/models/standard_vtol_rate_control.py
-```
-
-Novi offline model ima 16 state varijabli:
-
-```text
-x_new = [position(3), velocity(3), quaternion(4), omega(3), surface_state(3)]
-u_new = [collective, pusher, p_sp, q_sp, r_sp, lambda].
-```
-
-To je **16 stanja, ne 16 DoF**. Letjelica ima šest fizičkih stepeni slobode;
-kvaternion koristi četiri varijable za tri rotacijska stepena, a tri dodatna
-stanja opisuju sporu dinamiku površina.
-
-NumPy model ostaje replay/identifikacijski plant. Novi LPV pitch-rate residual
-i 16-state model preneseni su i u CasADi/acados:
-
-```text
-px4_mpc/px4_mpc/models/standard_vtol_pitch_rate_model.py
 px4_mpc/px4_mpc/models/standard_vtol_robust_casadi_model.py
 px4_mpc/px4_mpc/controllers/standard_vtol_robust_nmpc.py
+px4_mpc/px4_mpc/standard_vtol_robust_shadow_node.py
 ```
 
-Model još nije spojen na live node.
+Prvi fajl je simbolički prediction model, drugi definiše OCP/acados, a treći
+je ROS receding-horizon izvršna petlja.
 
-## 6. Jednačine novog modela
+## 4. Jednačine stvarnog online NMPC modela
 
-Interni NumPy validation model koristi Gazebo ENU/FLU konvenciju; ROS/PX4
-interfejs koristi NED/FRD. Konverzije su eksplicitne u alatima.
+Interno se koristi Gazebo ENU/FLU; PX4 je NED/FRD. Konverzije su u
+`px4_mpc/px4_mpc/models/frames.py`.
 
-```math
-\dot p_W = v_W,
-```
-
-```math
-\dot v_W = \frac{1}{m}R_{WB}(q)
-\left(F_{motors}+F_{aero}\right)+g_W,
-```
+### Translacija
 
 ```math
-\dot q_{WB}=\frac{1}{2}q_{WB}\otimes[0,\omega_B]^T,
+\dot p_W=v_W,
 ```
 
 ```math
-\dot\omega_B=J^{-1}\left(
-\tau_{motors}+\tau_{aero}-\omega_B\times J\omega_B\right),
+v_{rel,B}=R_{WB}(q)^T(v_W-w_W),
 ```
 
 ```math
-\dot\delta_i=(k_i\delta_{cmd,i}-\delta_i)/\tau_i.
+\dot v_W=\frac{1}{m}R_{WB}(q)
+\left(F_{lift}(\lambda c_{lift})+F_{push}(c_{push})
++F_{aero}(v_{rel,B},\omega_B,\delta)+[b_x,0,b_z]^T\right)+g_W.
 ```
 
-PX4 rate kontrola se reproducira kao
+### Orijentacija
+
+```math
+\dot q_{WB}=\frac12q_{WB}\otimes[0,\omega_B]^T,
+\qquad \|q_{WB}\|_2=1.
+```
+
+### Identificirana zatvorena body-rate dinamika
+
+```math
+\dot p=k_p(p_{sp}-p),\qquad k_p=6,
+```
+
+```math
+\dot r=k_r(r_{sp}-r),\qquad k_r=4,
+```
+
+```math
+\dot q_b=-a(V,\lambda)q_b+b(V,\lambda)q_{sp}
+-4\mu(1-\mu)(c_0+c_\alpha\alpha-c_\theta\theta)-d_q,
+\qquad \mu=1-\lambda.
+```
+
+`a(V,lambda)` i `b(V,lambda)` su bilinearna interpolacija četiri nenegativna
+LPV čvora. `d_q` je bounded disturbance do približno `±0.47 rad/s²`.
+Koeficijenti su u `standard_vtol_pitch_rate_model.py`.
+
+### Površine
+
+```math
+\dot\delta_i=(\delta_{cmd,i}-\delta_i)/\tau_i,
+\qquad \tau_i\approx1.0\;s,
+```
+
+```math
+\delta_{cmd}=(1-\lambda)A_{surf}
+\tau_{FW}(\omega_{sp}-\omega,V)+[0,0,\delta_{trim}(V)]^T.
+```
+
+Površine su stanja jer im je odziv reda `1 s`; motorne konstante su reda
+`0.0125–0.025 s`, pa RPM nije online OCP stanje.
+
+### Validation model naspram online modela
+
+NumPy validation model eksplicitno koristi rigid-body jednačinu
+
+```math
+\dot\omega_B=J^{-1}(\tau_{motors}+\tau_{aero}
+-\omega_B\times J\omega_B)
+```
+
+u `standard_vtol_rotational_model.py`. Online CasADi OCP koristi identificiranu
+closed-loop rate dinamiku radi real-time izvođenja. Ne treba tvrditi da acados
+trenutno integrira punu motor-torque jednačinu.
+
+## 5. Gdje je NMPC optimizacioni problem
+
+Svakih `50 ms` rješava se OCP sa `N=20` i horizontom `T=2 s`:
+
+```math
+\min_{x_{0:N},u_{0:N-1}}
+\sum_{k=0}^{N-1}
+(\|x_k-x_k^{ref}\|_Q^2+\|u_k-u_k^{ref}\|_R^2)
++\|x_N-x_N^{ref}\|_{Q_N}^2
+```
+
+uz
+
+```math
+x_0=\hat x(t),\qquad x_{k+1}=F_{RK}(x_k,u_k,w_k),
+```
+
+```math
+0\le c_{lift},c_{push}\le0.70,\quad0\le\lambda\le1,
+```
+
+```math
+|p_{sp}|,|q_{sp}|\le0.45,\quad|r_{sp}|\le0.30\;rad/s,
+```
+
+```math
+|v_z|\le2\;m/s,\quad
+-22^\circ\le\phi\le22^\circ,\quad
+-22^\circ\le\theta\le18^\circ,
+```
+
+uz dodatne bounds na body rates i površine.
+
+Solver je acados `SQP_RTI`, `PARTIAL_CONDENSING_HPIPM`, ERK i Gauss–Newton.
+Računa cijelu predikciju, primjenjuje se prvi control sample, zatim se problem
+ponovo rješava nakon nove odometrije.
+
+## 6. Porijeklo parametara
+
+| Grupa | Izvor |
+|---|---|
+| masa, CoM, inercija | SDF |
+| rotor geometrija i motor constants | SDF pluginovi |
+| aero geometrija/koeficijenti | SDF `LiftDrag` |
+| PX4 MC/FW PID i FF | PX4 source + ULog parametri |
+| MC allocation | ULog least-squares rekonstrukcija |
+| surface allocation | FW virtual torque/servo regresija |
+| surface lag | SDF joint + ULog identifikacija |
+| LPV pitch model | 12 i 15 m/s ULogovi |
+| disturbance bounds | rollout residual statistika |
 
 ```text
-omega_sp -> MC/FW PID + feed-forward -> normalized torque
-         -> control allocation -> lift motors / servo commands.
-```
-
-Efektivni pitch moment trenutno koristi
-
-```math
-M_y=\bar q(c_0+c_\alpha\alpha+c_{\alpha2}\alpha|\alpha|
-          +c_q q/V+c_{\delta_e}\delta_e)
-    +c_m M_{motor,y}.
-```
-
-Zadnji član opisuje identificirano poništenje velikog nose-down rotor-drag
-momenta i wing-lift momenta u transition blendu. Bez tog vezanog člana model
-je imao veliku grešku i kada su mu dati budući stvarni actuator izlazi.
-
-## 7. Porijeklo parametara
-
-| Parametri | Izvor | Status |
-|---|---|---|
-| Masa, CoM, inercija | PX4 `standard_vtol/model.sdf` | deterministički izvedeno |
-| Pozicije i ose 5 rotora | SDF link/plugin definicije | direktno |
-| Motor constants, max speed, time constants, drag | SDF `MulticopterMotorModel` | direktno |
-| Wing/elevator geometrija i LiftDrag koeficijenti | SDF `LiftDrag` | direktno |
-| Servo limit ±45° | SDF + `SIM_GZ_SV_MINA/MAXA` iz ULoga | provjereno |
-| MC/FW PID/FF gains | aktivni PX4 parametri iz ULoga/sourcea | reprodukovano |
-| FW airspeed scaling/filter | PX4 FixedwingRateControl source + ULog | reprodukovano |
-| MC motor allocation | least-squares rekonstrukcija na training ULogu | validation provjera |
-| Surface allocation | PX4 servo output prema FW torque regresiji | `corr pitch≈0.999` |
-| Surface lag | SDF joint damping/controller + ULog identifikacija | u aktivnom modelu `tau=1 s`, `gain=1` |
-| Efektivni pitch moment | robustni fit na `run_01`, provjera na `run_02` | još nije finalno prihvaćen |
-
-Numerički SDF-derived parametri aktivnog plant snapshot-a:
-
-```text
-mass = 5.02500003 kg
-CoM_B = [-0.00021891, 0, 0.00027861] m
-J_B diagonal ≈ [0.48043045, 0.34529256, 0.81685782] kg m²
-hover command ≈ 0.5201195
+mass = 5.025 kg
+J diagonal ≈ [0.48043, 0.34529, 0.81686] kg m²
+hover command ≈ 0.52012
 hover rotor speed ≈ 784.98 rad/s
 lift motor max = 1500 rad/s
 pusher max = 3500 rad/s
 ```
 
-SDF snapshot je vezan za PX4 revision `5f1eae330b`, tako da se model može
-reproducirati i nakon budućih PX4 promjena.
+Model nije proizvoljno izabran: fizički dio dolazi iz SDF-a, unutrašnje petlje
+iz PX4 sourcea/ULoga, a rezidual iz identifikacije. Novi unaprijed definisan
+holdout ipak je još potreban za finalnu naučnu validaciju.
 
-## 8. Podaci i metod identifikacije
+## 7. Eksperimentalni rezultati
 
-Glavni ULogovi:
+Prethodno su prošli hover 10/30 s, external pusher, MC forward 3, 5 i 8 m/s.
+Stock PX4 transition sa NMPC shadowom poslužio je za podatke.
 
-| Log | Uloga | Posebnost |
-|---|---|---|
-| `standard_vtol_run_01.ulg` | training/development fit | stock trim 15 m/s |
-| `standard_vtol_run_02.ulg` | development validation | drugi 15 m/s let |
-| `standard_vtol_run_03_12ms.ulg` | dodatni razvoj | trim 12 m/s |
-| `standard_vtol_run_04_18ms.ulg` | ekstrapolacijski development test | trim 18 m/s |
-| Gate C | stock transition shadow | potpuni 3→1→4→2→3 ciklus |
-| Gate D failovi | failure evidence | pitch/vertical transient |
+Stari Gate D je više puta dostigao 10–14 m/s, zatim padao zbog pitch,
+vertical-speed i altitude transienta. PX4 je i dalje birao stock blend. To je
+negativan eksperiment koji motivira `omega`, surface states i NMPC-owned
+`lambda`, a ne uspješna NMPC tranzicija.
 
-Extractor poravnava podatke na 50 Hz i čuva:
+Aktivni 16-state OCP offline prolazi:
 
 ```text
-airspeed, VTOL state, body velocity, attitude,
-rate setpoint, measured omega/omega_dot,
-MC/FW virtual torque, integratore, gain compression,
-motor/servo control i Gazebo bridge izlaze.
+nominal front transition do 15 m/s, lambda≈0       PASS
+poznati pitch disturbance ±0.235 rad/s²            PASS
+nepoznati disturbance ±0.10 rad/s²                 PASS
+konstantni ekstrem +0.47 rad/s²                    FAIL
 ```
 
-Alati:
+Real-time gateovi:
 
 ```text
-tools/extract_standard_vtol_rate_dataset.py
-tools/validate_standard_vtol_rate_controller.py
-tools/identify_standard_vtol_surface_dynamics.py
-tools/identify_standard_vtol_pitch_moment.py
-tools/validate_standard_vtol_rotational_replay.py
-tools/validate_standard_vtol_rotational_rollout.py
-tools/fit_standard_vtol_pitch_rollout.py
+R3a ROBUST_HOVER_SHADOW=PASS
+    publishes_fmu=False, solver_failures=0, p99=30.43 ms
+
+R3b ROBUST_HOVER_OUTPUT=PASS
+    Offboard=5.05 s, solver_failures=0, p99=26.97 ms
+    automatski povratak u Position
 ```
 
-Model se fituje na jednom skupu, parametri se zamrzavaju, pa se mjeri 0.5 s
-rollout na drugom skupu. Acceptance rollout ne smije koristiti buduće logged
-torque/servo komande. Poseban `logged-actuator plant` ih koristi samo kao
-dijagnostiku za razdvajanje greške plant-a od greške rate PID/allocatora.
+R3b je prvi primijenjeni izlaz novog solvera, ali je namjerno bio ograničen:
+bounded/slew-limited body-rate komande dolaze iz NMPC-a, collective se
+zamjenjuje ranije validiranim vertikalnim safety loopom, pusher je nula, a
+`lambda=1`. Zato je to partial live integration, a ne potvrda svih šest NMPC
+izlaza niti tranzicija.
 
-Napomena o istraživačkoj validnosti: `run_02` je tokom razvoja već više puta
-pregledan i više nije pošteno zvati ga potpuno netaknutim finalnim holdoutom.
-`run_04` je također pregledan ovim presjekom radi 18 m/s ekstrapolacijske
-dijagnostike. Zato se finalni model mora zamrznuti prije najmanje jednog novog,
-unaprijed definisanog SITL holdout leta.
+## 8. PX4 izmjene i trenutni WIP
 
-## 9. Eksperimentalni rezultati do sada
+Stabilni branch `nmpc-external-pusher` sadrži:
 
-### Uspješni sigurnosni/flight gateovi
+```text
+0ea3b45221  guarded external Offboard pusher
+7558a3d188  Offboard-rate transition compatibility
+```
 
-| Gate | Rezultat |
+Poslije R3b započet je necommitovani external-allocation patch:
+
+```text
+VtolNmpcAllocationSetpoint  # timestamp + lambda
+VtolNmpcAllocationStatus    # requested/applied + active/valid
+VT_EXT_ALLOC_EN             # default false
+VT_EXT_AL_SLEW              # lambda slew
+```
+
+Planirana jedinstvena PX4 primjena je
+
+```math
+T_{lift}=\lambda c_{lift},\qquad
+\tau_{MC}=\lambda\tau_{MC,PID},\qquad
+\tau_{FW}=(1-\lambda)\tau_{FW,PID}.
+```
+
+Stale/invalid input vraća `lambda` prema jedan. Patch je primijenjen u source,
+ali ROS message build je zaustavljen oko 88%; PX4 build, bench test i commit
+nisu urađeni. Ne koristiti ga još za let.
+
+## 9. Šta “robustan” sada znači
+
+Implementirano je: bounded disturbance model, constraints, scenario matrica,
+state/solver/Offboard safety gateovi.
+
+Nisu implementirani: min–max NMPC, tube NMPC, chance constraints ni formalni
+dokaz robustne stabilnosti/recursive feasibility. Sa mentorom treba izabrati
+scenario/multi-model, tube/constraint-tightening ili disturbance-estimator
+pravac.
+
+## 10. Status i naredni put
+
+| Sloj | Status |
 |---|---|
-| Hover 10 s | PASS; max visinska promjena 0.194 m |
-| Hover 30 s | PASS; max visinska promjena 0.186 m |
-| External pusher 0→0.05→0 | PASS; stvarni motor 5 potvrđen |
-| Gate A, MC 3 m/s | PASS; 26.576 s Offboard, max altitude error 0.200 m |
-| Gate B1, MC 5 m/s | PASS; pusher 0.15, max altitude error 0.264 m |
-| Gate B2, MC 8 m/s | PASS; pusher 0.179, max altitude error 0.241 m |
-| Gate C, stock transition shadow | PASS kao data/model checkpoint |
+| SDF/Gazebo plant | radi |
+| identifikacija | radi; novi holdout nedostaje |
+| 16-state CasADi/acados | radi |
+| offline front-transition matrica | PASS |
+| ROS shadow | PASS |
+| live NMPC hover | PASS |
+| PX4 `lambda` kanal | WIP |
+| L1 `lambda 1→0.8→1` | nije izveden |
+| puna front/back tranzicija | nije izvedena |
 
-Ovi testovi dokazuju stabilan Offboard-rate hover, aggregate lift, vanjski
-pusher, speed feedback i siguran povratak do 8 m/s u MC stanju.
+Naredno:
 
-### Gate D — zašto je povučen
+1. završiti ROS/PX4 build allocation patcha;
+2. SITL bench dokazati `lambda=1`, `0.8` i stale recovery, bez leta;
+3. commitovati PX4/`px4_msgs` checkpoint;
+4. L1 offline → shadow → guarded live do 5 m/s;
+5. L2 `lambda=0.5`, L3 `0.2`, L4 `0`;
+6. puna front/back putanja, vjetar i Monte Carlo evaluacija.
 
-Gate D je više puta stigao do front transition/FW stanja, ali je padao na
-`vertical_speed_limit`, `altitude_error`, `horizontal_speed_limit` ili solver
-infeasibility. Tipični logovi pokazuju 10–14 m/s, veliki pitch transient,
-gubitak visine i recovery u Position/MC.
+## 11. Kratki odgovori za konsultacije
 
-Zaključak nije samo “treba još tuninga”. Stari 10-state OCP pretpostavlja
-`omega=omega_sp`, dok PX4 bira stock lift blend. Time optimizer nema stanje ni
-komandu potrebnu da predvidi i kontroliše preuzimanje pitch autoriteta. Zato je
-Gate D zamrznut i služi kao motivacija za 16-state + NMPC-owned `lambda`.
+**Gdje su jednačine?** U poglavlju 4; izvršna simbolička verzija je u
+`standard_vtol_robust_casadi_model.py`.
 
-### Identifikacija rate/rotacijske dinamike
+**Gdje je NMPC?** Cost, constraints i acados konfiguracija su u
+`controllers/standard_vtol_robust_nmpc.py`; ROS receding-horizon petlja je u
+`standard_vtol_robust_shadow_node.py`.
 
-1. Piecewise i LPV closed-loop rate modeli prolaze MC, ali blend/FW rollout
-   ostaje nestabilan ili iznad praga.
-2. PX4 rate PID reprodukcija je dobra: FW pitch virtual-torque RMSE približno
-   `0.0052`, transition blend približno `0.0106` uz 1 s airspeed filter.
-3. Motor allocator je vrlo precizan u MC-u (`≈0.001–0.002` command RMSE), ali
-   stock blend rekonstrukcija je slabija (`≈0.06`).
-4. Raniji efektivni model dao je 0.5 s pitch-rate RMSE:
+**Je li zaista NMPC?** Da: svakih 50 ms rješava nonlinear constrained OCP.
+R3b je primijenio bounded body-rate dio prvog samplea uz zaseban collective
+safety loop; to još nije live dokaz svih šest kontrola ni tranzicije.
 
-```text
-blend ≈ 0.114 rad/s
-FW    ≈ 0.070 rad/s
-acceptance threshold = 0.050 rad/s
-```
+**Zašto PX4 ostaje?** NMPC radi putanju/allocation; PX4 radi brzu rate petlju,
+pojedinačne aktuatore, estimator i failsafe.
 
-5. Novi motor-drag/wing-lift coupled član daje:
+**Ko radi tranziciju?** U ciljnoj arhitekturi NMPC bira `lambda`, pusher,
+collective i rate putanju. To je offline demonstrirano, ali live allocation
+još nije potvrđen.
 
-```text
-blend rate-sp rollout q RMSE       = 0.0854 rad/s
-blend logged-actuator plant q RMSE = 0.0827 rad/s
-FW rate-sp rollout q RMSE          = 0.0697 rad/s
-```
+**Zašto 16 stateova?** Dodani su body rates i spore površine jer su izostajali
+u neuspješnom 10-state modelu. RPM je dovoljno brz da ostane algebraički.
 
-Blend se značajno popravio, posebno plant-only rezultat (`≈0.469 → 0.083`),
-ali formalni offline gate još nije prošao.
+**Šta je doprinos?** Robusni transition NMPC sa kontinuirano optimiziranim
+MC/FW allocationom, grey-box SDF/ULog modelom i PX4 sigurnim izvršnim slojem.
 
-Direktni fit istih koeficijenata na 0.5 s endpoint grešku je smanjio training
-`q` RMSE na `0.052 rad/s`, ali pogoršao `run_02` na `0.117 rad/s`. Kandidat je
-zato eksplicitno odbijen kao overfit i nije upisan u aktivni model.
+## 12. Odluke koje tražiti od mentora
 
-Na ponovo izvučenom 18 m/s `run_04` aktivni coupled model daje:
+1. Je li predložena ownership granica NMPC/PX4 prihvatljiva?
+2. Koju formalnu robustnu formulaciju prioritizirati?
+3. Je li identified closed-loop rate model dovoljan ili se traži puna
+   rigid-body torque dinamika u online OCP-u?
+4. Koje finalne metrike koristiti protiv stock PX4: altitude loss, vrijeme,
+   energija, peak pitch/vertical speed, constraints i vjetar?
+5. Koliko novih holdout letova i Monte Carlo scenarija je potrebno?
 
-```text
-blend q RMSE = 0.1003 rad/s   (ZOH 0.1133)
-FW q RMSE    = 0.1210 rad/s   (ZOH 0.0780)
-```
-
-Model dakle poboljšava blend trend, ali ne generalizira FW pitch dinamiku na
-18 m/s. To je dokaz za airspeed-scheduled residual, a ne za dalje podešavanje
-jednog globalnog seta koeficijenata.
-
-## 10. Trenutni status — šta radi, a šta još ne radi
-
-Radi i dokumentovano je:
-
-- SDF-derived 18-state validation plant;
-- ULog extraction i frame konverzije;
-- translacijska plant validacija na 12/15/18 m/s;
-- hover/MC forward NMPC i vanjski pusher;
-- PX4 rate PID i allocator replay;
-- 16-state NumPy torque-informed model;
-- automatizovani 0.5 s rollout gate;
-- siguran koncept buduće podjele NMPC/PX4 odgovornosti.
-- stabilni airspeed/`lambda`-scheduled pitch-rate LPV model;
-- 16-state CasADi model i odvojeni šest-inputni acados OCP;
-- nominalni offline hover→15 m/s→`lambda=0` prolaz;
-- offline prolaz za poznatu blend perturbaciju ±0.235 rad/s² i nepoznatu
-  perturbaciju ±0.10 rad/s².
-- ROS/Gazebo read-only 16-state hover shadow: 0 solver failurea, završni
-  solve-time p99 `30.43 ms`, bez ijednog PX4 input publishera.
-
-Još ne radi:
-
-- LPV pitch kandidat je bounded/stable, ali strogi rollout prag od
-  `0.05 rad/s` nije zadovoljen u svim holdout režimima;
-- `lambda` još nije eksplicitni OCP control u live solveru;
-- PX4 nema timestamped external allocation-weight ulaz;
-- nije izveden L1/L2/L3/L4 staged NMPC allocation let;
-- puna tranzicija još nije izvedena sa NMPC kao vlasnikom blenda.
-
-Zbog toga se trenutno **ne smije ponavljati** `scripts/run_transition_gate_d.bash`.
-
-## 11. Predloženi naredni koraci
-
-### Korak 1 — zamrznuti offline pitch model
-
-1. [x] Fitovati mali airspeed/`lambda`-scheduled pitch residual na `run_03`
-   (12 m/s) + `run_01` (15 m/s), bez budućih actuator komandi.
-2. Razdvojiti stvarni pitch plant residual od estimator/filter faznog pomaka.
-3. `run_02` (15 m/s) i `run_04` (18 m/s) koristiti samo kao development
-   provjeru znaka, stabilnosti i ekstrapolacije.
-4. Zamrznuti strukturu, koeficijente i acceptance pragove.
-5. Snimiti najmanje jedan novi unaprijed definisan holdout let.
-6. Cilj: blend i FW `q` RMSE ≤ `0.05 rad/s`, pravilan znak i stabilan rollout.
-
-Ako jedan globalni koeficijent ne prođe, sljedeći kandidat treba biti mali
-LPV residual zavisan od airspeeda i `lambda`, uz constraint na pozitivno
-prigušenje. Ne dodavati individualne RPM stateove niti proizvoljan neuralni
-model prije ovog testa.
-
-### Korak 2 — prenijeti 16-state model u CasADi/acados
-
-- [x] dodati `omega(3)` i `surface_state(3)`;
-- [x] dodati `lambda` kao šestu kontrolu;
-- ukloniti PX4-owned lift weight iz OCP parametara;
-- dodati bounds/slew na `lambda`, collective, pusher, rate, alpha, pitch,
-  altitude i vertical speed;
-- generisati trim corridor sa eksplicitnim `lambda`;
-- [x] provjeriti solver p99 < 40 ms: trenutni offline maksimum u prihvaćenim
-  scenarijima je ispod 10 ms.
-
-Prvi front-transition offline rezultat na 15 m/s:
+## 13. Glavni dokumenti
 
 ```text
-nominal:                    PASS, |z-z_ref|max=0.081 m, p99=7.52 ms
-estimated blend d_q=+0.235: PASS, |z-z_ref|max=0.159 m
-estimated blend d_q=-0.235: PASS, |z-z_ref|max=0.009 m
-unmodeled d_q=+0.10:        PASS, |z-z_ref|max=0.151 m
-unmodeled d_q=-0.10:        PASS, |z-z_ref|max=0.023 m
+STANDARD_VTOL_PHD_PROGRESS_REPORT.md        ovaj presjek
+STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md   ownership i plan
+STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md  operativni gateovi
+STANDARD_VTOL_RATE_IDENTIFICATION.md        identifikacija
+STANDARD_VTOL_PLANT_VALIDATION.md           SDF/Gazebo validacija
 ```
-
-Konstantni ekstrem `+0.47 rad/s²` je FAIL i ostaje razvojna granica. Vrijednost
-0.47 je p95 fit residual, a ne identificirani konstantni FW moment.
-
-### Korak 3 — robustna offline zatvorena petlja
-
-Simulirati MC→FW→MC za:
-
-```text
-nominalni plant,
-±20% aero koeficijente,
-masu/inerciju u definisanom intervalu,
-headwind/crosswind scenarije,
-airspeed bias i bounded model residual.
-```
-
-Acceptance: bez solver failurea, altitude error ≤2 m, vertical speed ≤1.5
-m/s, |roll|/|pitch| ≤20°, monoton `lambda` u obje tranzicije.
-
-### Korak 4 — PX4 external-allocation patch
-
-Dodati novi eksplicitni i timestamped `lambda` kanal. PX4 primjenjuje tačno
-jedan blend:
-
-```text
-T_lift = lambda * c_lift
-tau_MC weight = lambda
-tau_FW weight = 1-lambda
-T_pusher = c_push.
-```
-
-Patch mora objavljivati applied `lambda`, odbiti stale/non-finite input i
-kontrolisano vratiti `lambda→1`, pusher→0 i stock MC recovery.
-
-### Korak 5 — staged SITL gateovi
-
-| Gate | `lambda` profil | Cilj |
-|---|---|---|
-| L1 | `1→0.8→1` do 5 m/s | potvrditi external blend i recovery |
-| L2 | `1→0.5→1` na 8–10 m/s | mixed rate authority |
-| L3 | `1→0.2→1` na 11–13 m/s | skoro FW uz lift rezervu |
-| L4 | `1→0→1` | puna NMPC front/back tranzicija |
-
-Svaki gate ide redom: offline replay → shadow → jedan guarded SITL let → ULog
-analiza → commit/checkpoint.
-
-## 12. Predložene teme za razgovor s mentorom
-
-1. Da li je istraživački doprinos dovoljno jasno postavljen kao **robustni
-   transition NMPC sa optimiziranim allocation weightom**, a ne direct motor
-   control?
-2. Da li zadržati grey-box torque-informed model ili formalno preći na LPV
-   residual/model-set formulation?
-3. Koji robustni pristup koristiti prvo: scenario NMPC, tube/constraint
-   tightening ili bounded disturbance estimator?
-4. Koje finalne metrike porediti sa stock PX4: altitude loss, transition time,
-   energy, peak pitch/vertical speed, wind robustness i constraint violations?
-5. Koliko nezavisnih trim brzina, vjetrova i Monte-Carlo scenarija je dovoljno
-   za doktorsku evaluaciju?
-
-## 13. Glavni dokumenti i artefakti
-
-```text
-STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md   konačna ownership arhitektura
-STANDARD_VTOL_RATE_IDENTIFICATION.md        identifikacija rotacijske dinamike
-STANDARD_VTOL_REIDENTIFICATION.md           translacijska identifikacija
-STANDARD_VTOL_PLANT_VALIDATION.md            SDF/Gazebo ULog postupak
-validation_logs/*_SUMMARY.md                 prihvaćeni gateovi i fail evidence
-results/standard_vtol_rate_identification/  generisani lokalni rezultati
-```
-
-Sirovi ULogovi ukupno zauzimaju stotine MiB i nisu u gitu. Summary fajlovi
-sadrže putanju i SHA-256 kada je raw log ostavljen u PX4 SITL direktoriju.
-
-## 14. Kratak zaključak
-
-Rad je prešao iz tuninga starog 10-state Gate D kontrolera u opravdanu novu
-arhitekturu. Pokazano je da Offboard-rate hover, pusher i MC ubrzanje do 8 m/s
-rade, ali i da stock-PX4-owned blend ne može predstavljati konačni PhD
-doprinos. Uspostavljen je reproducibilan ULog identifikacijski lanac i novi
-16-state torque-informed model sa NMPC-owned `lambda` interfejsom.
-
-Najbliži tehnički milestone nije novi let nego zatvaranje blend/FW pitch
-rollouta, zatim CasADi port i PX4 `lambda` patch. Tek tada staged L1–L4 testovi
-vode do prve pune NMPC-owned tranzicije.
