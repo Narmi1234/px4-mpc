@@ -352,18 +352,26 @@ pravac.
 | offline front-transition matrica | PASS |
 | ROS shadow | PASS |
 | live NMPC hover | PASS |
-| PX4 `lambda` kanal | build PASS; live `lambda=1` re-test slijedi |
-| L1 `lambda 1→0.8→1` | implementiran; offline PASS, live spreman |
+| PX4 `lambda` kanal | live handshake PASS |
+| L1 `lambda 1→0.8→1` | live PASS: 5.312 m/s, 0.376 m altitude error |
 | puna front/back tranzicija | nije izvedena |
 
 Naredno:
 
-1. ponoviti R3b i dokazati live `lambda=1` status handshake;
-2. SITL bench dokazati `lambda=0.8` i stale recovery;
-3. L1 offline → shadow → guarded live do 5 m/s;
-4. analizirati ULog prije povećanja authority transfera;
-5. L2 `lambda=0.5`, L3 `0.2`, L4 `0`;
-6. puna front/back putanja, vjetar i Monte Carlo evaluacija.
+1. sačuvati i analizirati prihvaćeni L1 ULog;
+2. pripremiti L2 offline/shadow profil do 8–10 m/s i `lambda>=0.5`;
+3. tek nakon L2 analize pripremiti L3 `lambda>=0.2`;
+4. L4 `lambda=0` i puna front/back putanja;
+5. vjetar, model-uncertainty i Monte Carlo evaluacija.
+
+### Live L1 rezultat — 2026-09-01
+
+Prvi eksplicitni authority-transfer let je prošao: 29.51 s Offboarda, bez
+solver failurea, p99 solve 25.07 ms, `lambda_min=0.800`, pusher maksimum
+0.155, brzina maksimum 5.312 m/s, cross-track maksimum 0.302 m i visinska
+greška maksimum 0.376 m. Profil se završio sa brzinom -0.007 m/s i PX4 je
+vratio `lambda=1` prije Position fallbacka. Ovo je dokaz live NMPC/PX4
+allocation ownershipa, ali još nije puna tranzicija niti gašenje MC motora.
 
 ## 11. Kratki odgovori za konsultacije
 

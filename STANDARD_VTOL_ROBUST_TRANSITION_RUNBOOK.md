@@ -371,3 +371,32 @@ ROBUST_ALLOCATION_L1=PASS
 
 Svaki drugi završetak je FAIL: ostati u Position, sletjeti i poslati završni
 status prije ponavljanja.
+
+### Prihvaćeni R4-L1 rezultat — 2026-09-01
+
+```text
+ROBUST_ALLOCATION_L1=PASS
+last_offboard_duration=29.51 s
+solver_failures=0
+solve_time=14.22 ms, solve_time_p99=25.07 ms
+abort_reason=allocation_l1_test_timeout
+allocation: ever_active=True, ever_valid=True
+max_forward_speed=5.312 m/s
+max_cross_track=0.302 m
+max_altitude_error=0.376 m
+max_pusher=0.155
+min_lambda=0.800
+final_forward_speed=-0.007 m/s
+final_applied_lambda=1.000
+```
+
+Ovo potvrđuje prvi **live NMPC-owned authority transfer**. NMPC je kroz novi
+DDS/PX4 kanal smanjio MC allocation na 80%, koristio pusher, dostigao 5.312
+m/s, vratio brzinu praktično na nulu i obnovio `lambda=1`, dok je letjelica
+ostala u MC režimu. `active=False` u završnom statusu je očekivano jer je PX4
+već vraćen iz Offboarda u Position; `ever_active=True` dokazuje da je kanal
+bio aktivan tokom testa.
+
+Ovaj rezultat ne predstavlja punu front transition: lift motori nisu ugašeni
+i `lambda` nije išla ispod 0.8. On je prihvaćeni eksperimentalni checkpoint
+prije L2 (`lambda>=0.5`, veća brzina).
