@@ -11,6 +11,11 @@ Ne tvrditi da je puna live tranzicija završena. Trenutno je potvrđen offline
 transition OCP i live hover/data/allocation lanac. Sljedeći eksperiment je
 ograničeni `lambda: 1.0 -> 0.8 -> 1.0` gate.
 
+Taj L1 gate je sada implementiran i njegov offline prerequisite prolazi:
+`4.998 m/s`, `lambda=0.834`, max greška visine `0.016 m`, bez solver failurea.
+Live postupak je u R4-L1 dijelu
+`STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md`.
+
 ## 1. Najbrži demo bez Gazeba
 
 ```bash
@@ -144,4 +149,3 @@ brze body-rate petlje, mapiranje na pojedinačne motore/serva i failsafe.
 > Live SITL je potvrdio real-time solve, pet-sekundni NMPC hover i eksplicitni
 > NMPC-to-PX4 allocation kanal. Puna live tranzicija još nije rezultat; naredni
 > eksperiment postepeno smanjuje `lambda` uz pusher i stroge recovery gateove.
-

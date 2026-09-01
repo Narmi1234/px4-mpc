@@ -294,3 +294,80 @@ L4: lambda 1.0 -> 0.0 -> 1.0, puna front/back tranzicija
 Svaki gate mora prvo proći offline, zatim shadow, zatim jedan live SITL let.
 QGC Position ostaje ručni recovery. Gate se ne ponavlja nakon aborta prije
 pregleda statusa i ULoga.
+
+### R4-L1 — aktivni eksperiment
+
+L1 je prvi stvarni prijenos autoriteta. Ne šalje PX4 transition komandu i
+letjelica mora ostati MC. Profil je `0 -> 5 -> 0 m/s`, pusher je ograničen na
+0.25, a NMPC allocation na `lambda >= 0.8`. Collective se kompenzira sa
+`c_hover/lambda`, tako da 20% authority transfer ne znači 20% gubitka lifta.
+
+Offline prerequisite je potvrđen sa `solver_failures=0`, završnom brzinom
+4.998 m/s, max greškom visine 0.016 m i završnim `lambda=0.834`:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_allocation_l1_offline_gate.bash
+```
+
+Mora završiti sa `ROBUST_ALLOCATION_L1_OFFLINE=PASS`.
+
+Terminal 1 — patched PX4/Gazebo:
+
+```bash
+cd /home/imran/Repositories/PX4-Autopilot
+deactivate 2>/dev/null || true
+make px4_sitl gz_standard_vtol
+```
+
+U PX4 konzoli postaviti i provjeriti:
+
+```text
+param set VT_EXT_PUSH_EN 1
+param set VT_EXT_PUSH_MAX 0.25
+param set VT_EXT_PUSH_SLEW 0.10
+param set VT_EXT_ALLOC_EN 1
+param set VT_EXT_AL_SLEW 0.10
+param show VT_EXT_PUSH_EN
+param show VT_EXT_PUSH_MAX
+param show VT_EXT_PUSH_SLEW
+param show VT_EXT_ALLOC_EN
+param show VT_EXT_AL_SLEW
+```
+
+Terminal 2 — DDS agent:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+"${MICRO_XRCE_AGENT_DIR}/bin/MicroXRCEAgent" udp4 -p 8888
+```
+
+Terminal 3 — L1 node:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+ros2 launch px4_mpc standard_vtol_robust_l1_gate_launch.py
+```
+
+Mora ispisati `guarded L1 allocation mode`. U QGC poletjeti u Position modu
+na 8–10 m, poravnati pravac prema slobodnom prostoru i potpuno smiriti let.
+
+Terminal 4:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_allocation_l1_gate.bash
+```
+
+Upisati `YES`. Tokom oko 30 s posmatrati brzinu, visinu i pravac. Ne pritiskati
+VTOL transition. PASS zahtijeva automatski Position fallback, bez solver
+failurea, aktivan allocation handshake i primijenjeni minimum `lambda=0.8x`:
+
+```text
+ROBUST_ALLOCATION_L1=PASS
+```
+
+Svaki drugi završetak je FAIL: ostati u Position, sletjeti i poslati završni
+status prije ponavljanja.

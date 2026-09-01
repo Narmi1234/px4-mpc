@@ -54,6 +54,8 @@ def references(
     corridor: dict[str, np.ndarray],
     target_speed: float,
     acceleration: float,
+    minimum_lambda: float = 0.0,
+    pusher_max: float = 0.70,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     x_ref = np.zeros((controller.N + 1, controller.model.state_size))
     u_ref = np.zeros((controller.N, controller.model.control_size))
@@ -65,9 +67,14 @@ def references(
         stage_time = time_seconds + stage * controller.dt
         speed = speed_reference(stage_time, target_speed, acceleration)
         pitch = scheduled_pitch(speed, target_speed)
-        lift_fraction = scheduled_lambda(speed, target_speed)
+        lift_fraction = max(
+            float(minimum_lambda), scheduled_lambda(speed, target_speed)
+        )
         corridor_lift = float(np.interp(speed, corridor["speed"], corridor["lift"]))
-        pusher = float(np.interp(speed, corridor["speed"], corridor["pusher"]))
+        pusher = min(
+            float(pusher_max),
+            float(np.interp(speed, corridor["speed"], corridor["pusher"])),
+        )
         elevator = float(np.interp(speed, corridor["speed"], corridor["elevator"]))
         if stage:
             forward_position += speed * controller.dt
@@ -122,6 +129,8 @@ def main() -> None:
     parser.add_argument("--horizon-steps", type=int, default=30)
     parser.add_argument("--horizon-seconds", type=float, default=2.0)
     parser.add_argument("--pitch-disturbance", type=float, default=0.0)
+    parser.add_argument("--minimum-lambda", type=float, default=0.0)
+    parser.add_argument("--pusher-max", type=float, default=0.70)
     parser.add_argument(
         "--unmodeled-disturbance",
         action="store_true",
@@ -138,6 +147,10 @@ def main() -> None:
         help="print closed-loop simulation progress while the OCP is running",
     )
     args = parser.parse_args()
+    if not 0.0 <= args.minimum_lambda <= 1.0:
+        parser.error("--minimum-lambda must be in [0, 1]")
+    if not 0.0 < args.pusher_max <= 0.70:
+        parser.error("--pusher-max must be in (0, 0.70]")
     root = Path(__file__).resolve().parents[1]
     corridor = load_corridor(
         root / "results/standard_vtol_trim_corridor/trim_corridor.csv"
@@ -182,6 +195,8 @@ def main() -> None:
             corridor,
             args.target_speed,
             args.acceleration,
+            args.minimum_lambda,
+            args.pusher_max,
         )
         if not args.unmodeled_disturbance:
             prediction_parameters[:-1, 5] = disturbance_amplitude * (
@@ -229,6 +244,8 @@ def main() -> None:
         "horizon_seconds": args.horizon_seconds,
         "pitch_disturbance_amplitude_frd_rad_s2": float(disturbance_amplitude),
         "disturbance_estimated_by_ocp": not args.unmodeled_disturbance,
+        "minimum_lambda": args.minimum_lambda,
+        "pusher_max": args.pusher_max,
         "solver_failures": int(np.count_nonzero(statuses)),
         "max_altitude_error_m": float(np.max(np.abs(states[:, 2] - 30.0))),
         "max_vertical_speed_m_s": float(np.max(np.abs(states[:, 5]))),
@@ -243,7 +260,7 @@ def main() -> None:
         and metrics["max_vertical_speed_m_s"] <= 2.0
         and metrics["max_abs_pitch_deg"] <= 22.0
         and metrics["final_forward_speed_m_s"] >= 0.85 * args.target_speed
-        and metrics["final_lambda"] <= 0.10
+        and abs(metrics["final_lambda"] - args.minimum_lambda) <= 0.10
     )
     metrics["status"] = "PASS" if passed else "FAIL"
 

@@ -353,7 +353,7 @@ pravac.
 | ROS shadow | PASS |
 | live NMPC hover | PASS |
 | PX4 `lambda` kanal | build PASS; live `lambda=1` re-test slijedi |
-| L1 `lambda 1→0.8→1` | nije izveden |
+| L1 `lambda 1→0.8→1` | implementiran; offline PASS, live spreman |
 | puna front/back tranzicija | nije izvedena |
 
 Naredno:
