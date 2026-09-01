@@ -20,6 +20,11 @@ class TestStandardVtolL1Profile(unittest.TestCase):
             l2_hold_seconds=3.0,
             l2_min_lambda=0.5,
             l2_pusher_max=0.35,
+            l3_target_speed=10.5,
+            l3_acceleration=0.30,
+            l3_hold_seconds=4.0,
+            l3_min_lambda=0.35,
+            l3_pusher_max=0.42,
             max_state_age=0.20,
             active_state_stale_abort=0.45,
         )
@@ -77,9 +82,24 @@ class TestStandardVtolL1Profile(unittest.TestCase):
         lower, upper = StandardVtolRobustShadow._allocation_control_bounds(
             self.node, references
         )
-        self.assertAlmostEqual(lower[0, 5], 0.5)
+        self.assertAlmostEqual(lower[0, 5], 0.95)
         self.assertAlmostEqual(upper[0, 5], 1.0)
         self.assertAlmostEqual(upper[-1, 5], 0.55)
+
+    def test_l3_profile_and_allocation_bounds(self):
+        self.node.test_mode = "allocation_l3"
+        target, acceleration, hold, minimum, pusher = (
+            StandardVtolRobustShadow._allocation_configuration(self.node)
+        )
+        self.assertEqual((target, acceleration, hold, minimum, pusher),
+                         (10.5, 0.30, 4.0, 0.35, 0.42))
+        references = np.zeros((20, 6))
+        references[:, 5] = np.linspace(1.0, 0.35, 20)
+        lower, upper = StandardVtolRobustShadow._allocation_control_bounds(
+            self.node, references
+        )
+        self.assertAlmostEqual(lower[-1, 5], 0.35)
+        self.assertAlmostEqual(upper[-1, 5], 0.40)
 
 
 if __name__ == "__main__":

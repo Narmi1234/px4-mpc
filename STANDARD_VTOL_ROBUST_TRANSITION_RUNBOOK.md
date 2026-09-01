@@ -498,6 +498,34 @@ donja ostaje 0.50. Tačni live-layer offline test postiže `lambda=0.537`, 9.053
 m/s, 0.026 m visinske greške, povratak na nultu brzinu i nema solver failurea.
 Isti live L2 postupak ispod sada predstavlja L2b i mora proći prije L3.
 
+L2b je zatim prošao live. Sačuvani PX4 ULog `2026-09-01/20_17_02.ulg`
+potvrđuje 46.15 s Offboarda, 9.187 m/s ground speed, 9.219 m/s CAS, 0.319 m
+ukupnog raspona visine, 0.205 m/s maksimalne vertikalne brzine, bez Offboard
+signal loss ili invalid local position i uz MC stanje tokom cijelog intervala.
+
+### R4-L3a — međukorak prema dubokom transferu
+
+Direktni offline kandidat od 12 m/s i `lambda=0.2` nije pušten u let: exact
+live-layer simulacija je pri kočenju dala QP infeasibility, više od 2 m
+visinske greške i oko 20° pitcha. To je validan no-go rezultat, a ne razlog za
+popuštanje limita. Stabilni L3a kandidat je zato `0 -> 10.5 -> 0 m/s`,
+`lambda: 1 -> 0.35 -> 1`, ubrzanje 0.30 m/s² i pusher do 0.42. Offline daje
+10.334 m/s, `lambda=0.350`, 0.377 m visinske greške, 0.130 m/s vertikalne
+brzine, 8.29° pitcha, povratak na nultu brzinu i nula solver failurea.
+
+Offline prerequisite:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_allocation_l3_offline_gate.bash
+```
+
+Za live L3a Terminal 3 pokreće
+`standard_vtol_robust_l3_gate_launch.py`, a Terminal 4
+`scripts/run_robust_allocation_l3_gate.bash`. PX4 parametri su pusher max 0.42
+i isti allocation kanal kao u L2b. Tek L3a PASS otključava novi pokušaj
+12 m/s / `lambda=0.2`; puna L4 tranzicija ostaje zaključana do tada.
+
 **Go/no-go prema punoj tranziciji:** jedan L2 live pokušaj se analizira prije
 ponavljanja. Ako pokaže strukturirane pitch/altitude oscilacije ili ne može
 zadržati envelope bez popuštanja navedenih limita, trenutni model/interfejs se

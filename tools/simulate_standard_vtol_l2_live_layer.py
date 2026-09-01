@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Closed-loop check of the exact guarded L2 reference and output layer."""
+"""Closed-loop check of the exact guarded L2/L3 reference and output layer."""
+
+import argparse
 
 from types import MethodType, SimpleNamespace
 
@@ -16,13 +18,31 @@ from simulate_standard_vtol_robust_transition import rk4_step
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--level", type=int, choices=(2, 3), default=2)
+    parser.add_argument("--target-speed", type=float)
+    parser.add_argument("--acceleration", type=float)
+    parser.add_argument("--minimum-lambda", type=float)
+    parser.add_argument("--pusher-max", type=float)
+    args = parser.parse_args()
+    level = args.level
+    target_speed = args.target_speed or (12.0 if level == 3 else 9.0)
+    acceleration = args.acceleration or (0.35 if level == 3 else 0.4)
+    commanded_minimum_lambda = (
+        args.minimum_lambda
+        if args.minimum_lambda is not None
+        else 0.2 if level == 3 else 0.5
+    )
+    configured_pusher_max = args.pusher_max or (
+        0.50 if level == 3 else 0.35
+    )
     controller = StandardVtolRobustNmpc(
         horizon_steps=20,
         horizon_seconds=2.0,
         build_directory="build/standard_vtol_robust_nmpc_n20_tf2000ms",
     )
     gate = SimpleNamespace(
-        test_mode="allocation_l2",
+        test_mode=f"allocation_l{level}",
         controller=controller,
         l1_target_speed=5.0,
         l1_acceleration=0.4,
@@ -34,6 +54,11 @@ def main() -> None:
         l2_hold_seconds=3.0,
         l2_min_lambda=0.5,
         l2_pusher_max=0.35,
+        l3_target_speed=target_speed,
+        l3_acceleration=acceleration,
+        l3_hold_seconds=4.0,
+        l3_min_lambda=commanded_minimum_lambda,
+        l3_pusher_max=configured_pusher_max,
         reference_forward=np.array([1.0, 0.0]),
         reference_lateral=np.array([0.0, 1.0]),
     )
@@ -83,12 +108,23 @@ def main() -> None:
             control_upper_bounds=upper_bounds,
         )
         solver_failures += int(solution.status != 0)
+        if solution.status != 0:
+            print(f"first_solver_failure_time_s={elapsed}")
+            print(f"first_solver_failure_status={solution.status}")
+            print(f"first_solver_failure_speed_m_s={state[3]}")
+            print(f"first_solver_failure_lambda={command[5]}")
+            print(f"first_solver_failure_reference_m_s={gate._l1_speed_reference(elapsed)}")
+            break
         requested = (
             solution.control.copy()
             if solution.status == 0
             else command.copy()
         )
-        requested[5] = np.clip(requested[5], 0.5, 1.0)
+        minimum_command_lambda = commanded_minimum_lambda
+        pusher_max = configured_pusher_max
+        requested[5] = np.clip(
+            requested[5], minimum_command_lambda, 1.0
+        )
         base_lift = vertical_hover_lift(
             controller.model.plant,
             state[2] - 30.0,
@@ -98,7 +134,7 @@ def main() -> None:
             base_lift - controller.model.plant.hover_command
         ) / requested[5]
         requested[0] = np.clip(requested[0] + correction, 0.30, 0.70)
-        requested[1] = np.clip(requested[1], 0.0, 0.35)
+        requested[1] = np.clip(requested[1], 0.0, pusher_max)
         requested[2:5] = np.clip(
             np.array([0.40, 1.00, 0.40]) * requested[2:5],
             [-0.12, -0.18, -0.10],
@@ -148,19 +184,26 @@ def main() -> None:
         "final_forward_speed_m_s": state[3],
         "final_lambda": command[5],
     }
+    minimum_speed = target_speed - 1.0
+    altitude_limit = 1.2 if level == 3 else 1.0
+    vertical_speed_limit = 0.9 if level == 3 else 0.8
+    tilt_limit = 18.0 if level == 3 else 15.0
+    lambda_proof = commanded_minimum_lambda + 0.10
+    settle_speed = 0.7 if level == 3 else 0.5
     passed = (
         solver_failures == 0
-        and maxima[0] >= 8.0
-        and maxima[1] <= 1.0
-        and maxima[2] <= 0.8
-        and np.rad2deg(maxima[3]) <= 15.0
-        and minimum_lambda <= 0.60
-        and abs(state[3]) <= 0.5
+        and maxima[0] >= minimum_speed
+        and maxima[1] <= altitude_limit
+        and maxima[2] <= vertical_speed_limit
+        and np.rad2deg(maxima[3]) <= tilt_limit
+        and minimum_lambda <= lambda_proof
+        and abs(state[3]) <= settle_speed
         and command[5] >= 0.95
     )
     for key, value in metrics.items():
         print(f"{key}={value}")
-    print(f"ROBUST_ALLOCATION_L2_LIVE_LAYER={'PASS' if passed else 'FAIL'}")
+    result_name = f"ROBUST_ALLOCATION_L{level}_LIVE_LAYER"
+    print(f"{result_name}={'PASS' if passed else 'FAIL'}")
     raise SystemExit(0 if passed else 1)
 
 
