@@ -484,6 +484,20 @@ novi solve, a neprekidan prekid od 0.45 s i dalje automatski traži Position sa
 `odometry_stale_continuous`. Status prikazuje najveći uočeni razmak kao
 `maxima=[...,state_gap=...]`. Ostale L2 sigurnosne granice nisu promijenjene.
 
+Drugi live pokušaj istog dana stabilno je završio cijeli profil: 48.52 s
+Offboarda, 9.117 m/s ground speed, 9.239 m/s CAS, 0.202 m maksimalne visinske
+greške, 0.258 m cross-tracka i nula solver failurea. Formalno je bio FAIL samo
+zato što je slobodni optimizer izabrao minimalni `lambda=0.646`, dok L2 dokaz
+traži `lambda<=0.60`. PASS prag nije popušten. Ovaj rezultat je pokazao da
+referenca sama nije dovoljan dokaz prenosa authorityja.
+
+L2b zato postavlja vremenski promjenjive donje i gornje granice za `lambda`
+direktno kao OCP input constraints. NMPC i dalje bira `lambda` unutar koridora;
+to nije naknadna zamjena izlaza. Gornja granica je schedule `lambda + 0.05`, a
+donja ostaje 0.50. Tačni live-layer offline test postiže `lambda=0.537`, 9.053
+m/s, 0.026 m visinske greške, povratak na nultu brzinu i nema solver failurea.
+Isti live L2 postupak ispod sada predstavlja L2b i mora proći prije L3.
+
 **Go/no-go prema punoj tranziciji:** jedan L2 live pokušaj se analizira prije
 ponavljanja. Ako pokaže strukturirane pitch/altitude oscilacije ili ne može
 zadržati envelope bez popuštanja navedenih limita, trenutni model/interfejs se

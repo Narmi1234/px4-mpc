@@ -959,6 +959,23 @@ class StandardVtolRobustShadow(Node):
                 ]
         return x_ref, u_ref, parameters
 
+    def _allocation_control_bounds(self, u_ref: np.ndarray):
+        """Keep allocation inside the scheduled NMPC transition corridor."""
+        _, _, _, minimum_lambda, _ = self._allocation_configuration()
+        lower = np.tile(
+            np.array([0.0, 0.0, -0.45, -0.45, -0.30, minimum_lambda]),
+            (self.controller.N, 1),
+        )
+        upper = np.tile(
+            np.array([0.70, 0.70, 0.45, 0.45, 0.30, 1.0]),
+            (self.controller.N, 1),
+        )
+        # Lambda remains an NMPC decision, but it may not evade the requested
+        # authority-transfer experiment by staying arbitrarily close to one.
+        # The 0.05 band leaves optimization freedom around the slow schedule.
+        upper[:, 5] = np.clip(u_ref[:, 5] + 0.05, minimum_lambda, 1.0)
+        return lower, upper
+
     def _safety_reason(self) -> str | None:
         # State freshness is handled before solving in _update().  Rechecking
         # it here after a 15-30 ms solve caused false aborts whenever a sample
@@ -1072,8 +1089,19 @@ class StandardVtolRobustShadow(Node):
                 (self.controller.N + 1, self.controller.model.parameter_size)
             )
         try:
+            lower_bounds = None
+            upper_bounds = None
+            if self.test_mode in ("allocation_l1", "allocation_l2"):
+                lower_bounds, upper_bounds = self._allocation_control_bounds(
+                    u_ref
+                )
             solution = self.controller.solve(
-                self.state, x_ref, u_ref, parameters
+                self.state,
+                x_ref,
+                u_ref,
+                parameters,
+                control_lower_bounds=lower_bounds,
+                control_upper_bounds=upper_bounds,
             )
         except Exception as error:
             self.last_solver_status = -2

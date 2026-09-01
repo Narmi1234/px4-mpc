@@ -42,6 +42,7 @@ def main() -> None:
         "_l1_speed_reference",
         "_l1_total_seconds",
         "_l1_references",
+        "_allocation_control_bounds",
         "_forward_speed",
         "_cross_track",
     ):
@@ -64,6 +65,7 @@ def main() -> None:
     dynamics = controller.model.function()
     dt = 0.05
     maxima = np.zeros(5)
+    minimum_lambda = 1.0
     solver_failures = 0
     count = int(np.ceil(gate._l1_total_seconds() / dt))
 
@@ -71,7 +73,15 @@ def main() -> None:
         elapsed = index * dt
         gate.state = state
         x_ref, u_ref, parameters = gate._l1_references(elapsed)
-        solution = controller.solve(state, x_ref, u_ref, parameters)
+        lower_bounds, upper_bounds = gate._allocation_control_bounds(u_ref)
+        solution = controller.solve(
+            state,
+            x_ref,
+            u_ref,
+            parameters,
+            control_lower_bounds=lower_bounds,
+            control_upper_bounds=upper_bounds,
+        )
         solver_failures += int(solution.status != 0)
         requested = (
             solution.control.copy()
@@ -101,6 +111,7 @@ def main() -> None:
         if state[3] > gate._l1_speed_reference(elapsed) + 0.40:
             limited[1] = max(0.0, command[1] - 0.15 * dt)
         command = limited
+        minimum_lambda = min(minimum_lambda, float(command[5]))
         state = rk4_step(
             dynamics,
             state,
@@ -133,6 +144,7 @@ def main() -> None:
         "max_vertical_speed_m_s": maxima[2],
         "max_abs_pitch_deg": np.rad2deg(maxima[3]),
         "max_pusher": maxima[4],
+        "minimum_lambda": minimum_lambda,
         "final_forward_speed_m_s": state[3],
         "final_lambda": command[5],
     }
@@ -142,6 +154,7 @@ def main() -> None:
         and maxima[1] <= 1.0
         and maxima[2] <= 0.8
         and np.rad2deg(maxima[3]) <= 15.0
+        and minimum_lambda <= 0.60
         and abs(state[3]) <= 0.5
         and command[5] >= 0.95
     )

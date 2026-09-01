@@ -1,6 +1,8 @@
 from types import MethodType, SimpleNamespace
 import unittest
 
+import numpy as np
+
 from px4_mpc.standard_vtol_robust_shadow_node import StandardVtolRobustShadow
 
 
@@ -25,6 +27,7 @@ class TestStandardVtolL1Profile(unittest.TestCase):
             StandardVtolRobustShadow._allocation_configuration,
             self.node,
         )
+        self.node.controller = SimpleNamespace(N=20)
 
     def speed(self, elapsed):
         return StandardVtolRobustShadow._l1_speed_reference(
@@ -66,6 +69,17 @@ class TestStandardVtolL1Profile(unittest.TestCase):
         self.assertEqual(action(self.node, 0.201), "hold")
         self.assertEqual(action(self.node, 0.449), "hold")
         self.assertEqual(action(self.node, 0.450), "abort")
+
+    def test_l2_allocation_bounds_follow_reference_with_freedom(self):
+        self.node.test_mode = "allocation_l2"
+        references = np.zeros((20, 6))
+        references[:, 5] = np.linspace(1.0, 0.5, 20)
+        lower, upper = StandardVtolRobustShadow._allocation_control_bounds(
+            self.node, references
+        )
+        self.assertAlmostEqual(lower[0, 5], 0.5)
+        self.assertAlmostEqual(upper[0, 5], 1.0)
+        self.assertAlmostEqual(upper[-1, 5], 0.55)
 
 
 if __name__ == "__main__":

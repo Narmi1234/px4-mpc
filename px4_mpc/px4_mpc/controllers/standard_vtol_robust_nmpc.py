@@ -164,6 +164,8 @@ class StandardVtolRobustNmpc:
         state_references: np.ndarray,
         control_references: np.ndarray,
         parameters: np.ndarray,
+        control_lower_bounds: np.ndarray | None = None,
+        control_upper_bounds: np.ndarray | None = None,
     ) -> StandardVtolRobustNmpcSolution:
         """Solve one horizon and return the first command and prediction."""
         state = np.asarray(state, dtype=float).reshape(self.model.state_size)
@@ -177,9 +179,26 @@ class StandardVtolRobustNmpc:
         if parameter_values.shape != (self.N + 1, self.model.parameter_size):
             raise ValueError("parameters has wrong shape")
 
+        default_lower = np.array(
+            [0.0, 0.0, -0.45, -0.45, -0.30, 0.0]
+        )
+        default_upper = np.array(
+            [0.70, 0.70, 0.45, 0.45, 0.30, 1.0]
+        )
+        lower = self._stage_control_bounds(
+            control_lower_bounds, default_lower, "control_lower_bounds"
+        )
+        upper = self._stage_control_bounds(
+            control_upper_bounds, default_upper, "control_upper_bounds"
+        )
+        if np.any(lower > upper):
+            raise ValueError("control lower bounds exceed upper bounds")
+
         self.solver.set(0, "lbx", state)
         self.solver.set(0, "ubx", state)
         for stage in range(self.N):
+            self.solver.constraints_set(stage, "lbu", lower[stage])
+            self.solver.constraints_set(stage, "ubu", upper[stage])
             self.solver.set(stage, "yref", np.r_[x_ref[stage], u_ref[stage]])
             self.solver.set(stage, "p", parameter_values[stage])
             self.solver.set(stage, "x", x_ref[stage])
@@ -202,3 +221,19 @@ class StandardVtolRobustNmpc:
             controls=controls,
             solve_time=float(self.solver.get_stats("time_tot")),
         )
+
+    def _stage_control_bounds(
+        self, values: np.ndarray | None, defaults: np.ndarray, name: str
+    ) -> np.ndarray:
+        """Expand one control bound or validate an N-stage bound matrix."""
+        if values is None:
+            return np.tile(defaults, (self.N, 1))
+        bounds = np.asarray(values, dtype=float)
+        if bounds.shape == (self.model.control_size,):
+            return np.tile(bounds, (self.N, 1))
+        expected = (self.N, self.model.control_size)
+        if bounds.shape != expected:
+            raise ValueError(f"{name} must have shape {expected}")
+        if not np.all(np.isfinite(bounds)):
+            raise ValueError(f"{name} contains non-finite values")
+        return bounds.copy()
