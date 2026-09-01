@@ -16,6 +16,7 @@ def generate_launch_description():
                     {
                         "horizon_steps": 20,
                         "horizon_seconds": 2.0,
+                        "active_state_stale_abort_seconds": 0.45,
                         "allow_l2_output": True,
                         "l2_target_speed": 9.0,
                         "l2_acceleration": 0.4,

@@ -50,6 +50,7 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("horizon_steps", 20)
         self.declare_parameter("horizon_seconds", 2.0)
         self.declare_parameter("max_state_age_seconds", 0.20)
+        self.declare_parameter("active_state_stale_abort_seconds", 0.45)
         self.declare_parameter("allow_hover_output", False)
         self.declare_parameter("allow_l1_output", False)
         self.declare_parameter("allow_l2_output", False)
@@ -79,6 +80,16 @@ class StandardVtolRobustShadow(Node):
         self.max_state_age = float(
             self.get_parameter("max_state_age_seconds").value
         )
+        self.active_state_stale_abort = float(
+            self.get_parameter("active_state_stale_abort_seconds").value
+        )
+        if not (
+            self.max_state_age < self.active_state_stale_abort <= 0.75
+        ):
+            raise ValueError(
+                "active_state_stale_abort_seconds must be greater than "
+                "max_state_age_seconds and no greater than 0.75 seconds"
+            )
         self.allow_hover_output = bool(
             self.get_parameter("allow_hover_output").value
         )
@@ -180,6 +191,7 @@ class StandardVtolRobustShadow(Node):
         self.min_applied_lambda = 1.0
         self.max_pusher = 0.0
         self.max_airspeed = 0.0
+        self.max_state_gap = 0.0
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -401,6 +413,7 @@ class StandardVtolRobustShadow(Node):
         self.min_applied_lambda = 1.0
         self.max_pusher = 0.0
         self.max_airspeed = 0.0
+        self.max_state_gap = 0.0
         response.success = True
         response.message = "hover reference captured"
         return response
@@ -488,7 +501,8 @@ class StandardVtolRobustShadow(Node):
             f"altitude={self.max_altitude_error:.3f},"
             f"airspeed={self.max_airspeed:.3f},"
             f"pusher={self.max_pusher:.3f},"
-            f"min_lambda={self.min_applied_lambda:.3f}],"
+            f"min_lambda={self.min_applied_lambda:.3f},"
+            f"state_gap={self.max_state_gap:.3f}],"
             f"control={np.round(self.last_control, 4).tolist()},"
             f"published_control={np.round(self.published_control, 4).tolist()}"
         )
@@ -632,6 +646,7 @@ class StandardVtolRobustShadow(Node):
         self.min_applied_lambda = 1.0
         self.max_pusher = 0.0
         self.max_airspeed = 0.0
+        self.max_state_gap = 0.0
         response.success = True
         response.message = (
             "guarded L1 prestream started; MC-only 0->5->0 m/s, "
@@ -716,6 +731,7 @@ class StandardVtolRobustShadow(Node):
         self.min_applied_lambda = 1.0
         self.max_pusher = 0.0
         self.max_airspeed = 0.0
+        self.max_state_gap = 0.0
         response.success = True
         response.message = (
             "guarded L2 prestream started; MC-only 0->9->0 m/s, "
@@ -944,8 +960,11 @@ class StandardVtolRobustShadow(Node):
         return x_ref, u_ref, parameters
 
     def _safety_reason(self) -> str | None:
-        if self.state is None or self._state_age() > self.max_state_age:
-            return "odometry_stale"
+        # State freshness is handled before solving in _update().  Rechecking
+        # it here after a 15-30 ms solve caused false aborts whenever a sample
+        # was near the nominal age limit at the start of the timer callback.
+        if self.state is None:
+            return "odometry_missing"
         if (
             self.status_message is None
             or self.status_message.arming_state
@@ -991,6 +1010,14 @@ class StandardVtolRobustShadow(Node):
             return "solver_failure"
         return None
 
+    def _state_freshness_action(self, state_age: float) -> str:
+        """Select solve, bounded hold, or abort without using stale state."""
+        if state_age <= self.max_state_age:
+            return "solve"
+        if state_age < self.active_state_stale_abort:
+            return "hold"
+        return "abort"
+
     def _abort(self, reason: str) -> None:
         was_active = self.output_requested or self._offboard_active()
         if self.offboard_start_ns:
@@ -1006,13 +1033,28 @@ class StandardVtolRobustShadow(Node):
             )
 
     def _update(self) -> None:
-        if (
-            self.state is None
-            or self.reference is None
-            or self._state_age() > self.max_state_age
-        ):
+        if self.state is None:
             if self.output_requested or self._offboard_active():
-                self._abort("odometry_or_reference_stale")
+                self._abort("odometry_missing")
+            return
+        if self.reference is None:
+            if self.output_requested or self._offboard_active():
+                self._abort("reference_missing")
+            return
+        state_age = self._state_age()
+        self.max_state_gap = max(self.max_state_gap, state_age)
+        freshness_action = self._state_freshness_action(state_age)
+        if freshness_action != "solve":
+            if self.output_requested or self._offboard_active():
+                if self.ever_offboard and not self._offboard_active():
+                    self._abort("px4_left_offboard")
+                elif freshness_action == "abort":
+                    self._abort("odometry_stale_continuous")
+                else:
+                    # Preserve the Offboard heartbeat during one short ROS DDS
+                    # delivery gap.  The command is already slew- and
+                    # envelope-limited; no new NMPC solve uses stale state.
+                    self._publish_setpoint(self.published_control)
             return
         elapsed = 0.0
         if self.offboard_start_ns:

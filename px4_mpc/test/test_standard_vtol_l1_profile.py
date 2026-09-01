@@ -18,6 +18,8 @@ class TestStandardVtolL1Profile(unittest.TestCase):
             l2_hold_seconds=3.0,
             l2_min_lambda=0.5,
             l2_pusher_max=0.35,
+            max_state_age=0.20,
+            active_state_stale_abort=0.45,
         )
         self.node._allocation_configuration = MethodType(
             StandardVtolRobustShadow._allocation_configuration,
@@ -56,6 +58,14 @@ class TestStandardVtolL1Profile(unittest.TestCase):
         self.assertAlmostEqual(values[0], 0.0)
         self.assertLess(min(values), 0.0)
         self.assertGreaterEqual(min(values), -0.15)
+
+    def test_state_freshness_has_bounded_hold_window(self):
+        action = StandardVtolRobustShadow._state_freshness_action
+        self.assertEqual(action(self.node, 0.199), "solve")
+        self.assertEqual(action(self.node, 0.200), "solve")
+        self.assertEqual(action(self.node, 0.201), "hold")
+        self.assertEqual(action(self.node, 0.449), "hold")
+        self.assertEqual(action(self.node, 0.450), "abort")
 
 
 if __name__ == "__main__":

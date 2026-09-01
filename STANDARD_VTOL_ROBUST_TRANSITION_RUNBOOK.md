@@ -471,6 +471,19 @@ stanja, solver failure ili neaktivan allocation kanal. Konačni PASS dodatno
 traži najmanje 8 m/s ground i calibrated airspeed, `lambda<=0.60`, stvarni
 pusher i povratak ispod 0.5 m/s.
 
+Prvi live L2 pokušaj 1. septembra 2026. prekinuo je ROS watchdog poslije
+7.92 s sa `odometry_or_reference_stale`. ULog je pokazao da to nije bio pad
+modela ili regulatora: PX4 odometrija je imala najveći razmak 24 ms, nije bilo
+gubitka Offboard signala, maksimalna brzina bila je 2.97 m/s, visinski raspon
+0.156 m i maksimalna vertikalna brzina 0.164 m/s. Uzrok je bio dvostruki test
+starosti stanja, drugi nakon NMPC solvea od približno 15--25 ms.
+
+Od narednog pokušaja stanje svježije od 0.20 s ide u solver, prekid od
+0.20--0.45 s samo ponavlja posljednju već ograničenu sigurnu komandu i ne radi
+novi solve, a neprekidan prekid od 0.45 s i dalje automatski traži Position sa
+`odometry_stale_continuous`. Status prikazuje najveći uočeni razmak kao
+`maxima=[...,state_gap=...]`. Ostale L2 sigurnosne granice nisu promijenjene.
+
 **Go/no-go prema punoj tranziciji:** jedan L2 live pokušaj se analizira prije
 ponavljanja. Ako pokaže strukturirane pitch/altitude oscilacije ili ne može
 zadržati envelope bez popuštanja navedenih limita, trenutni model/interfejs se
