@@ -526,6 +526,11 @@ Za live L3a Terminal 3 pokreće
 i isti allocation kanal kao u L2b. Tek L3a PASS otključava novi pokušaj
 12 m/s / `lambda=0.2`; puna L4 tranzicija ostaje zaključana do tada.
 
+Ako L3a start vrati `airspeed_stream_unavailable_for_l3`, negativan CAS u
+mirnom hoveru sam po sebi nije kvar. Status sada ispisuje i `airspeed_age` te
+`airspeed_source`. Zbog povremenih DDS razmaka preflight dopušta svježu poruku
+do 0.75 s; `source=0` ili starost veća od 0.75 s i dalje blokiraju Offboard.
+
 **Go/no-go prema punoj tranziciji:** jedan L2 live pokušaj se analizira prije
 ponavljanja. Ako pokaže strukturirane pitch/altitude oscilacije ili ne može
 zadržati envelope bez popuštanja navedenih limita, trenutni model/interfejs se

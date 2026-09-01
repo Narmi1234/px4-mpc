@@ -17,6 +17,7 @@ def generate_launch_description():
                         "horizon_steps": 20,
                         "horizon_seconds": 2.0,
                         "active_state_stale_abort_seconds": 0.45,
+                        "max_airspeed_age_seconds": 0.75,
                         "allow_l3_output": True,
                         "l3_target_speed": 10.5,
                         "l3_acceleration": 0.30,

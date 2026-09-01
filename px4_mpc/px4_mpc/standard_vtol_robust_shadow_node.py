@@ -51,6 +51,7 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("horizon_seconds", 2.0)
         self.declare_parameter("max_state_age_seconds", 0.20)
         self.declare_parameter("active_state_stale_abort_seconds", 0.45)
+        self.declare_parameter("max_airspeed_age_seconds", 0.75)
         self.declare_parameter("allow_hover_output", False)
         self.declare_parameter("allow_l1_output", False)
         self.declare_parameter("allow_l2_output", False)
@@ -89,6 +90,9 @@ class StandardVtolRobustShadow(Node):
         self.active_state_stale_abort = float(
             self.get_parameter("active_state_stale_abort_seconds").value
         )
+        self.max_airspeed_age = float(
+            self.get_parameter("max_airspeed_age_seconds").value
+        )
         if not (
             self.max_state_age < self.active_state_stale_abort <= 0.75
         ):
@@ -96,6 +100,8 @@ class StandardVtolRobustShadow(Node):
                 "active_state_stale_abort_seconds must be greater than "
                 "max_state_age_seconds and no greater than 0.75 seconds"
             )
+        if not 0.5 <= self.max_airspeed_age <= 1.0:
+            raise ValueError("max_airspeed_age_seconds must be in [0.5, 1.0]")
         self.allow_hover_output = bool(
             self.get_parameter("allow_hover_output").value
         )
@@ -408,6 +414,15 @@ class StandardVtolRobustShadow(Node):
             return math.nan
         return float(self.airspeed.calibrated_airspeed_m_s)
 
+    def _airspeed_stream_ready(self) -> bool:
+        return (
+            self.airspeed is not None
+            and self._airspeed_age() <= self.max_airspeed_age
+            and np.isfinite(self._calibrated_airspeed())
+            and self.airspeed.airspeed_source
+            != AirspeedValidated.SOURCE_DISABLED
+        )
+
     @staticmethod
     def _yaw(quaternion: np.ndarray) -> float:
         qw, qx, qy, qz = quaternion
@@ -503,6 +518,12 @@ class StandardVtolRobustShadow(Node):
             else math.nan
         )
         calibrated_airspeed = self._calibrated_airspeed()
+        airspeed_age = self._airspeed_age()
+        airspeed_source = (
+            int(self.airspeed.airspeed_source)
+            if self.airspeed is not None
+            else -1
+        )
         if self.allocation_status is None:
             allocation = "unavailable"
         else:
@@ -539,7 +560,9 @@ class StandardVtolRobustShadow(Node):
             f"allocation=[{allocation}],"
             f"motion=[forward_speed={forward_speed:.3f},"
             f"cross_track={cross_track:.3f},"
-            f"airspeed={calibrated_airspeed:.3f}],"
+            f"airspeed={calibrated_airspeed:.3f},"
+            f"airspeed_age={airspeed_age:.3f}s,"
+            f"airspeed_source={airspeed_source}],"
             f"maxima=[forward_speed={self.max_forward_speed:.3f},"
             f"cross_track={self.max_cross_track:.3f},"
             f"altitude={self.max_altitude_error:.3f},"
@@ -750,15 +773,18 @@ class StandardVtolRobustShadow(Node):
             response.success = False
             response.message = "vehicle_not_in_mc_mode"
             return response
-        if (
-            self.airspeed is None
-            or self._airspeed_age() > 0.5
-            or not np.isfinite(self._calibrated_airspeed())
-            or self.airspeed.airspeed_source
-            == AirspeedValidated.SOURCE_DISABLED
-        ):
+        if not self._airspeed_stream_ready():
             response.success = False
-            response.message = f"airspeed_stream_unavailable_for_l{level}"
+            source = (
+                int(self.airspeed.airspeed_source)
+                if self.airspeed is not None
+                else -1
+            )
+            response.message = (
+                f"airspeed_stream_unavailable_for_l{level}:"
+                f"age={self._airspeed_age():.3f}s,source={source},"
+                f"cas={self._calibrated_airspeed():.3f}"
+            )
             return response
         if self._offboard_active():
             response.success = False
@@ -1125,7 +1151,7 @@ class StandardVtolRobustShadow(Node):
             != VtolVehicleStatus.VEHICLE_VTOL_STATE_MC
         ):
             return f"{label}_left_mc_mode"
-        if (l2 or l3) and self._airspeed_age() > 0.5:
+        if (l2 or l3) and self._airspeed_age() > self.max_airspeed_age:
             return f"{label}_airspeed_stale"
         if (
             (l2 or l3)
