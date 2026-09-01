@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 import unittest
 
 from px4_mpc.standard_vtol_robust_shadow_node import StandardVtolRobustShadow
@@ -7,9 +7,21 @@ from px4_mpc.standard_vtol_robust_shadow_node import StandardVtolRobustShadow
 class TestStandardVtolL1Profile(unittest.TestCase):
     def setUp(self):
         self.node = SimpleNamespace(
+            test_mode="allocation_l1",
             l1_target_speed=5.0,
             l1_acceleration=0.4,
             l1_hold_seconds=3.0,
+            l1_min_lambda=0.8,
+            l1_pusher_max=0.25,
+            l2_target_speed=9.0,
+            l2_acceleration=0.4,
+            l2_hold_seconds=3.0,
+            l2_min_lambda=0.5,
+            l2_pusher_max=0.35,
+        )
+        self.node._allocation_configuration = MethodType(
+            StandardVtolRobustShadow._allocation_configuration,
+            self.node,
         )
 
     def speed(self, elapsed):
@@ -28,6 +40,22 @@ class TestStandardVtolL1Profile(unittest.TestCase):
     def test_total_includes_three_second_settle(self):
         duration = StandardVtolRobustShadow._l1_total_seconds(self.node)
         self.assertAlmostEqual(duration, 29.5)
+
+    def test_l2_profile_and_four_second_settle(self):
+        self.node.test_mode = "allocation_l2"
+        self.assertAlmostEqual(self.speed(11.0), 4.0)
+        self.assertAlmostEqual(self.speed(23.5), 9.0)
+        self.assertAlmostEqual(self.speed(28.0), 8.25)
+        self.assertAlmostEqual(self.speed(44.5), 0.0)
+        duration = StandardVtolRobustShadow._l1_total_seconds(self.node)
+        self.assertAlmostEqual(duration, 48.5)
+
+    def test_l2_pitch_corridor_is_bounded(self):
+        pitch = StandardVtolRobustShadow._l2_pitch_reference
+        values = [pitch(speed, 9.0) for speed in range(10)]
+        self.assertAlmostEqual(values[0], 0.0)
+        self.assertLess(min(values), 0.0)
+        self.assertGreaterEqual(min(values), -0.15)
 
 
 if __name__ == "__main__":

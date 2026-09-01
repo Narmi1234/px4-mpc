@@ -52,12 +52,18 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("max_state_age_seconds", 0.20)
         self.declare_parameter("allow_hover_output", False)
         self.declare_parameter("allow_l1_output", False)
+        self.declare_parameter("allow_l2_output", False)
         self.declare_parameter("hover_test_seconds", 5.0)
         self.declare_parameter("l1_target_speed", 5.0)
         self.declare_parameter("l1_acceleration", 0.4)
         self.declare_parameter("l1_hold_seconds", 3.0)
         self.declare_parameter("l1_min_lambda", 0.8)
         self.declare_parameter("l1_pusher_max", 0.25)
+        self.declare_parameter("l2_target_speed", 9.0)
+        self.declare_parameter("l2_acceleration", 0.4)
+        self.declare_parameter("l2_hold_seconds", 3.0)
+        self.declare_parameter("l2_min_lambda", 0.5)
+        self.declare_parameter("l2_pusher_max", 0.35)
         horizon_steps = int(self.get_parameter("horizon_steps").value)
         horizon_seconds = float(self.get_parameter("horizon_seconds").value)
         root = Path(__file__).resolve().parents[2]
@@ -79,7 +85,14 @@ class StandardVtolRobustShadow(Node):
         self.allow_l1_output = bool(
             self.get_parameter("allow_l1_output").value
         )
-        self.allow_output = self.allow_hover_output or self.allow_l1_output
+        self.allow_l2_output = bool(
+            self.get_parameter("allow_l2_output").value
+        )
+        self.allow_output = (
+            self.allow_hover_output
+            or self.allow_l1_output
+            or self.allow_l2_output
+        )
         self.hover_test_seconds = float(
             self.get_parameter("hover_test_seconds").value
         )
@@ -108,12 +121,36 @@ class StandardVtolRobustShadow(Node):
             and 0.05 <= self.l1_pusher_max <= 0.25
         ):
             raise ValueError("L1 parameters exceed the guarded envelope")
+        self.l2_target_speed = float(
+            self.get_parameter("l2_target_speed").value
+        )
+        self.l2_acceleration = float(
+            self.get_parameter("l2_acceleration").value
+        )
+        self.l2_hold_seconds = float(
+            self.get_parameter("l2_hold_seconds").value
+        )
+        self.l2_min_lambda = float(
+            self.get_parameter("l2_min_lambda").value
+        )
+        self.l2_pusher_max = float(
+            self.get_parameter("l2_pusher_max").value
+        )
+        if not (
+            8.0 <= self.l2_target_speed <= 10.0
+            and 0.2 <= self.l2_acceleration <= 0.4
+            and 2.0 <= self.l2_hold_seconds <= 5.0
+            and 0.5 <= self.l2_min_lambda <= 0.7
+            and 0.25 <= self.l2_pusher_max <= 0.35
+        ):
+            raise ValueError("L2 parameters exceed the guarded envelope")
         self.state: np.ndarray | None = None
         self.surface_state = np.zeros(3)
         self.reference: np.ndarray | None = None
         self.status_message: VehicleStatus | None = None
         self.vtol_status: VtolVehicleStatus | None = None
         self.airspeed: AirspeedValidated | None = None
+        self.airspeed_received_ns = 0
         self.state_received_ns = 0
         self.last_update_ns = 0
         self.last_control = self.controller.model.hover_control()
@@ -142,6 +179,7 @@ class StandardVtolRobustShadow(Node):
         self.max_altitude_error = 0.0
         self.min_applied_lambda = 1.0
         self.max_pusher = 0.0
+        self.max_airspeed = 0.0
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -211,6 +249,11 @@ class StandardVtolRobustShadow(Node):
         )
         self.create_service(
             Trigger,
+            "/standard_vtol_robust_shadow/enable_allocation_l2",
+            self._enable_allocation_l2,
+        )
+        self.create_service(
+            Trigger,
             "/standard_vtol_robust_shadow/disable",
             self._disable_output,
         )
@@ -234,7 +277,12 @@ class StandardVtolRobustShadow(Node):
                 qos,
             )
         self.create_timer(0.05, self._update)
-        if self.allow_l1_output:
+        if self.allow_l2_output:
+            self.get_logger().info(
+                "Robust Standard VTOL NMPC started in guarded L2 allocation "
+                "mode (9 m/s, lambda >= 0.5, MC only)"
+            )
+        elif self.allow_l1_output:
             self.get_logger().info(
                 "Robust Standard VTOL NMPC started in guarded L1 allocation "
                 "mode (5 m/s, lambda >= 0.8, MC only)"
@@ -262,6 +310,7 @@ class StandardVtolRobustShadow(Node):
 
     def _airspeed_status(self, message: AirspeedValidated) -> None:
         self.airspeed = message
+        self.airspeed_received_ns = self.get_clock().now().nanoseconds
 
     def _odometry(self, message: VehicleOdometry) -> None:
         if message.pose_frame != VehicleOdometry.POSE_FRAME_NED:
@@ -291,6 +340,18 @@ class StandardVtolRobustShadow(Node):
         return (
             self.get_clock().now().nanoseconds - self.state_received_ns
         ) * 1.0e-9
+
+    def _airspeed_age(self) -> float:
+        if self.airspeed_received_ns == 0:
+            return math.inf
+        return (
+            self.get_clock().now().nanoseconds - self.airspeed_received_ns
+        ) * 1.0e-9
+
+    def _calibrated_airspeed(self) -> float:
+        if self.airspeed is None:
+            return math.nan
+        return float(self.airspeed.calibrated_airspeed_m_s)
 
     @staticmethod
     def _yaw(quaternion: np.ndarray) -> float:
@@ -339,6 +400,7 @@ class StandardVtolRobustShadow(Node):
         self.max_altitude_error = 0.0
         self.min_applied_lambda = 1.0
         self.max_pusher = 0.0
+        self.max_airspeed = 0.0
         response.success = True
         response.message = "hover reference captured"
         return response
@@ -384,11 +446,7 @@ class StandardVtolRobustShadow(Node):
             if self.state is not None and self.reference is not None
             else math.nan
         )
-        calibrated_airspeed = (
-            float(self.airspeed.calibrated_airspeed_m_s)
-            if self.airspeed is not None
-            else math.nan
-        )
+        calibrated_airspeed = self._calibrated_airspeed()
         if self.allocation_status is None:
             allocation = "unavailable"
         else:
@@ -428,6 +486,7 @@ class StandardVtolRobustShadow(Node):
             f"maxima=[forward_speed={self.max_forward_speed:.3f},"
             f"cross_track={self.max_cross_track:.3f},"
             f"altitude={self.max_altitude_error:.3f},"
+            f"airspeed={self.max_airspeed:.3f},"
             f"pusher={self.max_pusher:.3f},"
             f"min_lambda={self.min_applied_lambda:.3f}],"
             f"control={np.round(self.last_control, 4).tolist()},"
@@ -572,10 +631,95 @@ class StandardVtolRobustShadow(Node):
         self.max_altitude_error = 0.0
         self.min_applied_lambda = 1.0
         self.max_pusher = 0.0
+        self.max_airspeed = 0.0
         response.success = True
         response.message = (
             "guarded L1 prestream started; MC-only 0->5->0 m/s, "
             "lambda 1->0.8->1, then Position"
+        )
+        return response
+
+    def _enable_allocation_l2(self, _request, response):
+        if not self.allow_l2_output:
+            response.success = False
+            response.message = "launch guarded L2 allocation mode first"
+            return response
+        if self.state is None or self._state_age() > self.max_state_age:
+            response.success = False
+            response.message = "odometry_stale"
+            return response
+        if self.reference is None:
+            response.success = False
+            response.message = "capture_hover_reference_first"
+            return response
+        p99 = (
+            float(np.percentile(self.solve_times_ms, 99))
+            if self.solve_times_ms
+            else math.inf
+        )
+        if (
+            self.solve_count < self.warmup_solve_count
+            or self.last_solver_status != 0
+            or self.solver_failures != 0
+            or p99 > 40.0
+        ):
+            response.success = False
+            response.message = "solver_not_warmed_or_realtime_unready"
+            return response
+        if (
+            self.status_message is None
+            or self.status_message.arming_state
+            != VehicleStatus.ARMING_STATE_ARMED
+        ):
+            response.success = False
+            response.message = "vehicle_not_armed"
+            return response
+        if (
+            self.vtol_status is None
+            or self.vtol_status.vehicle_vtol_state
+            != VtolVehicleStatus.VEHICLE_VTOL_STATE_MC
+        ):
+            response.success = False
+            response.message = "vehicle_not_in_mc_mode"
+            return response
+        if (
+            self.airspeed is None
+            or self._airspeed_age() > 0.5
+            or not np.isfinite(self._calibrated_airspeed())
+            or self.airspeed.airspeed_source
+            == AirspeedValidated.SOURCE_DISABLED
+        ):
+            response.success = False
+            response.message = "airspeed_stream_unavailable_for_l2"
+            return response
+        if self._offboard_active():
+            response.success = False
+            response.message = "vehicle_already_offboard"
+            return response
+        if abs(self.state[5]) > 0.15 or np.linalg.norm(self.state[3:5]) > 0.5:
+            response.success = False
+            response.message = "vehicle_not_settled_for_l2"
+            return response
+        self.output_requested = True
+        self.test_mode = "allocation_l2"
+        self.ever_offboard = False
+        self.prestream_count = 0
+        self.offboard_start_ns = 0
+        self.last_offboard_duration = 0.0
+        self.abort_reason = "none"
+        self.published_control = self.controller.model.hover_control()
+        self.allocation_ever_active = False
+        self.allocation_ever_valid = False
+        self.max_forward_speed = 0.0
+        self.max_cross_track = 0.0
+        self.max_altitude_error = 0.0
+        self.min_applied_lambda = 1.0
+        self.max_pusher = 0.0
+        self.max_airspeed = 0.0
+        response.success = True
+        response.message = (
+            "guarded L2 prestream started; MC-only 0->9->0 m/s, "
+            "lambda 1->0.5->1, then Position"
         )
         return response
 
@@ -645,32 +789,73 @@ class StandardVtolRobustShadow(Node):
             np.dot(self.state[0:2] - self.reference[0:2], self.reference_lateral)
         )
 
+    def _allocation_configuration(self):
+        if getattr(self, "test_mode", "allocation_l1") == "allocation_l2":
+            return (
+                self.l2_target_speed,
+                self.l2_acceleration,
+                self.l2_hold_seconds,
+                self.l2_min_lambda,
+                self.l2_pusher_max,
+            )
+        return (
+            self.l1_target_speed,
+            self.l1_acceleration,
+            self.l1_hold_seconds,
+            self.l1_min_lambda,
+            self.l1_pusher_max,
+        )
+
     def _l1_speed_reference(self, elapsed: float) -> float:
+        target_speed, acceleration, hold_seconds, _, _ = (
+            self._allocation_configuration()
+        )
         start_delay = 1.0
-        accelerate = self.l1_target_speed / self.l1_acceleration
+        accelerate = target_speed / acceleration
         brake_rate = 0.5
-        brake = self.l1_target_speed / brake_rate
+        brake = target_speed / brake_rate
         time = max(0.0, float(elapsed) - start_delay)
         if time < accelerate:
-            return self.l1_acceleration * time
+            return acceleration * time
         time -= accelerate
-        if time < self.l1_hold_seconds:
-            return self.l1_target_speed
-        time -= self.l1_hold_seconds
+        if time < hold_seconds:
+            return target_speed
+        time -= hold_seconds
         if time < brake:
-            return self.l1_target_speed - brake_rate * time
+            return target_speed - brake_rate * time
         return 0.0
 
     def _l1_total_seconds(self) -> float:
+        target_speed, acceleration, hold_seconds, _, _ = (
+            self._allocation_configuration()
+        )
         return (
             1.0
-            + self.l1_target_speed / self.l1_acceleration
-            + self.l1_hold_seconds
-            + self.l1_target_speed / 0.5
-            + 3.0
+            + target_speed / acceleration
+            + hold_seconds
+            + target_speed / 0.5
+            + (4.0 if getattr(self, "test_mode", "") == "allocation_l2" else 3.0)
         )
 
+    @staticmethod
+    def _yaw_pitch_quaternion(yaw: float, pitch: float) -> np.ndarray:
+        cy, sy = math.cos(0.5 * yaw), math.sin(0.5 * yaw)
+        cp, sp = math.cos(0.5 * pitch), math.sin(0.5 * pitch)
+        return np.array([cy * cp, -sy * sp, cy * sp, sy * cp])
+
+    @staticmethod
+    def _l2_pitch_reference(speed: float, target_speed: float) -> float:
+        nodes = target_speed / 15.0 * np.array(
+            [0.0, 4.0, 7.0, 9.0, 12.0, 15.0]
+        )
+        degrees = np.array([0.0, -3.0, -6.0, -8.0, -4.0, -1.36])
+        return float(np.deg2rad(np.interp(speed, nodes, degrees)))
+
     def _l1_references(self, elapsed: float):
+        target_speed, _, _, minimum_lambda, pusher_max = (
+            self._allocation_configuration()
+        )
+        l2 = self.test_mode == "allocation_l2"
         x_ref = np.zeros(
             (self.controller.N + 1, self.controller.model.state_size)
         )
@@ -682,8 +867,40 @@ class StandardVtolRobustShadow(Node):
         )
         along = float(np.dot(self.state[0:2], self.reference_forward))
         cross_origin = float(np.dot(self.reference[0:2], self.reference_lateral))
-        level_quaternion = self.reference[6:10]
+        yaw = self._yaw(self.reference[6:10])
         hover = self.controller.model.plant.hover_command
+        corridor_speed = np.arange(10.0)
+        corridor_lift = np.array(
+            [
+                0.520119535,
+                0.515250356,
+                0.493080651,
+                0.459032148,
+                0.435379671,
+                0.435132797,
+                0.397462199,
+                0.349616361,
+                0.280231964,
+                0.186055563,
+            ]
+        )
+        corridor_pusher = np.array(
+            [
+                0.0,
+                0.246113549,
+                0.338041363,
+                0.354536687,
+                0.323434863,
+                0.290171366,
+                0.290014802,
+                0.289258326,
+                0.288015620,
+                0.282533714,
+            ]
+        )
+        corridor_elevator = np.deg2rad(
+            [0.0, 0.0, 0.0, 0.0, 0.0, 43.3170, 43.4304, 43.2066, 44.2501, 43.8752]
+        )
         for stage in range(self.controller.N + 1):
             stage_time = elapsed + stage * self.controller.dt
             speed = self._l1_speed_reference(stage_time)
@@ -697,13 +914,28 @@ class StandardVtolRobustShadow(Node):
                 position_xy[0], position_xy[1], self.reference[2]
             ]
             x_ref[stage, 3:5] = speed * self.reference_forward
-            x_ref[stage, 6:10] = level_quaternion
+            pitch = self._l2_pitch_reference(speed, target_speed) if l2 else 0.0
+            x_ref[stage, 6:10] = self._yaw_pitch_quaternion(yaw, pitch)
             if stage < self.controller.N:
-                fraction = speed / self.l1_target_speed
-                allocation = 1.0 - (1.0 - self.l1_min_lambda) * fraction
+                fraction = speed / target_speed
+                allocation = 1.0 - (1.0 - minimum_lambda) * fraction
+                if l2:
+                    lift = float(np.interp(speed, corridor_speed, corridor_lift))
+                    collective = np.clip(lift / allocation, 0.0, 0.68)
+                    pusher = min(
+                        pusher_max,
+                        float(np.interp(speed, corridor_speed, corridor_pusher)),
+                    )
+                    elevator = float(
+                        np.interp(speed, corridor_speed, corridor_elevator)
+                    )
+                    x_ref[stage, 15] = (1.0 - allocation) * elevator
+                else:
+                    collective = np.clip(hover / allocation, 0.0, 0.68)
+                    pusher = pusher_max * fraction
                 u_ref[stage] = [
-                    np.clip(hover / allocation, 0.0, 0.68),
-                    self.l1_pusher_max * fraction,
+                    collective,
+                    pusher,
                     0.0,
                     0.0,
                     0.0,
@@ -722,29 +954,39 @@ class StandardVtolRobustShadow(Node):
             return "vehicle_not_armed"
         if self.reference is None:
             return "reference_missing"
-        l1 = self.test_mode == "allocation_l1"
-        if abs(self.state[2] - self.reference[2]) > (0.75 if l1 else 0.50):
+        allocation_gate = self.test_mode in (
+            "allocation_l1", "allocation_l2"
+        )
+        l2 = self.test_mode == "allocation_l2"
+        altitude_limit = 1.0 if l2 else (0.75 if allocation_gate else 0.50)
+        vertical_speed_limit = 0.8 if l2 else (0.65 if allocation_gate else 0.50)
+        if abs(self.state[2] - self.reference[2]) > altitude_limit:
             return "altitude_error"
-        if abs(self.state[5]) > (0.65 if l1 else 0.50):
+        if abs(self.state[5]) > vertical_speed_limit:
             return "vertical_speed_limit"
         if (
-            not l1
+            not allocation_gate
             and np.linalg.norm(self.state[0:2] - self.reference[0:2]) > 0.75
         ):
             return "horizontal_position_error"
-        if not l1 and np.linalg.norm(self.state[3:5]) > 0.75:
+        if not allocation_gate and np.linalg.norm(self.state[3:5]) > 0.75:
             return "horizontal_speed_limit"
-        if l1 and self._forward_speed() > self.l1_target_speed + 0.8:
-            return "l1_forward_speed_limit"
-        if l1 and abs(self._cross_track()) > 1.5:
-            return "l1_cross_track_limit"
-        if self._tilt_degrees() > (12.0 if l1 else 10.0):
+        target_speed, _, _, _, _ = self._allocation_configuration()
+        if allocation_gate and self._forward_speed() > target_speed + (1.0 if l2 else 0.8):
+            return f"{'l2' if l2 else 'l1'}_forward_speed_limit"
+        if allocation_gate and abs(self._cross_track()) > (2.0 if l2 else 1.5):
+            return f"{'l2' if l2 else 'l1'}_cross_track_limit"
+        if self._tilt_degrees() > (15.0 if l2 else (12.0 if allocation_gate else 10.0)):
             return "tilt_limit"
-        if l1 and self.vtol_status is not None and (
+        if allocation_gate and self.vtol_status is not None and (
             self.vtol_status.vehicle_vtol_state
             != VtolVehicleStatus.VEHICLE_VTOL_STATE_MC
         ):
-            return "l1_left_mc_mode"
+            return f"{'l2' if l2 else 'l1'}_left_mc_mode"
+        if l2 and self._airspeed_age() > 0.5:
+            return "l2_airspeed_stale"
+        if l2 and self._forward_speed() > 3.0 and self._calibrated_airspeed() < 0.0:
+            return "l2_airspeed_invalid"
         if self.solver_failures > 0 or self.last_solver_status != 0:
             return "solver_failure"
         return None
@@ -777,7 +1019,7 @@ class StandardVtolRobustShadow(Node):
             elapsed = (
                 self.get_clock().now().nanoseconds - self.offboard_start_ns
             ) * 1.0e-9
-        if self.test_mode == "allocation_l1":
+        if self.test_mode in ("allocation_l1", "allocation_l2"):
             x_ref, u_ref, parameters = self._l1_references(elapsed)
         else:
             x_ref = np.tile(self.reference, (self.controller.N + 1, 1))
@@ -865,27 +1107,36 @@ class StandardVtolRobustShadow(Node):
         if self.offboard_start_ns == 0:
             self.offboard_start_ns = now_ns
         elapsed = (now_ns - self.offboard_start_ns) * 1.0e-9
-        if (
-            self.test_mode == "allocation_l1"
-            and elapsed >= self._l1_total_seconds()
-        ):
-            if self.max_forward_speed < 4.0:
-                self._abort("l1_insufficient_forward_speed")
-            elif self.max_pusher < 0.05:
-                self._abort("l1_pusher_not_exercised")
-            elif self.min_applied_lambda > 0.90:
-                self._abort("l1_allocation_not_exercised")
+        allocation_gate = self.test_mode in (
+            "allocation_l1", "allocation_l2"
+        )
+        l2 = self.test_mode == "allocation_l2"
+        if allocation_gate and elapsed >= self._l1_total_seconds():
+            if self.max_forward_speed < (8.0 if l2 else 4.0):
+                self._abort(f"{'l2' if l2 else 'l1'}_insufficient_forward_speed")
+            elif l2 and self.max_airspeed < 8.0:
+                self._abort("l2_insufficient_airspeed")
+            elif self.max_pusher < (0.10 if l2 else 0.05):
+                self._abort(f"{'l2' if l2 else 'l1'}_pusher_not_exercised")
+            elif self.min_applied_lambda > (0.60 if l2 else 0.90):
+                self._abort(f"{'l2' if l2 else 'l1'}_allocation_not_exercised")
+            elif l2 and abs(self._forward_speed()) > 0.5:
+                self._abort("l2_did_not_settle")
             else:
-                self._abort("allocation_l1_test_timeout")
+                self._abort(
+                    "allocation_l2_test_timeout"
+                    if l2
+                    else "allocation_l1_test_timeout"
+                )
             return
         if (
-            self.test_mode != "allocation_l1"
+            not allocation_gate
             and elapsed >= self.hover_test_seconds
         ):
             self._abort("robust_hover_test_timeout")
             return
 
-        if self.test_mode == "allocation_l1":
+        if allocation_gate:
             if elapsed > 1.0 and (
                 self.allocation_status is None
                 or not self.allocation_status.active
@@ -894,20 +1145,38 @@ class StandardVtolRobustShadow(Node):
                 self._abort("allocation_channel_inactive")
                 return
             requested = self.last_control.copy()
-            requested[5] = np.clip(requested[5], self.l1_min_lambda, 1.0)
+            _, _, _, minimum_lambda, pusher_max = (
+                self._allocation_configuration()
+            )
+            requested[5] = np.clip(requested[5], minimum_lambda, 1.0)
             altitude_error = self.state[2] - self.reference[2]
             base_lift = vertical_hover_lift(
                 self.controller.model.plant,
                 altitude_error,
                 self.state[5],
             )
-            requested[0] = np.clip(base_lift / requested[5], 0.48, 0.68)
-            requested[1] = np.clip(requested[1], 0.0, self.l1_pusher_max)
-            requested[2:5] = np.clip(
-                np.array([0.35, 0.50, 0.35]) * requested[2:5],
-                [-0.10, -0.12, -0.08],
-                [0.10, 0.12, 0.08],
-            )
+            if l2:
+                correction = (
+                    base_lift - self.controller.model.plant.hover_command
+                ) / requested[5]
+                requested[0] = np.clip(
+                    requested[0] + correction, 0.30, 0.70
+                )
+                requested[2:5] = np.clip(
+                    np.array([0.40, 1.00, 0.40]) * requested[2:5],
+                    [-0.12, -0.18, -0.10],
+                    [0.12, 0.18, 0.10],
+                )
+            else:
+                requested[0] = np.clip(
+                    base_lift / requested[5], 0.48, 0.68
+                )
+                requested[2:5] = np.clip(
+                    np.array([0.35, 0.50, 0.35]) * requested[2:5],
+                    [-0.10, -0.12, -0.08],
+                    [0.10, 0.12, 0.08],
+                )
+            requested[1] = np.clip(requested[1], 0.0, pusher_max)
             slew = np.array([0.10, 0.05, 0.20, 0.20, 0.15, 0.05])
             limited = self.published_control + np.clip(
                 requested - self.published_control,
@@ -935,6 +1204,11 @@ class StandardVtolRobustShadow(Node):
             self.max_pusher = max(
                 self.max_pusher, float(self.published_control[1])
             )
+            calibrated_airspeed = self._calibrated_airspeed()
+            if np.isfinite(calibrated_airspeed):
+                self.max_airspeed = max(
+                    self.max_airspeed, calibrated_airspeed
+                )
             if self.allocation_status is not None:
                 self.min_applied_lambda = min(
                     self.min_applied_lambda,

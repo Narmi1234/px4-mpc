@@ -400,3 +400,80 @@ bio aktivan tokom testa.
 Ovaj rezultat ne predstavlja punu front transition: lift motori nisu ugašeni
 i `lambda` nije išla ispod 0.8. On je prihvaćeni eksperimentalni checkpoint
 prije L2 (`lambda>=0.5`, veća brzina).
+
+### R4-L2 — 9 m/s i 50% authority transfer
+
+L2 ostaje u MC stanju, ali prvi put traži značajan wing-borne doprinos:
+`0 -> 9 -> 0 m/s`, `lambda: 1 -> 0.5 -> 1`, pusher do 0.35. Za razliku od L1,
+live referenca koristi identificirani pitch/trim corridor i validan airspeed
+stream. Nema PX4 transition komande niti gašenja lift motora.
+
+Offline kandidat je prošao sa 8.991 m/s, `lambda=0.524`, max visinskom greškom
+0.073 m, max pitchom 7.21° i bez solver failurea. Simulacija tačnog live
+safety sloja također prolazi: 9.05 m/s, 0.026 m visinske greške, 7.73° pitch,
+povratak na 0 m/s i `lambda=1`.
+
+Offline provjera:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_allocation_l2_offline_gate.bash
+```
+
+Mora završiti sa `ROBUST_ALLOCATION_L2_OFFLINE=PASS`.
+
+Terminal 1 — patched PX4/Gazebo, zatim PX4 konzola:
+
+```text
+param set VT_EXT_PUSH_EN 1
+param set VT_EXT_PUSH_MAX 0.35
+param set VT_EXT_PUSH_SLEW 0.10
+param set VT_EXT_ALLOC_EN 1
+param set VT_EXT_AL_SLEW 0.10
+param show VT_EXT_PUSH_EN
+param show VT_EXT_PUSH_MAX
+param show VT_EXT_PUSH_SLEW
+param show VT_EXT_ALLOC_EN
+param show VT_EXT_AL_SLEW
+```
+
+Terminal 2 ostaje DDS agent iz L1 postupka. Svi ROS terminali moraju nakon
+`source scripts/source_ros2_nmpc.bash` ispisati
+`domain=0,discovery=LOCALHOST` u `$PX4_MPC_ROS_ENV`.
+
+Terminal 3:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+ros2 launch px4_mpc standard_vtol_robust_l2_gate_launch.py
+```
+
+Mora pisati `guarded L2 allocation mode`. U QGC poletjeti u Position modu na
+12–15 m, usmjeriti se prema slobodnom prostoru i potpuno smiriti letjelicu.
+
+Terminal 4:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_allocation_l2_gate.bash
+```
+
+Upisati `YES`; ne komandovati VTOL transition. Test traje oko 49 s. PASS je:
+
+```text
+ROBUST_ALLOCATION_L2=PASS
+```
+
+Automatski FAIL nastaje za više od 1.0 m visinske greške, 0.8 m/s vertikalne
+brzine, 2.0 m cross-tracka, 15° nagiba, stale/invalid airspeed, napuštanje MC
+stanja, solver failure ili neaktivan allocation kanal. Konačni PASS dodatno
+traži najmanje 8 m/s ground i calibrated airspeed, `lambda<=0.60`, stvarni
+pusher i povratak ispod 0.5 m/s.
+
+**Go/no-go prema punoj tranziciji:** jedan L2 live pokušaj se analizira prije
+ponavljanja. Ako pokaže strukturirane pitch/altitude oscilacije ili ne može
+zadržati envelope bez popuštanja navedenih limita, trenutni model/interfejs se
+proglašava nedovoljnim za L3/L4 i prvo se radi reidentifikacija. Ako L2 prođe,
+slijedi L3 (`11–13 m/s`, `lambda>=0.2`), a tek zatim L4 sa `lambda=0` i
+gašenjem lift motora.

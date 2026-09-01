@@ -354,6 +354,7 @@ pravac.
 | live NMPC hover | PASS |
 | PX4 `lambda` kanal | live handshake PASS |
 | L1 `lambda 1→0.8→1` | live PASS: 5.312 m/s, 0.376 m altitude error |
+| L2 `lambda 1→0.5→1` | offline/live-layer PASS; live let slijedi |
 | puna front/back tranzicija | nije izvedena |
 
 Naredno:
