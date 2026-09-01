@@ -531,6 +531,15 @@ mirnom hoveru sam po sebi nije kvar. Status sada ispisuje i `airspeed_age` te
 `airspeed_source`. Zbog povremenih DDS razmaka preflight dopušta svježu poruku
 do 0.75 s; `source=0` ili starost veća od 0.75 s i dalje blokiraju Offboard.
 
+Prvi live L3a pokušaj prekinut je na 6.66 s zbog jedne
+`allocation_channel_inactive` poruke. ULog je pokazao stabilan let (1.80 m/s,
+0.058 m raspona visine, 0.139 m/s maksimalnog `|vz|`, bez Offboard loss-a).
+PX4 označava kanal neaktivnim već nakon 200 ms bez allocation setpointa, a ROS
+status je zabilježio DDS gap od 0.328 s. Node zato sada traži 0.35 s
+kontinuirano neaktivnog kanala prije aborta i status ispisuje `inactive_for`.
+Nevalidan setpoint i dalje abortira odmah; tokom kratkog zastoja PX4 sam vraća
+`lambda` prema sigurnoj vrijednosti 1.0.
+
 **Go/no-go prema punoj tranziciji:** jedan L2 live pokušaj se analizira prije
 ponavljanja. Ako pokaže strukturirane pitch/altitude oscilacije ili ne može
 zadržati envelope bez popuštanja navedenih limita, trenutni model/interfejs se

@@ -52,6 +52,7 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("max_state_age_seconds", 0.20)
         self.declare_parameter("active_state_stale_abort_seconds", 0.45)
         self.declare_parameter("max_airspeed_age_seconds", 0.75)
+        self.declare_parameter("allocation_inactive_abort_seconds", 0.35)
         self.declare_parameter("allow_hover_output", False)
         self.declare_parameter("allow_l1_output", False)
         self.declare_parameter("allow_l2_output", False)
@@ -93,6 +94,9 @@ class StandardVtolRobustShadow(Node):
         self.max_airspeed_age = float(
             self.get_parameter("max_airspeed_age_seconds").value
         )
+        self.allocation_inactive_abort = float(
+            self.get_parameter("allocation_inactive_abort_seconds").value
+        )
         if not (
             self.max_state_age < self.active_state_stale_abort <= 0.75
         ):
@@ -102,6 +106,10 @@ class StandardVtolRobustShadow(Node):
             )
         if not 0.5 <= self.max_airspeed_age <= 1.0:
             raise ValueError("max_airspeed_age_seconds must be in [0.5, 1.0]")
+        if not 0.25 <= self.allocation_inactive_abort <= 0.5:
+            raise ValueError(
+                "allocation_inactive_abort_seconds must be in [0.25, 0.5]"
+            )
         self.allow_hover_output = bool(
             self.get_parameter("allow_hover_output").value
         )
@@ -222,6 +230,7 @@ class StandardVtolRobustShadow(Node):
         self.allocation_status: VtolNmpcAllocationStatus | None = None
         self.allocation_ever_active = False
         self.allocation_ever_valid = False
+        self.allocation_inactive_since_ns = 0
         self.reference_forward = np.array([1.0, 0.0])
         self.reference_lateral = np.array([0.0, 1.0])
         self.max_forward_speed = 0.0
@@ -535,6 +544,12 @@ class StandardVtolRobustShadow(Node):
                 f"ever_active={self.allocation_ever_active},"
                 f"ever_valid={self.allocation_ever_valid}"
             )
+        allocation_inactive_duration = (
+            (self.get_clock().now().nanoseconds
+             - self.allocation_inactive_since_ns) * 1.0e-9
+            if self.allocation_inactive_since_ns
+            else 0.0
+        )
         response.success = (
             self.reference is not None
             and state_age <= self.max_state_age
@@ -557,7 +572,8 @@ class StandardVtolRobustShadow(Node):
             f"solve_time_p99={p99:.2f}ms,"
             f"last_offboard_duration={self.last_offboard_duration:.2f}s,"
             f"abort_reason={self.abort_reason},"
-            f"allocation=[{allocation}],"
+            f"allocation=[{allocation},"
+            f"inactive_for={allocation_inactive_duration:.3f}s],"
             f"motion=[forward_speed={forward_speed:.3f},"
             f"cross_track={cross_track:.3f},"
             f"airspeed={calibrated_airspeed:.3f},"
@@ -638,6 +654,7 @@ class StandardVtolRobustShadow(Node):
         self.abort_reason = "none"
         self.allocation_ever_active = False
         self.allocation_ever_valid = False
+        self.allocation_inactive_since_ns = 0
         self.published_control = self.controller.model.hover_control()
         response.success = True
         response.message = (
@@ -707,6 +724,7 @@ class StandardVtolRobustShadow(Node):
         self.published_control = self.controller.model.hover_control()
         self.allocation_ever_active = False
         self.allocation_ever_valid = False
+        self.allocation_inactive_since_ns = 0
         self.max_forward_speed = 0.0
         self.max_cross_track = 0.0
         self.max_altitude_error = 0.0
@@ -804,6 +822,7 @@ class StandardVtolRobustShadow(Node):
         self.published_control = self.controller.model.hover_control()
         self.allocation_ever_active = False
         self.allocation_ever_valid = False
+        self.allocation_inactive_since_ns = 0
         self.max_forward_speed = 0.0
         self.max_cross_track = 0.0
         self.max_altitude_error = 0.0
@@ -1354,13 +1373,25 @@ class StandardVtolRobustShadow(Node):
             return
 
         if allocation_gate:
-            if elapsed > 1.0 and (
-                self.allocation_status is None
-                or not self.allocation_status.active
-                or not self.allocation_status.setpoint_valid
-            ):
-                self._abort("allocation_channel_inactive")
-                return
+            if elapsed > 1.0:
+                if self.allocation_status is None:
+                    self._abort("allocation_status_missing")
+                    return
+                if not self.allocation_status.setpoint_valid:
+                    self._abort("allocation_setpoint_invalid")
+                    return
+                if not self.allocation_status.active:
+                    now_ns = self.get_clock().now().nanoseconds
+                    if self.allocation_inactive_since_ns == 0:
+                        self.allocation_inactive_since_ns = now_ns
+                    inactive_duration = (
+                        now_ns - self.allocation_inactive_since_ns
+                    ) * 1.0e-9
+                    if inactive_duration >= self.allocation_inactive_abort:
+                        self._abort("allocation_channel_inactive_continuous")
+                        return
+                else:
+                    self.allocation_inactive_since_ns = 0
             requested = self.last_control.copy()
             _, _, _, minimum_lambda, pusher_max = (
                 self._allocation_configuration()
