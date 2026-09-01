@@ -132,6 +132,11 @@ def main() -> None:
         type=Path,
         default=Path("results/standard_vtol_robust_transition/nominal"),
     )
+    parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="print closed-loop simulation progress while the OCP is running",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     corridor = load_corridor(
@@ -163,6 +168,12 @@ def main() -> None:
     )
     for index in range(count):
         time_seconds = index * controller.dt
+        if args.progress and index % max(1, int(round(5.0 / controller.dt))) == 0:
+            print(
+                f"  progress: simulated {time_seconds:.0f}/{args.duration:.0f} s "
+                f"({index}/{count} NMPC solves)",
+                flush=True,
+            )
         x_ref, u_ref, prediction_parameters = references(
             state,
             30.0,
@@ -194,6 +205,13 @@ def main() -> None:
         states.append(state.copy())
         controls.append(command.copy())
         timings.append(solution.solve_time)
+
+    if args.progress:
+        print(
+            f"  progress: simulated {args.duration:.0f}/{args.duration:.0f} s "
+            f"({count}/{count} NMPC solves)",
+            flush=True,
+        )
 
     states = np.asarray(states)
     controls = np.asarray(controls)

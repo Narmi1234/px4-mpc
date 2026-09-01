@@ -10,6 +10,9 @@ source "${_ROBUST_ROOT}/.venv/bin/activate"
 source "${_ROBUST_ROOT}/scripts/setup_standard_vtol_nmpc.bash"
 export PYTHONPATH="${_ROBUST_ROOT}/px4_mpc:${PYTHONPATH}"
 
+echo "Running five offline cases; each performs 340 sequential NMPC solves."
+echo "Progress is printed every 5 simulated seconds. Do not press Ctrl-C."
+
 run_case() {
     local name="$1"
     shift
@@ -17,6 +20,7 @@ run_case() {
     echo "ROBUST_CASE=${name}"
     python tools/simulate_standard_vtol_robust_transition.py \
         --horizon-steps 20 \
+        --progress \
         --output "results/standard_vtol_robust_transition/${name}" "$@"
 }
 
