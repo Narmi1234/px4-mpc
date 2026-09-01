@@ -21,4 +21,15 @@ fi
 source /opt/ros/jazzy/setup.bash
 source "${_PX4_MPC_ROOT}/install/setup.bash"
 source "${_PX4_MPC_ROOT}/scripts/setup_standard_vtol_nmpc.bash"
+
+# Every PX4-MPC terminal must participate in the same deterministic local DDS
+# domain. Shells opened from different IDEs previously inherited different
+# ROS_DOMAIN_ID/discovery settings, so a healthy node in Terminal 3 was
+# intermittently invisible to Terminal 4. Override the domain only through the
+# project-specific variable when simultaneous independent simulations are
+# intentionally required.
+export ROS_DOMAIN_ID="${PX4_MPC_ROS_DOMAIN_ID:-0}"
+export ROS_AUTOMATIC_DISCOVERY_RANGE="LOCALHOST"
+unset ROS_LOCALHOST_ONLY
+export PX4_MPC_ROS_ENV="domain=${ROS_DOMAIN_ID},discovery=${ROS_AUTOMATIC_DISCOVERY_RANGE}"
 unset _PX4_MPC_ROOT

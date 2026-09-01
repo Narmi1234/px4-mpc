@@ -22,6 +22,7 @@ wait_for_service() {
 }
 
 echo "Checking the guarded L1 allocation node..."
+echo "ROS environment: ${PX4_MPC_ROS_ENV:-unknown}"
 if ! wait_for_service "/standard_vtol_robust_shadow/enable_allocation_l1"; then
     echo "ROBUST_ALLOCATION_L1=FAIL:node_unavailable"
     echo "Start Terminal 3 with standard_vtol_robust_l1_gate_launch.py."
