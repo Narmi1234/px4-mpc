@@ -309,7 +309,7 @@ Stabilni branch `nmpc-external-pusher` sadrži:
 7558a3d188  Offboard-rate transition compatibility
 ```
 
-Poslije R3b započet je necommitovani external-allocation patch:
+Poslije R3b implementiran je external-allocation patch:
 
 ```text
 VtolNmpcAllocationSetpoint  # timestamp + lambda
@@ -326,9 +326,11 @@ T_{lift}=\lambda c_{lift},\qquad
 \tau_{FW}=(1-\lambda)\tau_{FW,PID}.
 ```
 
-Stale/invalid input vraća `lambda` prema jedan. Patch je primijenjen u source,
-ali ROS message build je zaustavljen oko 88%; PX4 build, bench test i commit
-nisu urađeni. Ne koristiti ga još za let.
+Stale/invalid input vraća `lambda` prema jedan. ROS poruke i PX4 SITL su
+uspješno buildani 2026-08-31. Guarded robust-hover node sada objavljuje
+`lambda=1` i prati PX4 status `requested/applied/active/valid`; novi R3b PASS
+zahtijeva da je PX4 kanal zaista bio active i valid. `lambda<1` još nije
+flight-testiran ovim novim interfejsom.
 
 ## 9. Šta “robustan” sada znači
 
@@ -350,16 +352,16 @@ pravac.
 | offline front-transition matrica | PASS |
 | ROS shadow | PASS |
 | live NMPC hover | PASS |
-| PX4 `lambda` kanal | WIP |
+| PX4 `lambda` kanal | build PASS; live `lambda=1` re-test slijedi |
 | L1 `lambda 1→0.8→1` | nije izveden |
 | puna front/back tranzicija | nije izvedena |
 
 Naredno:
 
-1. završiti ROS/PX4 build allocation patcha;
-2. SITL bench dokazati `lambda=1`, `0.8` i stale recovery, bez leta;
-3. commitovati PX4/`px4_msgs` checkpoint;
-4. L1 offline → shadow → guarded live do 5 m/s;
+1. ponoviti R3b i dokazati live `lambda=1` status handshake;
+2. SITL bench dokazati `lambda=0.8` i stale recovery;
+3. L1 offline → shadow → guarded live do 5 m/s;
+4. analizirati ULog prije povećanja authority transfera;
 5. L2 `lambda=0.5`, L3 `0.2`, L4 `0`;
 6. puna front/back putanja, vjetar i Monte Carlo evaluacija.
 
@@ -403,6 +405,7 @@ MC/FW allocationom, grey-box SDF/ULog modelom i PX4 sigurnim izvršnim slojem.
 
 ```text
 STANDARD_VTOL_PHD_PROGRESS_REPORT.md        ovaj presjek
+STANDARD_VTOL_PROFESSOR_DEMO.md             kratka demonstracija za sastanak
 STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md   ownership i plan
 STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md  operativni gateovi
 STANDARD_VTOL_RATE_IDENTIFICATION.md        identifikacija

@@ -91,8 +91,10 @@ echo "${final_status}"
 if [[ "${final_status}" == *"output_requested=False"* \
       && "${final_status}" == *"offboard=False"* \
       && "${final_status}" == *"solver_failures=0"* \
+      && "${final_status}" == *"ever_active=True"* \
+      && "${final_status}" == *"ever_valid=True"* \
       && "${final_status}" == *"abort_reason=robust_hover_test_timeout"* ]]; then
-    echo "ROBUST_HOVER_OUTPUT=PASS"
+    echo "ROBUST_HOVER_OUTPUT=PASS (including explicit PX4 allocation channel)"
     exit 0
 fi
 

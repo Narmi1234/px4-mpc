@@ -1,0 +1,271 @@
+diff --git a/msg/CMakeLists.txt b/msg/CMakeLists.txt
+index 46440ad0ae..a197f384a3 100644
+--- a/msg/CMakeLists.txt
++++ b/msg/CMakeLists.txt
+@@ -243,7 +243,9 @@ set(msg_files
+ 	VehicleRoi.msg
+ 	VehicleThrustSetpoint.msg
+ 	VehicleTorqueSetpoint.msg
++	VtolNmpcAllocationSetpoint.msg
++	VtolNmpcAllocationStatus.msg
+ 	VelocityLimits.msg
+ 	Vtx.msg
+ 	WheelEncoders.msg
+ 	YawEstimatorStatus.msg
+diff --git a/msg/VtolNmpcAllocationSetpoint.msg b/msg/VtolNmpcAllocationSetpoint.msg
+new file mode 100644
+index 0000000000..34ca108599
+--- /dev/null
++++ b/msg/VtolNmpcAllocationSetpoint.msg
+@@ -0,0 +1,4 @@
++uint32 MESSAGE_VERSION = 0
++
++uint64 timestamp                 # time since system start (microseconds)
++float32 transition_weight        # NMPC lift/MC allocation weight: 1=MC, 0=FW
+diff --git a/msg/VtolNmpcAllocationStatus.msg b/msg/VtolNmpcAllocationStatus.msg
+new file mode 100644
+index 0000000000..d12242699a
+--- /dev/null
++++ b/msg/VtolNmpcAllocationStatus.msg
+@@ -0,0 +1,8 @@
++uint32 MESSAGE_VERSION = 0
++
++uint64 timestamp                 # time since system start (microseconds)
++uint64 timestamp_sample          # timestamp of the most recent input setpoint
++float32 requested_weight         # last finite requested transition weight
++float32 applied_weight           # constrained and slew-limited weight
++bool active                      # fresh external NMPC allocation is applied
++bool setpoint_valid              # latest setpoint was finite and in range
+diff --git a/src/modules/uxrce_dds_client/dds_topics.yaml b/src/modules/uxrce_dds_client/dds_topics.yaml
+index f9a6324678..bb980142fc 100644
+--- a/src/modules/uxrce_dds_client/dds_topics.yaml
++++ b/src/modules/uxrce_dds_client/dds_topics.yaml
+@@ -98,6 +98,10 @@ publications:
+   - topic: /fmu/out/vtol_vehicle_status
+     type: px4_msgs::msg::VtolVehicleStatus
+ 
++  - topic: /fmu/out/vtol_nmpc_allocation_status
++    type: px4_msgs::msg::VtolNmpcAllocationStatus
++    rate_limit: 50.
++
+   - topic: /fmu/out/home_position
+     type: px4_msgs::msg::HomePosition
+     rate_limit: 5.
+@@ -168,5 +172,8 @@ subscriptions:
+   - topic: /fmu/in/vehicle_rates_setpoint
+     type: px4_msgs::msg::VehicleRatesSetpoint
+ 
++  - topic: /fmu/in/vtol_nmpc_allocation_setpoint
++    type: px4_msgs::msg::VtolNmpcAllocationSetpoint
++
+   - topic: /fmu/in/vehicle_visual_odometry
+     type: px4_msgs::msg::VehicleOdometry
+diff --git a/src/modules/vtol_att_control/standard.cpp b/src/modules/vtol_att_control/standard.cpp
+index 0e3266468d..fc4cef86b4 100644
+--- a/src/modules/vtol_att_control/standard.cpp
++++ b/src/modules/vtol_att_control/standard.cpp
+@@ -58,6 +58,7 @@ Standard::parameters_update()
+ {
+ 	VtolType::updateParams();
+ 	_external_pusher_throttle.setSlewRate(_param_vt_ext_push_slew.get());
++	_external_allocation_weight.setSlewRate(_param_vt_ext_al_slew.get());
+ 
+ 	// make sure that pusher ramp in backtransition is smaller than back transition (max) duration
+ 	_param_vt_b_trans_ramp.set(math::min(_param_vt_b_trans_ramp.get(), _param_vt_b_trans_dur.get()));
+@@ -105,6 +106,75 @@ float Standard::externalPusherThrottle()
+ 	return _external_pusher_throttle.update(target, dt);
+ }
+ 
++bool Standard::externalAllocationEligible() const
++{
++	return _param_vt_ext_alloc_en.get()
++	       && _v_control_mode->flag_armed
++	       && _v_control_mode->flag_control_offboard_enabled
++	       && _v_control_mode->flag_control_rates_enabled;
++}
++
++float Standard::externalAllocationWeight()
++{
++	const hrt_abstime now = hrt_absolute_time();
++	vtol_nmpc_allocation_setpoint_s setpoint{};
++
++	if (_external_allocation_setpoint_sub.update(&setpoint)) {
++		_external_allocation_timestamp_sample = setpoint.timestamp;
++		_last_time_external_allocation_setpoint = now;
++		_external_allocation_setpoint_valid = PX4_ISFINITE(setpoint.transition_weight)
++				&& setpoint.transition_weight >= 0.0f
++				&& setpoint.transition_weight <= 1.0f;
++
++		if (_external_allocation_setpoint_valid) {
++			_external_allocation_requested = setpoint.transition_weight;
++		}
++	}
++
++	const bool fresh = _last_time_external_allocation_setpoint != 0
++			   && hrt_elapsed_time(&_last_time_external_allocation_setpoint) <= 200_ms;
++	_external_allocation_active = externalAllocationEligible()
++				      && fresh
++				      && _external_allocation_setpoint_valid;
++
++	if (!externalAllocationEligible()) {
++		_external_allocation_weight.setForcedValue(1.0f);
++		_last_time_external_allocation_update = now;
++
++	} else {
++		const float target = _external_allocation_active
++				     ? _external_allocation_requested
++				     : 1.0f;
++		const float dt = math::constrain(
++				 (now - _last_time_external_allocation_update) * 1e-6f,
++				 0.0f,
++				 0.05f);
++		_last_time_external_allocation_update = now;
++		_external_allocation_weight.update(target, dt);
++	}
++
++	vtol_nmpc_allocation_status_s status{};
++	status.timestamp = now;
++	status.timestamp_sample = _external_allocation_timestamp_sample;
++	status.requested_weight = _external_allocation_requested;
++	status.applied_weight = _external_allocation_weight.getState();
++	status.active = _external_allocation_active;
++	status.setpoint_valid = _external_allocation_setpoint_valid;
++	_external_allocation_status_pub.publish(status);
++
++	return status.applied_weight;
++}
++
+ void Standard::update_vtol_state()
+ {
+ 	/* After flipping the switch the vehicle will start the pusher (or tractor) motor, picking up
+@@ -343,6 +413,8 @@ void Standard::fill_actuator_outputs()
+ {
+ 	const bool external_pusher_override = externalPusherOverrideActive();
+ 	const float external_pusher = externalPusherThrottle();
++	const float external_weight = externalAllocationWeight();
++	const bool external_allocation = externalAllocationEligible();
+ 
+ 	_torque_setpoint_0->timestamp = hrt_absolute_time();
+ 	_torque_setpoint_0->timestamp_sample = _vehicle_torque_setpoint_virtual_mc->timestamp_sample;
+@@ -376,18 +448,29 @@ void Standard::fill_actuator_outputs()
+ 	switch (_vtol_mode) {
+ 	case vtol_mode::MC_MODE:
+ 
+-		// MC actuators:
+-		_torque_setpoint_0->xyz[0] = _vehicle_torque_setpoint_virtual_mc->xyz[0];
+-		_torque_setpoint_0->xyz[1] = _vehicle_torque_setpoint_virtual_mc->xyz[1];
+-		_torque_setpoint_0->xyz[2] = _vehicle_torque_setpoint_virtual_mc->xyz[2];
+-		_thrust_setpoint_0->xyz[2] = _vehicle_thrust_setpoint_virtual_mc->xyz[2];
+-
+-		// FW actuators:
+-		if (!_param_vt_elev_mc_lock.get()) {
+-			_torque_setpoint_1->xyz[0] = _vehicle_torque_setpoint_virtual_fw->xyz[0];
+-			_torque_setpoint_1->xyz[1] = _vehicle_torque_setpoint_virtual_fw->xyz[1];
++		if (external_allocation) {
++			// The NMPC owns the MC/FW allocation. PX4 still computes both
++			// inner-loop torques and performs final actuator allocation.
++			_torque_setpoint_0->xyz[0] = _vehicle_torque_setpoint_virtual_mc->xyz[0] * external_weight;
++			_torque_setpoint_0->xyz[1] = _vehicle_torque_setpoint_virtual_mc->xyz[1] * external_weight;
++			_torque_setpoint_0->xyz[2] = _vehicle_torque_setpoint_virtual_mc->xyz[2] * external_weight;
++			_thrust_setpoint_0->xyz[2] = _vehicle_thrust_setpoint_virtual_mc->xyz[2] * external_weight;
++			_torque_setpoint_1->xyz[0] = _vehicle_torque_setpoint_virtual_fw->xyz[0] * (1.0f - external_weight);
++			_torque_setpoint_1->xyz[1] = _vehicle_torque_setpoint_virtual_fw->xyz[1] * (1.0f - external_weight);
++			_torque_setpoint_1->xyz[2] = _vehicle_torque_setpoint_virtual_fw->xyz[2] * (1.0f - external_weight);
++
++		} else {
++			_torque_setpoint_0->xyz[0] = _vehicle_torque_setpoint_virtual_mc->xyz[0];
++			_torque_setpoint_0->xyz[1] = _vehicle_torque_setpoint_virtual_mc->xyz[1];
++			_torque_setpoint_0->xyz[2] = _vehicle_torque_setpoint_virtual_mc->xyz[2];
++			_thrust_setpoint_0->xyz[2] = _vehicle_thrust_setpoint_virtual_mc->xyz[2];
++
++			if (!_param_vt_elev_mc_lock.get()) {
++				_torque_setpoint_1->xyz[0] = _vehicle_torque_setpoint_virtual_fw->xyz[0];
++				_torque_setpoint_1->xyz[1] = _vehicle_torque_setpoint_virtual_fw->xyz[1];
++			}
+ 		}
+ 
+ 		_thrust_setpoint_0->xyz[0] = external_pusher_override ? external_pusher : _pusher_throttle;
+diff --git a/src/modules/vtol_att_control/standard.h b/src/modules/vtol_att_control/standard.h
+index 8e311dafa4..fbba386ba0 100644
+--- a/src/modules/vtol_att_control/standard.h
++++ b/src/modules/vtol_att_control/standard.h
+@@ -46,6 +46,11 @@
+ #define STANDARD_H
+ #include <lib/slew_rate/SlewRate.hpp>
+ 
++#include <uORB/Publication.hpp>
++#include <uORB/Subscription.hpp>
++#include <uORB/topics/vtol_nmpc_allocation_setpoint.h>
++#include <uORB/topics/vtol_nmpc_allocation_status.h>
++
+ #include "vtol_type.h"
+ 
+ class Standard : public VtolType
+@@ -78,11 +83,24 @@ private:
+ 
+ 	float _pusher_throttle{0.0f};
+ 	SlewRate<float> _external_pusher_throttle{0.0f};
++	SlewRate<float> _external_allocation_weight{1.0f};
+ 	float _airspeed_trans_blend_margin{0.0f};
+ 	hrt_abstime _last_time_pusher_transition_update{0};
+ 	hrt_abstime _last_time_external_pusher_update{0};
++	hrt_abstime _last_time_external_allocation_update{0};
++	hrt_abstime _last_time_external_allocation_setpoint{0};
++	uint64_t _external_allocation_timestamp_sample{0};
++	float _external_allocation_requested{1.0f};
++	bool _external_allocation_active{false};
++	bool _external_allocation_setpoint_valid{false};
++
++	uORB::Subscription _external_allocation_setpoint_sub{ORB_ID(vtol_nmpc_allocation_setpoint)};
++	uORB::Publication<vtol_nmpc_allocation_status_s> _external_allocation_status_pub{ORB_ID(vtol_nmpc_allocation_status)};
+ 
+ 	void parameters_update() override;
+ 	bool externalPusherOverrideActive() const;
+ 	float externalPusherThrottle();
++	bool externalAllocationEligible() const;
++	float externalAllocationWeight();
+ 
+ 	DEFINE_PARAMETERS_CUSTOM_PARENT(VtolType,
+ 					(ParamFloat<px4::params::VT_PSHER_SLEW>) _param_vt_psher_slew,
+@@ -91,6 +109,8 @@ private:
+ 					(ParamBool<px4::params::VT_EXT_PUSH_EN>) _param_vt_ext_push_en,
+ 					(ParamFloat<px4::params::VT_EXT_PUSH_MAX>) _param_vt_ext_push_max,
+ 					(ParamFloat<px4::params::VT_EXT_PUSH_SLEW>) _param_vt_ext_push_slew,
++					(ParamBool<px4::params::VT_EXT_ALLOC_EN>) _param_vt_ext_alloc_en,
++					(ParamFloat<px4::params::VT_EXT_AL_SLEW>) _param_vt_ext_al_slew,
+ 					(ParamFloat<px4::params::FW_PSP_OFF>) _param_fw_psp_off
+ 				       )
+ };
+diff --git a/src/modules/vtol_att_control/standard_params.yaml b/src/modules/vtol_att_control/standard_params.yaml
+index b71ad42a6e..5d46c4fe3e 100644
+--- a/src/modules/vtol_att_control/standard_params.yaml
++++ b/src/modules/vtol_att_control/standard_params.yaml
+@@ -65,6 +65,31 @@ parameters:
+       max: 1.0
+       increment: 0.01
+       decimal: 2
++    VT_EXT_ALLOC_EN:
++      description:
++        short: Allow external NMPC VTOL allocation
++        long: |-
++          Allows a Standard VTOL in armed Offboard body-rate mode to use a
++          fresh VtolNmpcAllocationSetpoint as the MC lift and torque weight.
++          One selects full multicopter authority and zero selects fixed-wing
++          authority. Invalid or stale input returns the weight toward one.
++          Disabled by default.
++      type: boolean
++      default: false
++    VT_EXT_AL_SLEW:
++      description:
++        short: External allocation weight slew rate
++        long: Maximum NMPC allocation-weight change per second.
++      type: float
++      default: 0.10
++      unit: 1/s
++      min: 0.01
++      max: 1.0
++      increment: 0.01
++      decimal: 2
+     VT_B_TRANS_RAMP:
+       description:
+         short: Back transition MC motor ramp up time

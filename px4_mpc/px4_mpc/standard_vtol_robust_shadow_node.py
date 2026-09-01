@@ -25,6 +25,8 @@ from px4_msgs.msg import (
     VehicleOdometry,
     VehicleRatesSetpoint,
     VehicleStatus,
+    VtolNmpcAllocationSetpoint,
+    VtolNmpcAllocationStatus,
 )
 import rclpy
 from rclpy.node import Node
@@ -92,6 +94,9 @@ class StandardVtolRobustShadow(Node):
         self.last_offboard_duration = 0.0
         self.abort_reason = "none"
         self.published_control = self.controller.model.hover_control()
+        self.allocation_status: VtolNmpcAllocationStatus | None = None
+        self.allocation_ever_active = False
+        self.allocation_ever_valid = False
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -109,6 +114,12 @@ class StandardVtolRobustShadow(Node):
             VehicleStatus,
             "/fmu/out/vehicle_status_v4",
             self._vehicle_status,
+            qos,
+        )
+        self.create_subscription(
+            VtolNmpcAllocationStatus,
+            "/fmu/out/vtol_nmpc_allocation_status",
+            self._allocation_status,
             qos,
         )
         self.proposed_control_publisher = self.create_publisher(
@@ -144,6 +155,7 @@ class StandardVtolRobustShadow(Node):
         self.offboard_publisher = None
         self.rates_publisher = None
         self.command_publisher = None
+        self.allocation_publisher = None
         if self.allow_hover_output:
             self.offboard_publisher = self.create_publisher(
                 OffboardControlMode, "/fmu/in/offboard_control_mode", qos
@@ -153,6 +165,11 @@ class StandardVtolRobustShadow(Node):
             )
             self.command_publisher = self.create_publisher(
                 VehicleCommand, "/fmu/in/vehicle_command", qos
+            )
+            self.allocation_publisher = self.create_publisher(
+                VtolNmpcAllocationSetpoint,
+                "/fmu/in/vtol_nmpc_allocation_setpoint",
+                qos,
             )
         self.create_timer(0.05, self._update)
         if self.allow_hover_output:
@@ -167,6 +184,11 @@ class StandardVtolRobustShadow(Node):
 
     def _vehicle_status(self, message: VehicleStatus) -> None:
         self.status_message = message
+
+    def _allocation_status(self, message: VtolNmpcAllocationStatus) -> None:
+        self.allocation_status = message
+        self.allocation_ever_active |= bool(message.active)
+        self.allocation_ever_valid |= bool(message.setpoint_valid)
 
     def _odometry(self, message: VehicleOdometry) -> None:
         if message.pose_frame != VehicleOdometry.POSE_FRAME_NED:
@@ -230,6 +252,8 @@ class StandardVtolRobustShadow(Node):
         self.solve_count = 0
         self.solve_times_ms.clear()
         self.abort_reason = "none"
+        self.allocation_ever_active = False
+        self.allocation_ever_valid = False
         response.success = True
         response.message = "hover reference captured"
         return response
@@ -260,6 +284,17 @@ class StandardVtolRobustShadow(Node):
         )
         state_age = self._state_age()
         offboard = self._offboard_active()
+        if self.allocation_status is None:
+            allocation = "unavailable"
+        else:
+            allocation = (
+                f"requested={self.allocation_status.requested_weight:.3f},"
+                f"applied={self.allocation_status.applied_weight:.3f},"
+                f"active={self.allocation_status.active},"
+                f"valid={self.allocation_status.setpoint_valid},"
+                f"ever_active={self.allocation_ever_active},"
+                f"ever_valid={self.allocation_ever_valid}"
+            )
         response.success = (
             self.reference is not None
             and state_age <= self.max_state_age
@@ -281,6 +316,7 @@ class StandardVtolRobustShadow(Node):
             f"solve_time_p99={p99:.2f}ms,"
             f"last_offboard_duration={self.last_offboard_duration:.2f}s,"
             f"abort_reason={self.abort_reason},"
+            f"allocation=[{allocation}],"
             f"control={np.round(self.last_control, 4).tolist()},"
             f"published_control={np.round(self.published_control, 4).tolist()}"
         )
@@ -346,6 +382,8 @@ class StandardVtolRobustShadow(Node):
         self.offboard_start_ns = 0
         self.last_offboard_duration = 0.0
         self.abort_reason = "none"
+        self.allocation_ever_active = False
+        self.allocation_ever_valid = False
         self.published_control = self.controller.model.hover_control()
         response.success = True
         response.message = (
@@ -376,7 +414,11 @@ class StandardVtolRobustShadow(Node):
         self.command_publisher.publish(message)
 
     def _publish_setpoint(self, control: np.ndarray) -> None:
-        if self.offboard_publisher is None or self.rates_publisher is None:
+        if (
+            self.offboard_publisher is None
+            or self.rates_publisher is None
+            or self.allocation_publisher is None
+        ):
             return
         timestamp = self.get_clock().now().nanoseconds // 1000
         mode = OffboardControlMode()
@@ -390,6 +432,10 @@ class StandardVtolRobustShadow(Node):
         message.yaw = float(-control[4])
         message.thrust_body = [0.0, 0.0, float(-control[0])]
         self.rates_publisher.publish(message)
+        allocation = VtolNmpcAllocationSetpoint()
+        allocation.timestamp = timestamp
+        allocation.transition_weight = float(np.clip(control[5], 0.0, 1.0))
+        self.allocation_publisher.publish(allocation)
 
     def _tilt_degrees(self) -> float:
         qw, qx, qy, qz = self.state[6:10]

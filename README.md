@@ -12,13 +12,15 @@ transient i da PX4, a ne NMPC, bira ključni dio tranzicije. Aktivni pravac je
 16-state robustni NMPC sa eksplicitnim NMPC-owned lift weightom `lambda`.
 Za nastavak rada prvo čitaj:
 
-1. [`STANDARD_VTOL_PHD_PROGRESS_REPORT.md`](STANDARD_VTOL_PHD_PROGRESS_REPORT.md)
+1. [`STANDARD_VTOL_PROFESSOR_DEMO.md`](STANDARD_VTOL_PROFESSOR_DEMO.md) —
+   najkraći offline i live SITL demo za konsultacije.
+2. [`STANDARD_VTOL_PHD_PROGRESS_REPORT.md`](STANDARD_VTOL_PHD_PROGRESS_REPORT.md)
    — samostalan presjek za mentorski sastanak: cilj, model, porijeklo
    parametara, PX4 patch, rezultati, ograničenja i naredne odluke.
-2. [`STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md`](STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md)
+3. [`STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md`](STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md)
    — aktivne komande i R0–R4 gateovi novog 16-state NMPC pristupa.
 
-3. [`STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md`](STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md)
+4. [`STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md`](STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md)
    — aktivna arhitektura, tačna podjela NMPC/PX4 odgovornosti, jednačine i
    faze do pune NMPC tranzicije.
 4. [`STANDARD_VTOL_RATE_IDENTIFICATION.md`](STANDARD_VTOL_RATE_IDENTIFICATION.md)

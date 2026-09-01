@@ -236,14 +236,22 @@ bash scripts/run_robust_hover_output_gate.bash
 ```
 
 Nakon provjere upisati `YES`. Držati QGC spreman za ručni Position fallback.
+Prije leta u PX4 konzoli mora biti:
+
+```text
+param set VT_EXT_ALLOC_EN 1
+param set VT_EXT_AL_SLEW 0.10
+```
+
 Očekivana završna linija je:
 
 ```text
-ROBUST_HOVER_OUTPUT=PASS
+ROBUST_HOVER_OUTPUT=PASS (including explicit PX4 allocation channel)
 ```
 
 PASS zahtijeva `abort_reason=robust_hover_test_timeout`, povratak iz Offboarda,
-nula solver failurea i ugašen output. Svaki drugi abort je FAIL; sletjeti i ne
+nula solver failurea, ugašen output te PX4 allocation status
+`ever_active=True,ever_valid=True`. Svaki drugi abort je FAIL; sletjeti i ne
 ponavljati prije analize statusa.
 
 ### Prihvaćeni R3b rezultat — 2026-08-31
@@ -265,10 +273,11 @@ R3b potvrđuje prvi primijenjeni izlaz 16-state robustnog NMPC-a, stabilan
 pet-sekundni hover i automatski povratak u Position. Ne potvrđuje tranzicijsku
 raspodjelu: tokom cijelog leta `pusher=0` i `lambda=1`.
 
-Sljedeći korak nije novi let. Aktivni PX4 branch `nmpc-external-pusher`
-trenutno prihvata vanjski pusher, ali još nema eksplicitni NMPC `lambda` ulaz.
-Prije L1 leta mora biti završen i bench-testiran external-allocation patch iz
-Faze 3 arhitekturnog dokumenta. Tek tada slijedi L1 offline, shadow i live.
+Aktivni PX4 branch `nmpc-external-pusher` sada ima eksplicitni NMPC `lambda`
+ulaz i status povratnu poruku; ROS i PX4 build su prošli. Prihvaćeni rezultat
+iznad prethodi tom kanalu, pa se R3b jednom ponavlja s novim PASS uslovom.
+Tek nakon tog handshake dokaza slijedi bench `lambda=0.8`, pa L1 offline,
+shadow i live.
 
 ## Gate R4 — prvi live allocation test
 
