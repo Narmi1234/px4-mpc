@@ -34,6 +34,10 @@ class TestStandardVtolL1Profile(unittest.TestCase):
             l3_collective_min=0.30,
             l3_pitch_rate_limit=0.18,
             l3_vertical_correction_gain=1.0,
+            l3_vertical_speed_limit=0.9,
+            l3_vertical_speed_persistence=0.2,
+            l3_vertical_speed_emergency_limit=1.2,
+            vertical_speed_violation_since_ns=0,
             max_state_age=0.20,
             active_state_stale_abort=0.45,
         )
@@ -115,6 +119,31 @@ class TestStandardVtolL1Profile(unittest.TestCase):
         self.assertEqual(command(10.5, 1.0), 0.0)
         self.assertGreater(command(10.5, 0.8), 0.0)
         self.assertAlmostEqual(command(10.5, 0.35), 0.25)
+
+    def test_l3_vertical_guard_filters_spike_but_rejects_persistence(self):
+        guard = StandardVtolRobustShadow._vertical_speed_safety_reason
+        self.assertIsNone(guard(self.node, 0.95, 0.9, True, 1_000_000_000))
+        self.assertIsNone(guard(self.node, 0.95, 0.9, True, 1_150_000_000))
+        self.assertEqual(
+            guard(self.node, 0.95, 0.9, True, 1_200_000_000),
+            "vertical_speed_limit",
+        )
+        self.assertIsNone(guard(self.node, 0.2, 0.9, True, 1_250_000_000))
+        self.assertEqual(self.node.vertical_speed_violation_since_ns, 0)
+
+    def test_l3_vertical_guard_keeps_immediate_emergency_abort(self):
+        guard = StandardVtolRobustShadow._vertical_speed_safety_reason
+        self.assertEqual(
+            guard(self.node, -1.21, 0.9, True, 1_000_000_000),
+            "vertical_speed_emergency_limit",
+        )
+
+    def test_non_l3_vertical_guard_remains_immediate(self):
+        guard = StandardVtolRobustShadow._vertical_speed_safety_reason
+        self.assertEqual(
+            guard(self.node, 0.81, 0.8, False, 1_000_000_000),
+            "vertical_speed_limit",
+        )
 
 
 if __name__ == "__main__":

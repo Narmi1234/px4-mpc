@@ -79,6 +79,9 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("l3_collective_min", 0.30)
         self.declare_parameter("l3_pitch_rate_limit", 0.18)
         self.declare_parameter("l3_vertical_correction_gain", 1.0)
+        self.declare_parameter("l3_vertical_speed_limit", 0.90)
+        self.declare_parameter("l3_vertical_speed_persistence_seconds", 0.20)
+        self.declare_parameter("l3_vertical_speed_emergency_limit", 1.20)
         horizon_steps = int(self.get_parameter("horizon_steps").value)
         horizon_seconds = float(self.get_parameter("horizon_seconds").value)
         root = Path(__file__).resolve().parents[2]
@@ -218,6 +221,15 @@ class StandardVtolRobustShadow(Node):
         self.l3_vertical_correction_gain = float(
             self.get_parameter("l3_vertical_correction_gain").value
         )
+        self.l3_vertical_speed_limit = float(
+            self.get_parameter("l3_vertical_speed_limit").value
+        )
+        self.l3_vertical_speed_persistence = float(
+            self.get_parameter("l3_vertical_speed_persistence_seconds").value
+        )
+        self.l3_vertical_speed_emergency_limit = float(
+            self.get_parameter("l3_vertical_speed_emergency_limit").value
+        )
         if not (
             10.0 <= self.l3_target_speed <= 13.0
             and 0.2 <= self.l3_acceleration <= 0.35
@@ -230,6 +242,10 @@ class StandardVtolRobustShadow(Node):
             and 0.05 <= self.l3_collective_min <= 0.30
             and 0.18 <= self.l3_pitch_rate_limit <= 0.25
             and 1.0 <= self.l3_vertical_correction_gain <= 4.0
+            and 0.8 <= self.l3_vertical_speed_limit <= 1.0
+            and 0.1 <= self.l3_vertical_speed_persistence <= 0.3
+            and self.l3_vertical_speed_limit
+            < self.l3_vertical_speed_emergency_limit <= 1.3
         ):
             raise ValueError("L3 parameters exceed the guarded envelope")
         self.state: np.ndarray | None = None
@@ -272,6 +288,7 @@ class StandardVtolRobustShadow(Node):
         self.max_state_gap = 0.0
         self.published_elevator_feedforward = 0.0
         self.max_applied_elevator_feedforward = 0.0
+        self.vertical_speed_violation_since_ns = 0
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -520,6 +537,7 @@ class StandardVtolRobustShadow(Node):
         self.max_airspeed = 0.0
         self.max_state_gap = 0.0
         self.max_applied_elevator_feedforward = 0.0
+        self.vertical_speed_violation_since_ns = 0
         response.success = True
         response.message = "hover reference captured"
         return response
@@ -633,6 +651,9 @@ class StandardVtolRobustShadow(Node):
             f"collective_min={self.l3_collective_min:.2f},"
             f"pitch_rate={self.l3_pitch_rate_limit:.2f},"
             f"vertical_gain={self.l3_vertical_correction_gain:.2f}],"
+            f"vertical_guard=[limit={self.l3_vertical_speed_limit:.2f},"
+            f"persistence={self.l3_vertical_speed_persistence:.2f},"
+            f"emergency={self.l3_vertical_speed_emergency_limit:.2f}],"
             f"allocation=[{allocation},"
             f"inactive_for={allocation_inactive_duration:.3f}s],"
             f"motion=[forward_speed={forward_speed:.3f},"
@@ -795,6 +816,7 @@ class StandardVtolRobustShadow(Node):
         self.max_airspeed = 0.0
         self.max_state_gap = 0.0
         self.max_applied_elevator_feedforward = 0.0
+        self.vertical_speed_violation_since_ns = 0
         response.success = True
         response.message = (
             "guarded L1 prestream started; MC-only 0->5->0 m/s, "
@@ -894,6 +916,7 @@ class StandardVtolRobustShadow(Node):
         self.max_airspeed = 0.0
         self.max_state_gap = 0.0
         self.max_applied_elevator_feedforward = 0.0
+        self.vertical_speed_violation_since_ns = 0
         response.success = True
         target, _, _, minimum_lambda, _ = self._allocation_configuration()
         response.message = (
@@ -1251,12 +1274,18 @@ class StandardVtolRobustShadow(Node):
             1.2 if l3 else 1.0 if l2 else 0.75 if allocation_gate else 0.50
         )
         vertical_speed_limit = (
-            0.9 if l3 else 0.8 if l2 else 0.65 if allocation_gate else 0.50
+            self.l3_vertical_speed_limit
+            if l3
+            else 0.8 if l2 else 0.65 if allocation_gate else 0.50
         )
         if abs(self.state[2] - self.reference[2]) > altitude_limit:
             return "altitude_error"
-        if abs(self.state[5]) > vertical_speed_limit:
-            return "vertical_speed_limit"
+        vertical_reason = self._vertical_speed_safety_reason(
+            float(self.state[5]), vertical_speed_limit, l3,
+            self.get_clock().now().nanoseconds,
+        )
+        if vertical_reason is not None:
+            return vertical_reason
         if (
             not allocation_gate
             and np.linalg.norm(self.state[0:2] - self.reference[0:2]) > 0.75
@@ -1294,6 +1323,31 @@ class StandardVtolRobustShadow(Node):
             return f"{label}_airspeed_invalid"
         if self.solver_failures > 0 or self.last_solver_status != 0:
             return "solver_failure"
+        return None
+
+    def _vertical_speed_safety_reason(
+        self,
+        vertical_speed: float,
+        limit: float,
+        persistent_guard: bool,
+        now_ns: int,
+    ) -> str | None:
+        """Reject sustained L3 vertical motion but ignore one-sample spikes."""
+        speed = abs(vertical_speed)
+        if not persistent_guard:
+            return "vertical_speed_limit" if speed > limit else None
+        if speed > self.l3_vertical_speed_emergency_limit:
+            self.vertical_speed_violation_since_ns = 0
+            return "vertical_speed_emergency_limit"
+        if speed <= limit:
+            self.vertical_speed_violation_since_ns = 0
+            return None
+        if self.vertical_speed_violation_since_ns == 0:
+            self.vertical_speed_violation_since_ns = now_ns
+            return None
+        elapsed = (now_ns - self.vertical_speed_violation_since_ns) * 1.0e-9
+        if elapsed >= self.l3_vertical_speed_persistence:
+            return "vertical_speed_limit"
         return None
 
     def _state_freshness_action(self, state_age: float) -> str:

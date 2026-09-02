@@ -692,6 +692,16 @@ malom `lambda`, umjesto da visinu pokušava vratiti agresivnim pitch transientom
 Exact offline live-layer ponovo prolazi; prije ponavljanja obavezan je rebuild
 i restart ROS nodea, a `status` mora pokazati `vertical_gain=1.50`.
 
+Live L3c v2 pokušaj iz `2026-09-02/20_25_01.ulg` potvrđuje veliko poboljšanje:
+12.197 m/s, 12.240 m/s CAS, `lambda_min=0.241`, 0.463 m visinske greške,
+0.518 m cross-tracka i nula solver failurea. Gate je ipak prekinut jer je
+vertikalna brzina prešla 0.9 m/s samo približno 0.04 s. To nije dovoljan dokaz
+nestabilnosti niti razlog da se ukloni sigurnosna granica. L3c v3 zadržava
+limit 0.90 m/s, ali traži da prekoračenje traje 0.20 s; zaseban emergency limit
+1.20 m/s ostaje trenutan. `status` mora prikazati
+`vertical_guard=[limit=0.90,persistence=0.20,emergency=1.20]`. L4 ostaje
+zaključan dok ovaj L3c gate ne završi sa `allocation_l3_test_timeout`.
+
 Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
 nodeova pa pokretanje potpuno novih procesa. Poruka
 `Change payload size ... 40 ... larger ... 35` znači da je u DDS grafu ostao
