@@ -22,6 +22,14 @@ source /opt/ros/jazzy/setup.bash
 source "${_PX4_MPC_ROOT}/install/setup.bash"
 source "${_PX4_MPC_ROOT}/scripts/setup_standard_vtol_nmpc.bash"
 
+# Refuse to start a mixed old/new DDS graph after a custom px4_msgs change.
+# A size mismatch otherwise appears only as repeated Fast DDS history errors.
+if ! python3 -c "from px4_msgs.msg import VtolNmpcAllocationSetpoint as S, VtolNmpcAllocationStatus as T; assert 'elevator_feedforward' in S.get_fields_and_field_types(); assert 'applied_elevator_feedforward' in T.get_fields_and_field_types()"; then
+    echo "Stale px4_msgs overlay: rebuild px4_msgs and open a new terminal."
+    unset _PX4_MPC_ROOT
+    return 1
+fi
+
 # Every PX4-MPC terminal must participate in the same deterministic local DDS
 # domain. Shells opened from different IDEs previously inherited different
 # ROS_DOMAIN_ID/discovery settings, so a healthy node in Terminal 3 was

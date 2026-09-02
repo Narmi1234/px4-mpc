@@ -561,6 +561,12 @@ Novi redoslijed je obavezan:
 3. tek nakon L2b PASS-a ponoviti L3a;
 4. L4 ostaje zaključan dok L3a ne prođe bez visinske greške i solver failurea.
 
+Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
+nodeova pa pokretanje potpuno novih procesa. Poruka
+`Change payload size ... 40 ... larger ... 35` znači da je u DDS grafu ostao
+proces sa starom 35-byte definicijom; nije NMPC niti flight-dynamics kvar.
+`source_ros2_nmpc.bash` sada provjerava nova polja i odbija stale overlay.
+
 **Go/no-go prema punoj tranziciji:** jedan L2 live pokušaj se analizira prije
 ponavljanja. Ako pokaže strukturirane pitch/altitude oscilacije ili ne može
 zadržati envelope bez popuštanja navedenih limita, trenutni model/interfejs se
