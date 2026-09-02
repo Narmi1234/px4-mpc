@@ -1305,6 +1305,18 @@ class StandardVtolRobustShadow(Node):
             if self.output_requested or self._offboard_active():
                 self._abort("reference_missing")
             return
+        # Freeze the diagnostic state after a completed/aborted allocation
+        # flight. Continuing shadow solves against the stopped trajectory
+        # while PX4 is already back in Position mode only accumulates solver
+        # failures that happened after, and did not cause, the flight abort.
+        if (
+            not self.output_requested
+            and self.abort_reason != "none"
+            and self.test_mode in (
+                "allocation_l1", "allocation_l2", "allocation_l3"
+            )
+        ):
+            return
         state_age = self._state_age()
         self.max_state_gap = max(self.max_state_gap, state_age)
         freshness_action = self._state_freshness_action(state_age)

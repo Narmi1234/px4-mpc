@@ -2,6 +2,7 @@
 """Closed-loop check of the exact guarded L2/L3 reference and output layer."""
 
 import argparse
+import math
 
 from types import MethodType, SimpleNamespace
 
@@ -27,6 +28,10 @@ def main() -> None:
     parser.add_argument("--brake-entry-lambda", type=float, default=0.7)
     parser.add_argument("--minimum-lambda", type=float)
     parser.add_argument("--pusher-max", type=float)
+    parser.add_argument("--inject-time", type=float, default=-1.0)
+    parser.add_argument("--inject-cross-track", type=float, default=0.0)
+    parser.add_argument("--inject-lateral-speed", type=float, default=0.0)
+    parser.add_argument("--inject-yaw-deg", type=float, default=0.0)
     args = parser.parse_args()
     level = args.level
     target_speed = args.target_speed or (12.0 if level == 3 else 9.0)
@@ -95,13 +100,37 @@ def main() -> None:
     command = controller.model.hover_control()
     dynamics = controller.model.function()
     dt = 0.05
-    maxima = np.zeros(5)
+    maxima = np.zeros(6)
     minimum_lambda = 1.0
     solver_failures = 0
+    disturbance_injected = False
     count = int(np.ceil(gate._l1_total_seconds() / dt))
 
     for index in range(count):
         elapsed = index * dt
+        if (
+            not disturbance_injected
+            and args.inject_time >= 0.0
+            and elapsed >= args.inject_time
+        ):
+            state[1] += args.inject_cross_track
+            state[4] += args.inject_lateral_speed
+            angle = math.radians(args.inject_yaw_deg)
+            yaw_delta = np.array(
+                [math.cos(0.5 * angle), 0.0, 0.0, math.sin(0.5 * angle)]
+            )
+            w1, x1, y1, z1 = yaw_delta
+            w2, x2, y2, z2 = state[6:10]
+            state[6:10] = np.array(
+                [
+                    w1*w2 - x1*x2 - y1*y2 - z1*z2,
+                    w1*x2 + x1*w2 + y1*z2 - z1*y2,
+                    w1*y2 - x1*z2 + y1*w2 + z1*x2,
+                    w1*z2 + x1*y2 - y1*x2 + z1*w2,
+                ]
+            )
+            state[6:10] /= np.linalg.norm(state[6:10])
+            disturbance_injected = True
         gate.state = state
         x_ref, u_ref, parameters = gate._l1_references(elapsed)
         lower_bounds, upper_bounds = gate._allocation_control_bounds(u_ref)
@@ -176,6 +205,7 @@ def main() -> None:
                 abs(state[5]),
                 abs(pitch),
                 command[1],
+                abs(state[1]),
             ],
         )
 
@@ -187,6 +217,7 @@ def main() -> None:
         "max_abs_pitch_deg": np.rad2deg(maxima[3]),
         "max_pusher": maxima[4],
         "minimum_lambda": minimum_lambda,
+        "max_cross_track_m": maxima[5],
         "final_forward_speed_m_s": state[3],
         "final_lambda": command[5],
     }
@@ -202,6 +233,7 @@ def main() -> None:
         and maxima[1] <= altitude_limit
         and maxima[2] <= vertical_speed_limit
         and np.rad2deg(maxima[3]) <= tilt_limit
+        and maxima[5] <= (2.5 if level == 3 else 2.0)
         and minimum_lambda <= lambda_proof
         and abs(state[3]) <= settle_speed
         and command[5] >= 0.95

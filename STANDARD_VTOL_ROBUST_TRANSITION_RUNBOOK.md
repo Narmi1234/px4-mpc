@@ -604,6 +604,37 @@ Za live L3b Terminal 3 mora pokrenuti
 L3b ULog ne potvrdi visinu, pitch, allocation/elevator kanale i povratak u MC
 hover.
 
+Prvi live L3b pokušaj je 2026-09-02 prekinut nakon 59.40 s sa
+`l3_cross_track_limit`. Do prekida je ostvareno 11.181 m/s,
+`lambda_min=0.314`, 0.761 m maksimalne visinske greške i aktivan
+`elevator_ff=0.250`. ULog `2026-09-02/18_25_37.ulg` pokazuje da prvih približno
+45 s cross-track ostaje ispod 0.7 m. Zatim nastaje S-zavoj: NED yaw odstupa
+oko 14°, lateralna brzina raste do približno 2.5 m/s i tek potom cross-track
+prelazi 2.5 m. Safety limit zato nije uzrok niti se povećava.
+
+ULog je pokazao actuator/model mismatch. Pri `lambda≈0.31` NMPC traži yaw
+rate do `+0.10 rad/s`, dok izmjerena yaw brzina ostaje približno
+`-0.06 rad/s`. Standard VTOL ima dva elevona i elevator, ali nema rudder
+control-surface yaw kanal. PX4 patch je istim `lambda` faktorom pogrešno
+umanjivao vertikalni thrust i sva tri MC torque setpointa, dok CasADi model
+zadržava upravljivu rate dinamiku. PX4 je zato izmijenjen tako da u L1-L3
+`lambda` rasterećuje samo lift thrust; MC rate torque ostaje raspoloživ, a FW
+površine se i dalje uvode sa `1-lambda`. Prije ponovnog L3b leta obavezan je
+potpuni PX4 rebuild/restart. Naknadni solver failurei nakon Position fallbacka
+više se ne akumuliraju u završni status.
+
+Ovo razdvaja dvije fizički različite odluke. Za L1-L3 vrijedi
+
+```text
+T_lift = lambda_lift * T_MC,
+tau_MC = tau_MC,PID,
+tau_FW = (1-lambda_lift) * tau_FW,PID + elevator_ff.
+```
+
+Puna L4 tranzicija mora dodati zaseban NMPC torque-allocation faktor (ili
+vektor po osama) `mu_MC`; tek `mu_MC -> 0` uz `lambda_lift -> 0` dozvoljava
+gašenje lift motora. L3b dokazuje lift transfer, ne još potpuni torque transfer.
+
 Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
 nodeova pa pokretanje potpuno novih procesa. Poruka
 `Change payload size ... 40 ... larger ... 35` znači da je u DDS grafu ostao

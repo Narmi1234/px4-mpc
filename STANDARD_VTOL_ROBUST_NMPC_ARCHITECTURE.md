@@ -37,7 +37,8 @@ gdje je:
 - `c_lift` ukupna raspoloživa collective komanda četiri vertikalna motora;
 - `c_push` komanda pusher motora;
 - `[p_sp,q_sp,r_sp]` željene body-rate komande za PX4 unutrašnju petlju;
-- `lambda` NMPC-ov lift/control-allocation weight, `1` u MC i `0` u čistom FW.
+- `lambda_lift` NMPC-ov vertikalni lift-thrust weight. L3 ULog je pokazao da
+  se torque authority ne smije implicitno vezati za isti skalar.
 
 NMPC zato direktno odlučuje:
 
@@ -82,17 +83,21 @@ novu eksplicitnu PX4 poruku ili uORB/ROS polje za `lambda`. Ne kodirati
 Na PX4 strani NMPC režim računa efektivne komande kao
 
 ```text
-T_lift_effective = lambda * c_lift
-MC torque weight = lambda
-FW torque weight = 1 - lambda
+T_lift_effective = lambda_lift * c_lift
+MC torque weight = mu_MC
+FW surface weight = 1 - lambda_lift
 T_pusher         = c_push
 ```
 
 Rate izlazi se blendaju na nivou momenta/allocatora:
 
 ```text
-tau_cmd = lambda * tau_MC_rate(p_sp,q_sp,r_sp)
-        + (1-lambda) * tau_FW_rate(p_sp,q_sp,r_sp).
+tau_cmd = mu_MC * tau_MC_rate(p_sp,q_sp,r_sp)
+        + (1-lambda_lift) * tau_FW_rate(p_sp,q_sp,r_sp).
+
+U L1-L3 je `mu_MC=1` radi pune rate authority dok se lift prenosi na krilo.
+L4 mora dodati optimizirani `mu_MC` (po potrebi poseban po roll/pitch/yaw
+osi), validirati surface authority i tek zatim dozvoliti `mu_MC -> 0`.
 ```
 
 Ne smiju se istovremeno množiti `c_lift` u ROS nodeu i ponovo u PX4-u. Postoji

@@ -14,8 +14,11 @@ raspodjelu MC/FW autoriteta. Stock PX4 transition scheduler ne smije odlučivati
 kada se lift motori gase u konačnom rješenju.
 
 ```text
-u = [c_lift, c_push, p_sp, q_sp, r_sp, lambda]
-lambda=1: puni MC autoritet; lambda=0: puni FW autoritet.
+u = [c_lift, c_push, p_sp, q_sp, r_sp, lambda_lift]
+lambda_lift=1: puni vertikalni MC thrust; lambda_lift=0: lift thrust ugašen.
+Nakon L3 ULog analize torque transfer je izdvojen kao zasebna buduća NMPC
+odluka `mu_MC`; jedan skalar ne smije istovremeno predstavljati thrust i
+raspoloživost momenta po svim osama.
 ```
 
 NMPC ne komanduje pojedinačne RPM-ove ni pojedinačne servo izlaze. PX4
@@ -321,12 +324,14 @@ VT_EXT_AL_SLEW              # lambda slew
 Planirana jedinstvena PX4 primjena je
 
 ```math
-T_{lift}=\lambda c_{lift},\qquad
-\tau_{MC}=\lambda\tau_{MC,PID},\qquad
-\tau_{FW}=(1-\lambda)\tau_{FW,PID}.
+T_{lift}=\lambda_{lift} c_{lift},\qquad
+\tau_{MC}=\mu_{MC}\tau_{MC,PID},\qquad
+\tau_{FW}=(1-\lambda_{lift})\tau_{FW,PID}.
 ```
 
-Stale/invalid input vraća `lambda` prema jedan. ROS poruke i PX4 SITL su
+Za L1-L3 je trenutno `mu_MC=1`; puna L4 mora optimizirati i sigurno spustiti
+`mu_MC` prije gašenja lift motora. Stale/invalid input vraća `lambda_lift`
+prema jedan. ROS poruke i PX4 SITL su
 uspješno buildani 2026-08-31. Guarded robust-hover node sada objavljuje
 `lambda=1` i prati PX4 status `requested/applied/active/valid`; novi R3b PASS
 zahtijeva da je PX4 kanal zaista bio active i valid. `lambda<1` još nije
@@ -356,7 +361,7 @@ pravac.
 | L1 `lambda 1→0.8→1` | live PASS: 5.312 m/s, 0.376 m altitude error |
 | L2 `lambda 1→0.55→1` | live PASS: 9.606 m/s, 0.086 m altitude error |
 | L3a `lambda 1→0.35→1` | live PASS: 10.570 m/s, 0.356 m altitude error |
-| L3b `lambda 1→0.30→1` | offline PASS; live kandidat spreman |
+| L3b `lambda 1→0.30→1` | prvi live: 11.181 m/s, zatim yaw/cross-track FAIL; PX4 torque mismatch ispravljen |
 | puna front/back tranzicija | nije izvedena |
 
 Naredno:
