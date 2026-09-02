@@ -637,6 +637,23 @@ yaw-rate zahtjev mora preći u koordinisani bank/course zakon prije nego
 `mu_yaw -> 0`; tek tada `lambda_lift -> 0` dozvoljava gašenje lift motora.
 L3b dokazuje lift transfer, ne još potpuni torque transfer.
 
+Ponovljeni L3b sa axis-aware PX4 yaw patchom prošao je 2026-09-02:
+81.55 s testne sekvence, 10.916 m/s forward speed, 10.918 m/s CAS,
+0.304 m maksimalne visinske greške, 1.574 m maksimalnog ROS cross-tracka,
+`lambda_min=0.324`, pusher 0.305, `elevator_ff=0.250`, nula solver failurea
+i uredan povratak na `lambda=1` i Position mode. ULog potvrđuje 77.38 s
+stvarnog Offboarda i yaw-rate RMS tracking grešku oko 0.0096 rad/s. Zbog
+duge ukupne PX4 sesije sirovi ULog ima 275 MiB; prihvaćeni kompresovani dokaz
+je `validation_logs/accepted/robust_allocation_l3b_yaw_authority_pass_2026-09-02.ulg.zst`
+(93 MiB). Ovo potvrđuje da je prethodni L3b pad bio gubitak yaw authority,
+a ne ograničenje lift/visinske dinamike.
+
+L3b PASS ne otključava direktan skok na `lambda_lift=0`. Sljedeći razvojni
+gate mora uvesti eksplicitnu per-axis torque težinu i koordinisani
+bank/course zakon: prvo smanjiti direktni MC yaw autoritet pri približno
+11 m/s bez dubljeg lift unloadinga, dokazati course hold, pa tek zatim ponovo
+razmatrati 12 m/s / `lambda_lift=0.20`.
+
 Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
 nodeova pa pokretanje potpuno novih procesa. Poruka
 `Change payload size ... 40 ... larger ... 35` znači da je u DDS grafu ostao

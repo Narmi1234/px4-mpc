@@ -363,12 +363,12 @@ pravac.
 | L1 `lambda 1→0.8→1` | live PASS: 5.312 m/s, 0.376 m altitude error |
 | L2 `lambda 1→0.55→1` | live PASS: 9.606 m/s, 0.086 m altitude error |
 | L3a `lambda 1→0.35→1` | live PASS: 10.570 m/s, 0.356 m altitude error |
-| L3b `lambda 1→0.30→1` | prvi live: 11.181 m/s, zatim yaw/cross-track FAIL; PX4 torque mismatch ispravljen |
+| L3b `lambda 1→0.30→1` | live PASS nakon yaw patcha: 10.916 m/s, 0.304 m altitude error, `lambda_min=0.324` |
 | puna front/back tranzicija | nije izvedena |
 
 Naredno:
 
-1. izvesti i analizirati L3b na 11 m/s i `lambda>=0.30`;
+1. dodati per-axis torque allocation i koordinisani bank/course gate;
 2. riješiti predviđenu visinsku grešku prije 12 m/s / `lambda=0.20`;
 3. L4 `lambda=0` i puna NMPC-owned front/back putanja;
 4. vjetar, model-uncertainty i Monte Carlo evaluacija.
