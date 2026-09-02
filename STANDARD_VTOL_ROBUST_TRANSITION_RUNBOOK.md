@@ -678,6 +678,20 @@ pusher limit 0.45 i potrebna je duga slobodna putanja. Ovaj gate ne šalje PX4
 transition komandu i ne gasi lift motore. PASS otključava implementaciju
 per-axis torque-transfer/L4, ne automatski direktan puni transition let.
 
+Prvi live L3c pokušaj je prekinut nakon 59.70 s na
+`vertical_speed_limit`. Dostigao je 12.299 m/s, 11.991 m/s CAS,
+`lambda_min=0.238`, 1.102 m visinske greške i 2.340 m cross-tracka bez
+solver failurea. ULog `2026-09-02/20_11_50.ulg` pokazuje da se tokom dubokog
+unloadinga letjelica polako spusti oko 1.2 m dok collective ostaje na 0.300;
+pri kočenju pitch-rate odgovor kasni i NED vertikalna brzina dostigne
+0.916 m/s. Limit 0.9 m/s zato ostaje nepromijenjen.
+
+L3c v2 koristi isti dokazani profil i limite, ali povećava bounded vertikalnu
+collective korekciju sa 1.0 na 1.5. Time se korekcija aktivira ranije pri
+malom `lambda`, umjesto da visinu pokušava vratiti agresivnim pitch transientom.
+Exact offline live-layer ponovo prolazi; prije ponavljanja obavezan je rebuild
+i restart ROS nodea, a `status` mora pokazati `vertical_gain=1.50`.
+
 Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
 nodeova pa pokretanje potpuno novih procesa. Poruka
 `Change payload size ... 40 ... larger ... 35` znači da je u DDS grafu ostao

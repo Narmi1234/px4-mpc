@@ -30,6 +30,7 @@ def generate_launch_description():
                         "l3_pusher_max": 0.45,
                         "l3_collective_min": 0.30,
                         "l3_pitch_rate_limit": 0.25,
+                        "l3_vertical_correction_gain": 1.50,
                     }
                 ],
             )

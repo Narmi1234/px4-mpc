@@ -30,6 +30,7 @@ def main() -> None:
     parser.add_argument("--pusher-max", type=float)
     parser.add_argument("--collective-min", type=float, default=0.30)
     parser.add_argument("--pitch-rate-limit", type=float, default=0.18)
+    parser.add_argument("--vertical-correction-gain", type=float, default=1.0)
     parser.add_argument("--inject-time", type=float, default=-1.0)
     parser.add_argument("--inject-cross-track", type=float, default=0.0)
     parser.add_argument("--inject-lateral-speed", type=float, default=0.0)
@@ -74,6 +75,7 @@ def main() -> None:
         l3_pusher_max=configured_pusher_max,
         l3_collective_min=args.collective_min,
         l3_pitch_rate_limit=args.pitch_rate_limit,
+        l3_vertical_correction_gain=args.vertical_correction_gain,
         reference_forward=np.array([1.0, 0.0]),
         reference_lateral=np.array([0.0, 1.0]),
     )
@@ -172,7 +174,7 @@ def main() -> None:
             state[2] - 30.0,
             state[5],
         )
-        correction = (
+        correction = args.vertical_correction_gain * (
             base_lift - controller.model.plant.hover_command
         ) / requested[5]
         requested[0] = np.clip(

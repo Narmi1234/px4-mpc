@@ -31,7 +31,7 @@ if [[ "${preflight}" != *"publishes_fmu=True"* \
       || "${preflight}" != *"vtol_state=3"* \
       || "${preflight}" != *"solver_failures=0"* \
       || "${preflight}" != *"l3_profile=[speed=12.0,accel=0.25,brake=0.30,lambda=0.20,pusher=0.45]"* \
-      || "${preflight}" != *"l3_limits=[recovery=0.1,brake_entry_lambda=0.70,collective_min=0.30,pitch_rate=0.25]"* ]]; then
+      || "${preflight}" != *"l3_limits=[recovery=0.1,brake_entry_lambda=0.70,collective_min=0.30,pitch_rate=0.25,vertical_gain=1.50]"* ]]; then
     echo "ROBUST_ALLOCATION_L3C=FAIL:wrong_node_or_preflight"
     exit 1
 fi

@@ -78,6 +78,7 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("l3_pusher_max", 0.42)
         self.declare_parameter("l3_collective_min", 0.30)
         self.declare_parameter("l3_pitch_rate_limit", 0.18)
+        self.declare_parameter("l3_vertical_correction_gain", 1.0)
         horizon_steps = int(self.get_parameter("horizon_steps").value)
         horizon_seconds = float(self.get_parameter("horizon_seconds").value)
         root = Path(__file__).resolve().parents[2]
@@ -214,6 +215,9 @@ class StandardVtolRobustShadow(Node):
         self.l3_pitch_rate_limit = float(
             self.get_parameter("l3_pitch_rate_limit").value
         )
+        self.l3_vertical_correction_gain = float(
+            self.get_parameter("l3_vertical_correction_gain").value
+        )
         if not (
             10.0 <= self.l3_target_speed <= 13.0
             and 0.2 <= self.l3_acceleration <= 0.35
@@ -225,6 +229,7 @@ class StandardVtolRobustShadow(Node):
             and 0.35 <= self.l3_pusher_max <= 0.50
             and 0.05 <= self.l3_collective_min <= 0.30
             and 0.18 <= self.l3_pitch_rate_limit <= 0.25
+            and 1.0 <= self.l3_vertical_correction_gain <= 4.0
         ):
             raise ValueError("L3 parameters exceed the guarded envelope")
         self.state: np.ndarray | None = None
@@ -626,7 +631,8 @@ class StandardVtolRobustShadow(Node):
             f"l3_limits=[recovery={self.l3_recovery_seconds:.1f},"
             f"brake_entry_lambda={self.l3_brake_entry_lambda:.2f},"
             f"collective_min={self.l3_collective_min:.2f},"
-            f"pitch_rate={self.l3_pitch_rate_limit:.2f}],"
+            f"pitch_rate={self.l3_pitch_rate_limit:.2f},"
+            f"vertical_gain={self.l3_vertical_correction_gain:.2f}],"
             f"allocation=[{allocation},"
             f"inactive_for={allocation_inactive_duration:.3f}s],"
             f"motion=[forward_speed={forward_speed:.3f},"
@@ -1524,7 +1530,10 @@ class StandardVtolRobustShadow(Node):
                 self.state[5],
             )
             if l2 or l3:
-                correction = (
+                correction_gain = (
+                    self.l3_vertical_correction_gain if l3 else 1.0
+                )
+                correction = correction_gain * (
                     base_lift - self.controller.model.plant.hover_command
                 ) / requested[5]
                 collective_minimum = (
