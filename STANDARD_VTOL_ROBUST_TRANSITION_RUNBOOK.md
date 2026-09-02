@@ -561,6 +561,18 @@ Novi redoslijed je obavezan:
 3. tek nakon L2b PASS-a ponoviti L3a;
 4. L4 ostaje zaključan dok L3a ne prođe bez visinske greške i solver failurea.
 
+Ponovljeni L2b sa eksplicitnim elevator kanalom prošao je 2026-09-02:
+48.56 s Offboarda, 9.606 m/s, 0.086 m maksimalne visinske greške, nula solver
+failurea, `lambda_min=0.550` i PX4-potvrđen `elevator_ff=0.250`. ULog je
+sačuvan kao
+`validation_logs/accepted/robust_allocation_l2_elevator_ff_pass_2026-09-02.ulg`.
+Time je zatvoren model/interfejs mismatch koji je srušio prethodni L3a.
+
+Novi L3a live-layer offline gate zatim prolazi sa 10.370 m/s,
+`lambda_min=0.350`, 0.330 m visinske greške, 0.107 m/s vertikalne brzine,
+7.85° pitcha i nula solver failurea. L3a je ponovo otključan za jedan live
+pokušaj; L4 i dalje nije otključan.
+
 Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
 nodeova pa pokretanje potpuno novih procesa. Poruka
 `Change payload size ... 40 ... larger ... 35` znači da je u DDS grafu ostao
