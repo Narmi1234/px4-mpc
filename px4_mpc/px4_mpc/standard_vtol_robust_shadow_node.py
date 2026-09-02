@@ -70,6 +70,9 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("l2_pusher_max", 0.35)
         self.declare_parameter("l3_target_speed", 10.5)
         self.declare_parameter("l3_acceleration", 0.30)
+        self.declare_parameter("l3_brake_rate", 0.50)
+        self.declare_parameter("l3_recovery_seconds", 0.0)
+        self.declare_parameter("l3_brake_entry_lambda", 0.70)
         self.declare_parameter("l3_hold_seconds", 4.0)
         self.declare_parameter("l3_min_lambda", 0.35)
         self.declare_parameter("l3_pusher_max", 0.42)
@@ -185,6 +188,15 @@ class StandardVtolRobustShadow(Node):
         self.l3_acceleration = float(
             self.get_parameter("l3_acceleration").value
         )
+        self.l3_brake_rate = float(
+            self.get_parameter("l3_brake_rate").value
+        )
+        self.l3_recovery_seconds = float(
+            self.get_parameter("l3_recovery_seconds").value
+        )
+        self.l3_brake_entry_lambda = float(
+            self.get_parameter("l3_brake_entry_lambda").value
+        )
         self.l3_hold_seconds = float(
             self.get_parameter("l3_hold_seconds").value
         )
@@ -197,6 +209,9 @@ class StandardVtolRobustShadow(Node):
         if not (
             10.0 <= self.l3_target_speed <= 13.0
             and 0.2 <= self.l3_acceleration <= 0.35
+            and 0.2 <= self.l3_brake_rate <= 0.5
+            and 0.0 <= self.l3_recovery_seconds <= 12.0
+            and 0.6 <= self.l3_brake_entry_lambda <= 0.8
             and 3.0 <= self.l3_hold_seconds <= 5.0
             and 0.2 <= self.l3_min_lambda <= 0.4
             and 0.35 <= self.l3_pusher_max <= 0.50
@@ -591,6 +606,11 @@ class StandardVtolRobustShadow(Node):
             f"solve_time_p99={p99:.2f}ms,"
             f"last_offboard_duration={self.last_offboard_duration:.2f}s,"
             f"abort_reason={self.abort_reason},"
+            f"l3_profile=[speed={self.l3_target_speed:.1f},"
+            f"accel={self.l3_acceleration:.2f},"
+            f"brake={self.l3_brake_rate:.2f},"
+            f"lambda={self.l3_min_lambda:.2f},"
+            f"pusher={self.l3_pusher_max:.2f}],"
             f"allocation=[{allocation},"
             f"inactive_for={allocation_inactive_duration:.3f}s],"
             f"motion=[forward_speed={forward_speed:.3f},"
@@ -970,15 +990,24 @@ class StandardVtolRobustShadow(Node):
         )
         start_delay = 1.0
         accelerate = target_speed / acceleration
-        brake_rate = 0.5
+        brake_rate = (
+            self.l3_brake_rate
+            if getattr(self, "test_mode", "") == "allocation_l3"
+            else 0.5
+        )
         brake = target_speed / brake_rate
         time = max(0.0, float(elapsed) - start_delay)
         if time < accelerate:
             return acceleration * time
         time -= accelerate
-        if time < hold_seconds:
+        recovery_seconds = (
+            self.l3_recovery_seconds
+            if getattr(self, "test_mode", "") == "allocation_l3"
+            else 0.0
+        )
+        if time < hold_seconds + recovery_seconds:
             return target_speed
-        time -= hold_seconds
+        time -= hold_seconds + recovery_seconds
         if time < brake:
             return target_speed - brake_rate * time
         return 0.0
@@ -987,11 +1016,21 @@ class StandardVtolRobustShadow(Node):
         target_speed, acceleration, hold_seconds, _, _ = (
             self._allocation_configuration()
         )
+        brake_rate = (
+            self.l3_brake_rate
+            if getattr(self, "test_mode", "") == "allocation_l3"
+            else 0.5
+        )
         return (
             1.0
             + target_speed / acceleration
             + hold_seconds
-            + target_speed / 0.5
+            + (
+                self.l3_recovery_seconds
+                if getattr(self, "test_mode", "") == "allocation_l3"
+                else 0.0
+            )
+            + target_speed / brake_rate
             + (
                 5.0
                 if getattr(self, "test_mode", "") == "allocation_l3"
@@ -1097,6 +1136,28 @@ class StandardVtolRobustShadow(Node):
             if stage < self.controller.N:
                 fraction = speed / target_speed
                 allocation = 1.0 - (1.0 - minimum_lambda) * fraction
+                if (
+                    self.test_mode == "allocation_l3"
+                    and self.l3_recovery_seconds > 0.0
+                ):
+                    recovery_start = (
+                        1.0
+                        + target_speed / self.l3_acceleration
+                        + self.l3_hold_seconds
+                    )
+                    recovery_end = recovery_start + self.l3_recovery_seconds
+                    if recovery_start <= stage_time < recovery_end:
+                        recovery_fraction = (
+                            (stage_time - recovery_start)
+                            / self.l3_recovery_seconds
+                        )
+                        allocation = minimum_lambda + recovery_fraction * (
+                            self.l3_brake_entry_lambda - minimum_lambda
+                        )
+                    elif stage_time >= recovery_end:
+                        allocation = 1.0 - (
+                            1.0 - self.l3_brake_entry_lambda
+                        ) * fraction
                 if deep_allocation:
                     lift = float(
                         np.interp(speed, corridor_speed, corridor_lift)

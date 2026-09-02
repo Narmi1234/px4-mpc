@@ -22,6 +22,9 @@ def main() -> None:
     parser.add_argument("--level", type=int, choices=(2, 3), default=2)
     parser.add_argument("--target-speed", type=float)
     parser.add_argument("--acceleration", type=float)
+    parser.add_argument("--brake-rate", type=float, default=0.5)
+    parser.add_argument("--recovery-seconds", type=float, default=0.0)
+    parser.add_argument("--brake-entry-lambda", type=float, default=0.7)
     parser.add_argument("--minimum-lambda", type=float)
     parser.add_argument("--pusher-max", type=float)
     args = parser.parse_args()
@@ -56,6 +59,9 @@ def main() -> None:
         l2_pusher_max=0.35,
         l3_target_speed=target_speed,
         l3_acceleration=acceleration,
+        l3_brake_rate=args.brake_rate,
+        l3_recovery_seconds=args.recovery_seconds,
+        l3_brake_entry_lambda=args.brake_entry_lambda,
         l3_hold_seconds=4.0,
         l3_min_lambda=commanded_minimum_lambda,
         l3_pusher_max=configured_pusher_max,

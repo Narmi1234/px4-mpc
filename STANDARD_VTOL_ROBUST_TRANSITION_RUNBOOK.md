@@ -571,7 +571,38 @@ Time je zatvoren model/interfejs mismatch koji je srušio prethodni L3a.
 Novi L3a live-layer offline gate zatim prolazi sa 10.370 m/s,
 `lambda_min=0.350`, 0.330 m visinske greške, 0.107 m/s vertikalne brzine,
 7.85° pitcha i nula solver failurea. L3a je ponovo otključan za jedan live
-pokušaj; L4 i dalje nije otključan.
+pokušaj.
+
+Live L3a je prošao 2026-09-02: 66.00 s testne sekvence, 10.570 m/s,
+10.585 m/s CAS, 0.356 m maksimalne visinske greške, 0.328 m cross-tracka,
+`lambda_min=0.360`, pusher 0.307, PX4-potvrđen `elevator_ff=0.250` i nula
+solver failurea. PX4 ULog sadrži 62.62 s stvarnog Offboard intervala i
+sačuvan je kao
+`validation_logs/accepted/robust_allocation_l3_elevator_ff_pass_2026-09-02.ulg`.
+
+### R4-L3b — 11 m/s i dublji transfer
+
+Direktan kandidat 12 m/s / `lambda=0.20` još ne prolazi exact live-layer
+simulaciju: solver/pitch problem je uklonjen kontrolisanim povratom autoriteta,
+ali ostaje 3.03 m visinske greške. Safety limit nije proširen. Naredni
+flight kandidat je zato 11 m/s, ubrzanje 0.25 m/s², kočenje 0.40 m/s²,
+`lambda_min=0.30` i pusher do 0.42. Offline rezultat je PASS: 10.548 m/s,
+1.019 m visinske greške, 0.179 m/s vertikalne brzine, 15.25° pitcha, uredan
+povratak na nultu brzinu i `lambda=1`, bez solver failurea.
+
+Prvo pokrenuti offline prerequisite:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_allocation_l3b_offline_gate.bash
+```
+
+Za live L3b Terminal 3 mora pokrenuti
+`standard_vtol_robust_l3b_gate_launch.py`, a Terminal 4
+`scripts/run_robust_allocation_l3b_gate.bash`. Terminal 4 provjerava cijeli
+`l3_profile` i odbija stari L3a node. L4 (`lambda=0`) ostaje zaključan dok
+L3b ULog ne potvrdi visinu, pitch, allocation/elevator kanale i povratak u MC
+hover.
 
 Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
 nodeova pa pokretanje potpuno novih procesa. Poruka
