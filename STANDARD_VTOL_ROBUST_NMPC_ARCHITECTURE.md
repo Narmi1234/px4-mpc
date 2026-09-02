@@ -95,9 +95,10 @@ Rate izlazi se blendaju na nivou momenta/allocatora:
 tau_cmd = mu_MC * tau_MC_rate(p_sp,q_sp,r_sp)
         + (1-lambda_lift) * tau_FW_rate(p_sp,q_sp,r_sp).
 
-U L1-L3 je `mu_MC=1` radi pune rate authority dok se lift prenosi na krilo.
-L4 mora dodati optimizirani `mu_MC` (po potrebi poseban po roll/pitch/yaw
-osi), validirati surface authority i tek zatim dozvoliti `mu_MC -> 0`.
+U L1-L3 roll/pitch MC torque prati `lambda_lift`, dok je `mu_yaw=1` jer
+Standard VTOL nema rudder. L4 mora preći sa direktnog yaw-rate zahtjeva na
+koordinisani bank/course zakon, validirati surface authority i tek zatim
+dozvoliti sve torque težine prema nuli.
 ```
 
 Ne smiju se istovremeno množiti `c_lift` u ROS nodeu i ponovo u PX4-u. Postoji

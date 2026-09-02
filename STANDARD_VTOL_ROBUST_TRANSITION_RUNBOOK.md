@@ -618,8 +618,8 @@ rate do `+0.10 rad/s`, dok izmjerena yaw brzina ostaje približno
 control-surface yaw kanal. PX4 patch je istim `lambda` faktorom pogrešno
 umanjivao vertikalni thrust i sva tri MC torque setpointa, dok CasADi model
 zadržava upravljivu rate dinamiku. PX4 je zato izmijenjen tako da u L1-L3
-`lambda` rasterećuje samo lift thrust; MC rate torque ostaje raspoloživ, a FW
-površine se i dalje uvode sa `1-lambda`. Prije ponovnog L3b leta obavezan je
+`lambda` rasterećuje lift thrust i blenda MC/FW roll/pitch, ali MC yaw torque
+ostaje raspoloživ jer ovaj airframe nema rudder. Prije ponovnog L3b leta obavezan je
 potpuni PX4 rebuild/restart. Naknadni solver failurei nakon Position fallbacka
 više se ne akumuliraju u završni status.
 
@@ -627,13 +627,15 @@ Ovo razdvaja dvije fizički različite odluke. Za L1-L3 vrijedi
 
 ```text
 T_lift = lambda_lift * T_MC,
-tau_MC = tau_MC,PID,
-tau_FW = (1-lambda_lift) * tau_FW,PID + elevator_ff.
+tau_MC,roll/pitch = lambda_lift * tau_MC,PID,
+tau_MC,yaw = tau_MC,PID,yaw,
+tau_FW,roll/pitch = (1-lambda_lift) * tau_FW,PID + elevator_ff.
 ```
 
-Puna L4 tranzicija mora dodati zaseban NMPC torque-allocation faktor (ili
-vektor po osama) `mu_MC`; tek `mu_MC -> 0` uz `lambda_lift -> 0` dozvoljava
-gašenje lift motora. L3b dokazuje lift transfer, ne još potpuni torque transfer.
+Puna L4 tranzicija mora dodati torque allocation po osama. Posebno, direktni
+yaw-rate zahtjev mora preći u koordinisani bank/course zakon prije nego
+`mu_yaw -> 0`; tek tada `lambda_lift -> 0` dozvoljava gašenje lift motora.
+L3b dokazuje lift transfer, ne još potpuni torque transfer.
 
 Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
 nodeova pa pokretanje potpuno novih procesa. Poruka

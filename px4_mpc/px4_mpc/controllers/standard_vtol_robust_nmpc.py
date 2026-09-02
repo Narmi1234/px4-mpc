@@ -28,9 +28,10 @@ class StandardVtolRobustNmpc:
     """Constrained NMPC that owns lift/pusher allocation during transition.
 
     The sixth input, ``lambda``, is the vertical lift-thrust fraction. During
-    L1-L3 the PX4 MC rate loop retains torque authority while wing lift and
-    FW surfaces are introduced. Full transition additionally requires an
-    explicit MC/FW torque-authority transfer before the lift motors stop. The
+    L1-L3 PX4 retains MC yaw authority because this airframe has no rudder,
+    while roll/pitch are blended with FW surfaces. Full transition requires
+    coordinated bank/course control and explicit per-axis torque transfer
+    before the lift motors stop. The
     first
     implementation intentionally remains a nominal OCP. Robustness is checked
     by replaying the resulting closed loop with bounded model disturbances.

@@ -18,7 +18,8 @@ u = [c_lift, c_push, p_sp, q_sp, r_sp, lambda_lift]
 lambda_lift=1: puni vertikalni MC thrust; lambda_lift=0: lift thrust ugašen.
 Nakon L3 ULog analize torque transfer je izdvojen kao zasebna buduća NMPC
 odluka `mu_MC`; jedan skalar ne smije istovremeno predstavljati thrust i
-raspoloživost momenta po svim osama.
+raspoloživost momenta po svim osama. Standard VTOL nema rudder, pa u L1-L3
+MC yaw torque ostaje pun dok se roll/pitch blendaju sa FW površinama.
 ```
 
 NMPC ne komanduje pojedinačne RPM-ove ni pojedinačne servo izlaze. PX4
@@ -329,8 +330,9 @@ T_{lift}=\lambda_{lift} c_{lift},\qquad
 \tau_{FW}=(1-\lambda_{lift})\tau_{FW,PID}.
 ```
 
-Za L1-L3 je trenutno `mu_MC=1`; puna L4 mora optimizirati i sigurno spustiti
-`mu_MC` prije gašenja lift motora. Stale/invalid input vraća `lambda_lift`
+Za L1-L3 je trenutno `mu_yaw=1`, dok roll/pitch prate `lambda_lift`; puna L4
+mora koristiti koordinisani bank/course yaw i sigurno spustiti sve `mu` težine
+prije gašenja lift motora. Stale/invalid input vraća `lambda_lift`
 prema jedan. ROS poruke i PX4 SITL su
 uspješno buildani 2026-08-31. Guarded robust-hover node sada objavljuje
 `lambda=1` i prati PX4 status `requested/applied/active/valid`; novi R3b PASS
