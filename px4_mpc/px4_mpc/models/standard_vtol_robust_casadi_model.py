@@ -31,12 +31,13 @@ class StandardVtolRobustCasadiModel(StandardVtolTransitionCasadiModel):
     surface_time_constant = 1.0
     roll_rate_gain = 6.0
     yaw_rate_gain = 4.0
+    elevator_feedforward_limit = 0.25
     pitch_disturbance_bound = StandardVtolPitchRateLpvModel.pitch_disturbance_bound
 
-    # Force-balanced Gazebo trim corridor. PX4's fixed-wing rate controller
-    # applies an equivalent feed-forward trim; q_sp only supplies the feedback
-    # increment about it. Values are deliberately kept in the prediction model
-    # rather than presented as a seventh NMPC actuator.
+    # Force-balanced Gazebo trim corridor. The bounded feed-forward component
+    # is sent explicitly through VtolNmpcAllocationSetpoint; q_sp supplies the
+    # feedback increment around it. It remains scheduled from the predicted
+    # airspeed rather than becoming a seventh optimized NMPC input.
     elevator_trim_speed_nodes = np.arange(5.0, 23.0)
     elevator_trim_nodes = np.deg2rad(
         [
@@ -108,6 +109,27 @@ class StandardVtolRobustCasadiModel(StandardVtolTransitionCasadiModel):
             result = cs.if_else(airspeed >= speeds[index], segment, result)
         return cls._clip(result, float(values[-1]), float(np.max(values)))
 
+    @classmethod
+    def elevator_feedforward(cls, airspeed: float, lift_fraction: float) -> float:
+        """Normalized trim sent through the explicit PX4 elevator channel."""
+        trim = float(
+            np.interp(
+                float(airspeed),
+                cls.elevator_trim_speed_nodes,
+                cls.elevator_trim_nodes,
+            )
+        )
+        requested = (1.0 - np.clip(lift_fraction, 0.0, 1.0)) * trim / (
+            np.pi / 4.0
+        )
+        return float(
+            np.clip(
+                requested,
+                -cls.elevator_feedforward_limit,
+                cls.elevator_feedforward_limit,
+            )
+        )
+
     def symbolic_dynamics(self):
         state = cs.MX.sym("x", self.state_size)
         control = cs.MX.sym("u", self.control_size)
@@ -165,11 +187,17 @@ class StandardVtolRobustCasadiModel(StandardVtolTransitionCasadiModel):
         roll_torque = self._clip(0.30 * roll_error_frd, -1.0, 1.0)
         pitch_torque = self._clip(0.90 * pitch_error_frd, -1.0, 1.0)
         elevator_trim = self._elevator_trim(airspeed)
+        elevator_feedforward = self._clip(
+            fw_weight * elevator_trim / (np.pi / 4.0),
+            -self.elevator_feedforward_limit,
+            self.elevator_feedforward_limit,
+        )
         surface_command = fw_weight * cs.vertcat(
             -np.pi / 4.0 * roll_torque,
             np.pi / 4.0 * roll_torque,
-            elevator_trim + np.pi / 4.0 * pitch_torque,
+            np.pi / 4.0 * pitch_torque,
         )
+        surface_command[2] += np.pi / 4.0 * elevator_feedforward
         surface_derivative = (
             surface_command - surface_angles
         ) / self.surface_time_constant

@@ -1,0 +1,56 @@
+diff --git a/msg/VtolNmpcAllocationSetpoint.msg b/msg/VtolNmpcAllocationSetpoint.msg
+--- a/msg/VtolNmpcAllocationSetpoint.msg
++++ b/msg/VtolNmpcAllocationSetpoint.msg
+@@
+ uint64 timestamp                 # time since system start (microseconds)
+ float32 transition_weight        # NMPC lift/MC allocation weight: 1=MC, 0=FW
++float32 elevator_feedforward     # direct normalized elevator trim, limited to +/-0.25
+diff --git a/msg/VtolNmpcAllocationStatus.msg b/msg/VtolNmpcAllocationStatus.msg
+--- a/msg/VtolNmpcAllocationStatus.msg
++++ b/msg/VtolNmpcAllocationStatus.msg
+@@
+ float32 requested_weight         # last finite requested transition weight
+ float32 applied_weight           # constrained and slew-limited weight
++float32 requested_elevator_feedforward # last finite normalized elevator trim
++float32 applied_elevator_feedforward   # trim applied to the FW pitch channel
+ bool active                      # fresh external NMPC allocation is applied
+ bool setpoint_valid              # latest setpoint was finite and in range
+diff --git a/src/modules/vtol_att_control/standard.h b/src/modules/vtol_att_control/standard.h
+--- a/src/modules/vtol_att_control/standard.h
++++ b/src/modules/vtol_att_control/standard.h
+@@
+ 	float _external_allocation_requested{1.0f};
++	float _external_elevator_feedforward_requested{0.0f};
+ 	bool _external_allocation_active{false};
+diff --git a/src/modules/vtol_att_control/standard.cpp b/src/modules/vtol_att_control/standard.cpp
+--- a/src/modules/vtol_att_control/standard.cpp
++++ b/src/modules/vtol_att_control/standard.cpp
+@@
+ 		_external_allocation_setpoint_valid = PX4_ISFINITE(setpoint.transition_weight)
+ 				&& setpoint.transition_weight >= 0.0f
+-				&& setpoint.transition_weight <= 1.0f;
++				&& setpoint.transition_weight <= 1.0f
++				&& PX4_ISFINITE(setpoint.elevator_feedforward)
++				&& fabsf(setpoint.elevator_feedforward) <= 0.25f;
+ 
+ 		if (_external_allocation_setpoint_valid) {
+ 			_external_allocation_requested = setpoint.transition_weight;
++			_external_elevator_feedforward_requested = setpoint.elevator_feedforward;
+ 		}
+@@
+ 	status.requested_weight = _external_allocation_requested;
+ 	status.applied_weight = _external_allocation_weight.getState();
++	status.requested_elevator_feedforward = _external_elevator_feedforward_requested;
++	status.applied_elevator_feedforward = _external_allocation_active
++					    ? _external_elevator_feedforward_requested : 0.0f;
+@@
+ 	const float external_weight = externalAllocationWeight();
++	const float external_elevator_feedforward = _external_allocation_active
++					    ? _external_elevator_feedforward_requested : 0.0f;
+ 	const bool external_allocation = externalAllocationEligible();
+@@
+ 			_torque_setpoint_1->xyz[1] = _vehicle_torque_setpoint_virtual_fw->xyz[1] * (1.0f - external_weight);
++			// The identified transition model contains an airspeed-scheduled
++			// elevator trim. Apply its bounded normalized command explicitly;
++			// the Standard VTOL elevator effectiveness coefficient is one.
++			_torque_setpoint_1->xyz[1] += external_elevator_feedforward;

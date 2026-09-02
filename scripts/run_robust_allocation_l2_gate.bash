@@ -101,6 +101,7 @@ if [[ "${final_status}" == *"output_requested=False"* \
       && "${final_status}" == *"abort_reason=allocation_l2_test_timeout"* \
       && "${final_status}" == *"ever_active=True"* \
       && "${final_status}" == *"ever_valid=True"* \
+      && "${final_status}" == *"elevator_ff=0.250"* \
       && "${final_status}" == *"min_lambda=0.5"* ]]; then
     echo "ROBUST_ALLOCATION_L2=PASS"
     echo "Land, disarm and preserve the ULog before L3."

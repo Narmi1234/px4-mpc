@@ -540,6 +540,27 @@ kontinuirano neaktivnog kanala prije aborta i status ispisuje `inactive_for`.
 Nevalidan setpoint i dalje abortira odmah; tokom kratkog zastoja PX4 sam vraća
 `lambda` prema sigurnoj vrijednosti 1.0.
 
+Kasniji L3a pokušaj od 2026-09-01 nije pao pri kočenju. ULog
+`2026-09-01/20_41_04.ulg` pokazuje da je pri 10.79 m/s, na kraju ubrzanja,
+visinska greška narasla na 1.20 m. NMPC je dostigao `lambda=0.4`, ali je
+stvarni elevator bio samo oko 0.24 normalizovane komande dok je predikcijski
+model sadržavao dodatni airspeed-scheduled trim. Lift-motor izlaz je istovremeno
+pao sa oko 0.24 na 0.12. To je model/actuator-interface mismatch, a ne safety
+limit koji treba olabaviti.
+
+Zato je external-allocation poruka proširena sa bounded
+`elevator_feedforward` kanalom. NMPC i model koriste isti trim, PX4 ga sabira
+na FW pitch kanal prije control allocationa, a stale/invalid/izlazak iz
+Offboarda odmah ga vraća na nulu. Hard limit je 0.25. PX4 status vraća requested
+i applied vrijednost, a ROS gate bilježi `maxima.elevator_ff`.
+
+Novi redoslijed je obavezan:
+
+1. rebuildani PX4 i ROS workspace;
+2. ponoviti L2b i zahtijevati `elevator_ff=0.250` uz postojeći PASS envelope;
+3. tek nakon L2b PASS-a ponoviti L3a;
+4. L4 ostaje zaključan dok L3a ne prođe bez visinske greške i solver failurea.
+
 **Go/no-go prema punoj tranziciji:** jedan L2 live pokušaj se analizira prije
 ponavljanja. Ako pokaže strukturirane pitch/altitude oscilacije ili ne može
 zadržati envelope bez popuštanja navedenih limita, trenutni model/interfejs se

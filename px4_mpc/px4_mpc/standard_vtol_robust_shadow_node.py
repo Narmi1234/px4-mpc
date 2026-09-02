@@ -240,6 +240,8 @@ class StandardVtolRobustShadow(Node):
         self.max_pusher = 0.0
         self.max_airspeed = 0.0
         self.max_state_gap = 0.0
+        self.published_elevator_feedforward = 0.0
+        self.max_applied_elevator_feedforward = 0.0
 
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -374,6 +376,10 @@ class StandardVtolRobustShadow(Node):
         self.allocation_status = message
         self.allocation_ever_active |= bool(message.active)
         self.allocation_ever_valid |= bool(message.setpoint_valid)
+        self.max_applied_elevator_feedforward = max(
+            self.max_applied_elevator_feedforward,
+            abs(float(getattr(message, "applied_elevator_feedforward", 0.0))),
+        )
 
     def _vtol_status(self, message: VtolVehicleStatus) -> None:
         self.vtol_status = message
@@ -481,6 +487,7 @@ class StandardVtolRobustShadow(Node):
         self.max_pusher = 0.0
         self.max_airspeed = 0.0
         self.max_state_gap = 0.0
+        self.max_applied_elevator_feedforward = 0.0
         response.success = True
         response.message = "hover reference captured"
         return response
@@ -536,9 +543,21 @@ class StandardVtolRobustShadow(Node):
         if self.allocation_status is None:
             allocation = "unavailable"
         else:
+            requested_elevator = getattr(
+                self.allocation_status,
+                "requested_elevator_feedforward",
+                math.nan,
+            )
+            applied_elevator = getattr(
+                self.allocation_status,
+                "applied_elevator_feedforward",
+                math.nan,
+            )
             allocation = (
                 f"requested={self.allocation_status.requested_weight:.3f},"
                 f"applied={self.allocation_status.applied_weight:.3f},"
+                f"elevator_requested={requested_elevator:.3f},"
+                f"elevator_applied={applied_elevator:.3f},"
                 f"active={self.allocation_status.active},"
                 f"valid={self.allocation_status.setpoint_valid},"
                 f"ever_active={self.allocation_ever_active},"
@@ -584,6 +603,7 @@ class StandardVtolRobustShadow(Node):
             f"altitude={self.max_altitude_error:.3f},"
             f"airspeed={self.max_airspeed:.3f},"
             f"pusher={self.max_pusher:.3f},"
+            f"elevator_ff={self.max_applied_elevator_feedforward:.3f},"
             f"min_lambda={self.min_applied_lambda:.3f},"
             f"state_gap={self.max_state_gap:.3f}],"
             f"control={np.round(self.last_control, 4).tolist()},"
@@ -732,6 +752,7 @@ class StandardVtolRobustShadow(Node):
         self.max_pusher = 0.0
         self.max_airspeed = 0.0
         self.max_state_gap = 0.0
+        self.max_applied_elevator_feedforward = 0.0
         response.success = True
         response.message = (
             "guarded L1 prestream started; MC-only 0->5->0 m/s, "
@@ -830,6 +851,7 @@ class StandardVtolRobustShadow(Node):
         self.max_pusher = 0.0
         self.max_airspeed = 0.0
         self.max_state_gap = 0.0
+        self.max_applied_elevator_feedforward = 0.0
         response.success = True
         target, _, _, minimum_lambda, _ = self._allocation_configuration()
         response.message = (
@@ -884,6 +906,15 @@ class StandardVtolRobustShadow(Node):
         allocation = VtolNmpcAllocationSetpoint()
         allocation.timestamp = timestamp
         allocation.transition_weight = float(np.clip(control[5], 0.0, 1.0))
+        airspeed = max(self._calibrated_airspeed(), self._forward_speed(), 0.0)
+        allocation.elevator_feedforward = (
+            self.controller.model.elevator_feedforward(
+                airspeed, allocation.transition_weight
+            )
+        )
+        self.published_elevator_feedforward = float(
+            allocation.elevator_feedforward
+        )
         self.allocation_publisher.publish(allocation)
 
     def _tilt_degrees(self) -> float:

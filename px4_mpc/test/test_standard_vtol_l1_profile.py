@@ -3,6 +3,9 @@ import unittest
 
 import numpy as np
 
+from px4_mpc.models.standard_vtol_robust_casadi_model import (
+    StandardVtolRobustCasadiModel,
+)
 from px4_mpc.standard_vtol_robust_shadow_node import StandardVtolRobustShadow
 
 
@@ -100,6 +103,12 @@ class TestStandardVtolL1Profile(unittest.TestCase):
         )
         self.assertAlmostEqual(lower[-1, 5], 0.35)
         self.assertAlmostEqual(upper[-1, 5], 0.40)
+
+    def test_elevator_feedforward_is_zero_in_mc_and_hard_limited(self):
+        command = StandardVtolRobustCasadiModel.elevator_feedforward
+        self.assertEqual(command(10.5, 1.0), 0.0)
+        self.assertGreater(command(10.5, 0.8), 0.0)
+        self.assertAlmostEqual(command(10.5, 0.35), 0.25)
 
 
 if __name__ == "__main__":
