@@ -362,7 +362,9 @@ class StandardVtolRobustShadow(Node):
         if self.allow_l3_output:
             self.get_logger().info(
                 "Robust Standard VTOL NMPC started in guarded L3 allocation "
-                "mode (10.5 m/s, lambda >= 0.35, MC only)"
+                f"mode ({self.l3_target_speed:.1f} m/s, lambda >= "
+                f"{self.l3_min_lambda:.2f}, brake="
+                f"{self.l3_brake_rate:.2f} m/s^2, MC only)"
             )
         elif self.allow_l2_output:
             self.get_logger().info(

@@ -9,10 +9,14 @@ source "${_ROOT}/scripts/source_ros2_nmpc.bash"
 wait_for_service() {
     local target="$1"
     local attempt discovered
-    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    # A changed NMPC source can trigger one acados regeneration at launch.
+    # On this machine that has taken about 90 seconds, so do not report a
+    # false node_unavailable while Terminal 3 is still building the solver.
+    for attempt in $(seq 1 90); do
         discovered="$(ros2 service list --no-daemon --spin-time 2 2>/dev/null || true)"
         if grep -qx "${target}" <<< "${discovered}"; then return 0; fi
-        echo "Waiting for ROS discovery (${attempt}/10)..."
+        echo "Waiting for L3b node/solver (${attempt}/90)..."
+        sleep 1
     done
     return 1
 }
