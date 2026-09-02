@@ -76,6 +76,8 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("l3_hold_seconds", 4.0)
         self.declare_parameter("l3_min_lambda", 0.35)
         self.declare_parameter("l3_pusher_max", 0.42)
+        self.declare_parameter("l3_collective_min", 0.30)
+        self.declare_parameter("l3_pitch_rate_limit", 0.18)
         horizon_steps = int(self.get_parameter("horizon_steps").value)
         horizon_seconds = float(self.get_parameter("horizon_seconds").value)
         root = Path(__file__).resolve().parents[2]
@@ -206,6 +208,12 @@ class StandardVtolRobustShadow(Node):
         self.l3_pusher_max = float(
             self.get_parameter("l3_pusher_max").value
         )
+        self.l3_collective_min = float(
+            self.get_parameter("l3_collective_min").value
+        )
+        self.l3_pitch_rate_limit = float(
+            self.get_parameter("l3_pitch_rate_limit").value
+        )
         if not (
             10.0 <= self.l3_target_speed <= 13.0
             and 0.2 <= self.l3_acceleration <= 0.35
@@ -215,6 +223,8 @@ class StandardVtolRobustShadow(Node):
             and 3.0 <= self.l3_hold_seconds <= 5.0
             and 0.2 <= self.l3_min_lambda <= 0.4
             and 0.35 <= self.l3_pusher_max <= 0.50
+            and 0.05 <= self.l3_collective_min <= 0.30
+            and 0.18 <= self.l3_pitch_rate_limit <= 0.25
         ):
             raise ValueError("L3 parameters exceed the guarded envelope")
         self.state: np.ndarray | None = None
@@ -613,6 +623,10 @@ class StandardVtolRobustShadow(Node):
             f"brake={self.l3_brake_rate:.2f},"
             f"lambda={self.l3_min_lambda:.2f},"
             f"pusher={self.l3_pusher_max:.2f}],"
+            f"l3_limits=[recovery={self.l3_recovery_seconds:.1f},"
+            f"brake_entry_lambda={self.l3_brake_entry_lambda:.2f},"
+            f"collective_min={self.l3_collective_min:.2f},"
+            f"pitch_rate={self.l3_pitch_rate_limit:.2f}],"
             f"allocation=[{allocation},"
             f"inactive_for={allocation_inactive_duration:.3f}s],"
             f"motion=[forward_speed={forward_speed:.3f},"
@@ -1513,13 +1527,24 @@ class StandardVtolRobustShadow(Node):
                 correction = (
                     base_lift - self.controller.model.plant.hover_command
                 ) / requested[5]
+                collective_minimum = (
+                    self.l3_collective_min if l3 else 0.30
+                )
                 requested[0] = np.clip(
-                    requested[0] + correction, 0.30, 0.70
+                    requested[0] + correction, collective_minimum, 0.70
                 )
                 requested[2:5] = np.clip(
                     np.array([0.40, 1.00, 0.40]) * requested[2:5],
-                    [-0.12, -0.18, -0.10],
-                    [0.12, 0.18, 0.10],
+                    [
+                        -0.12,
+                        -self.l3_pitch_rate_limit if l3 else -0.18,
+                        -0.10,
+                    ],
+                    [
+                        0.12,
+                        self.l3_pitch_rate_limit if l3 else 0.18,
+                        0.10,
+                    ],
                 )
             else:
                 requested[0] = np.clip(

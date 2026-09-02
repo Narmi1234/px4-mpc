@@ -28,6 +28,8 @@ def main() -> None:
     parser.add_argument("--brake-entry-lambda", type=float, default=0.7)
     parser.add_argument("--minimum-lambda", type=float)
     parser.add_argument("--pusher-max", type=float)
+    parser.add_argument("--collective-min", type=float, default=0.30)
+    parser.add_argument("--pitch-rate-limit", type=float, default=0.18)
     parser.add_argument("--inject-time", type=float, default=-1.0)
     parser.add_argument("--inject-cross-track", type=float, default=0.0)
     parser.add_argument("--inject-lateral-speed", type=float, default=0.0)
@@ -70,6 +72,8 @@ def main() -> None:
         l3_hold_seconds=4.0,
         l3_min_lambda=commanded_minimum_lambda,
         l3_pusher_max=configured_pusher_max,
+        l3_collective_min=args.collective_min,
+        l3_pitch_rate_limit=args.pitch_rate_limit,
         reference_forward=np.array([1.0, 0.0]),
         reference_lateral=np.array([0.0, 1.0]),
     )
@@ -101,6 +105,9 @@ def main() -> None:
     dynamics = controller.model.function()
     dt = 0.05
     maxima = np.zeros(6)
+    maximum_times = np.zeros(6)
+    maximum_signed_altitude = 0.0
+    maximum_altitude_control = command.copy()
     minimum_lambda = 1.0
     solver_failures = 0
     disturbance_injected = False
@@ -168,12 +175,16 @@ def main() -> None:
         correction = (
             base_lift - controller.model.plant.hover_command
         ) / requested[5]
-        requested[0] = np.clip(requested[0] + correction, 0.30, 0.70)
+        requested[0] = np.clip(
+            requested[0] + correction,
+            args.collective_min if level == 3 else 0.30,
+            0.70,
+        )
         requested[1] = np.clip(requested[1], 0.0, pusher_max)
         requested[2:5] = np.clip(
             np.array([0.40, 1.00, 0.40]) * requested[2:5],
-            [-0.12, -0.18, -0.10],
-            [0.12, 0.18, 0.10],
+            [-0.12, -args.pitch_rate_limit, -0.10],
+            [0.12, args.pitch_rate_limit, 0.10],
         )
         slew = np.array([0.10, 0.05, 0.20, 0.20, 0.15, 0.05])
         limited = command + np.clip(
@@ -197,8 +208,7 @@ def main() -> None:
                 1.0,
             )
         )
-        maxima = np.maximum(
-            maxima,
+        sample_metrics = np.asarray(
             [
                 state[3],
                 abs(state[2] - 30.0),
@@ -206,8 +216,14 @@ def main() -> None:
                 abs(pitch),
                 command[1],
                 abs(state[1]),
-            ],
+            ]
         )
+        improved = sample_metrics > maxima
+        maximum_times[improved] = elapsed
+        maxima = np.maximum(maxima, sample_metrics)
+        if improved[1]:
+            maximum_signed_altitude = float(state[2] - 30.0)
+            maximum_altitude_control = command.copy()
 
     metrics = {
         "solver_failures": solver_failures,
@@ -218,6 +234,11 @@ def main() -> None:
         "max_pusher": maxima[4],
         "minimum_lambda": minimum_lambda,
         "max_cross_track_m": maxima[5],
+        "max_altitude_error_time_s": maximum_times[1],
+        "max_altitude_error_signed_m": maximum_signed_altitude,
+        "max_altitude_error_control": np.round(
+            maximum_altitude_control, 4
+        ).tolist(),
         "final_forward_speed_m_s": state[3],
         "final_lambda": command[5],
     }

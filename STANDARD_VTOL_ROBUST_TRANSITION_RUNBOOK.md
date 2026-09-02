@@ -654,6 +654,30 @@ bank/course zakon: prvo smanjiti direktni MC yaw autoritet pri približno
 11 m/s bez dubljeg lift unloadinga, dokazati course hold, pa tek zatim ponovo
 razmatrati 12 m/s / `lambda_lift=0.20`.
 
+### R4-L3c — duboki lift transfer prije torque transfera
+
+L3c zadržava axis-aware MC yaw autoritet, ali ide na 12 m/s i
+`lambda_lift=0.20`. Prvi profil koji je vraćao `lambda` pri konstantnoj
+brzini bio je odbijen jer je collective floor proizveo oko 3 m viška visine.
+Prihvaćena putanja koordinira povrat lift autoriteta sa kočenjem i dopušta
+0.25 rad/s pitch-rate envelope. Exact live-layer simulacija prolazi sa
+12.001 m/s, `lambda_min=0.200`, 0.249 m visinske greške, 0.105 m/s
+vertikalne brzine, 7.50° pitcha, nula solver failurea i konačnim povratkom na
+nultu brzinu i `lambda=1`.
+
+Offline prerequisite:
+
+```bash
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_allocation_l3c_offline_gate.bash
+```
+
+Live Terminal 3 koristi `standard_vtol_robust_l3c_gate_launch.py`, a Terminal
+4 `scripts/run_robust_allocation_l3c_gate.bash`. Početna visina je 20–25 m,
+pusher limit 0.45 i potrebna je duga slobodna putanja. Ovaj gate ne šalje PX4
+transition komandu i ne gasi lift motore. PASS otključava implementaciju
+per-axis torque-transfer/L4, ne automatski direktan puni transition let.
+
 Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
 nodeova pa pokretanje potpuno novih procesa. Poruka
 `Change payload size ... 40 ... larger ... 35` znači da je u DDS grafu ostao

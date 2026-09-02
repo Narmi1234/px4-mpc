@@ -31,6 +31,8 @@ class TestStandardVtolL1Profile(unittest.TestCase):
             l3_hold_seconds=4.0,
             l3_min_lambda=0.35,
             l3_pusher_max=0.42,
+            l3_collective_min=0.30,
+            l3_pitch_rate_limit=0.18,
             max_state_age=0.20,
             active_state_stale_abort=0.45,
         )
