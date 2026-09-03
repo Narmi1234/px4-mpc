@@ -847,3 +847,30 @@ visinske greške, 0.094 m/s vertikalne brzine, 7.50° pitcha,
 `recovery=10.0` i `effective_lift_min=0.20`.
 
 **Aktuelni go/no-go:** jedan L3c v10 live let; PASS otključava L4.
+
+L3c v10 live PASS ostvaren je 2026-09-03 (`17_15_22.ulg`). Gate je završio
+punih 108.05 s u Offboardu sa očekivanim
+`abort_reason=allocation_l3_test_timeout`, nula solver failurea i urednim
+povratkom u Position. Maksimumi su 12.184 m/s groundspeed, 12.195 m/s CAS,
+0.290 m visinske greške, 0.305 m cross-tracka, pusher 0.314 i
+`lambda_min=0.223`; elevator feed-forward je dostigao 0.250. Na kraju su
+komandovana i primijenjena lambda vraćene približno na 1.0. Time su dokazani
+NMPC-owned pusher, lift allocation, rate komande, duboki lift transfer i
+siguran kompletan recovery profil u MC stanju.
+
+**L3 je zatvoren i L4 je otključan.** Sljedeća promjena nije spuštanje
+postojećeg L3 minimuma direktno na nulu. Prvo se komandni ugovor i PX4 patch
+proširuju od jedne `lambda_lift` na eksplicitne per-axis torque težine. L4
+mora dokazati:
+
+```text
+lift motors:       lambda_lift 1 -> 0 -> 1
+MC roll/pitch:     mu_mc_rp     1 -> 0 -> 1
+FW roll/pitch:     1 - mu_mc_rp
+MC yaw:            ostaje aktivan dok koordinisani bank/course zakon nije validan
+pusher/elevator:   NMPC komande kroz cijelu putanju
+```
+
+Tek nakon bench provjere mapiranja i watchdog recoveryja slijedi prvi L4
+flight gate. Stock PX4 transition scheduler ne smije birati blend ili gasiti
+lift motore u tom eksperimentu.
