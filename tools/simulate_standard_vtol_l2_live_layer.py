@@ -188,6 +188,7 @@ def main() -> None:
                     args.collective_min,
                     args.effective_lift_min,
                     requested[5],
+                    state[3],
                 )
             )
         requested[0] = np.clip(

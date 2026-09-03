@@ -168,10 +168,12 @@ class TestStandardVtolL1Profile(unittest.TestCase):
 
     def test_effective_lift_floor_compensates_allocation_and_is_bounded(self):
         floor = StandardVtolRobustShadow._minimum_collective_for_allocation
-        self.assertAlmostEqual(floor(0.46, 0.20, 0.50), 0.46)
-        self.assertAlmostEqual(floor(0.46, 0.20, 0.40), 0.50)
-        self.assertAlmostEqual(floor(0.46, 0.20, 0.30), 2.0 / 3.0)
-        self.assertAlmostEqual(floor(0.46, 0.20, 0.20), 0.70)
+        self.assertAlmostEqual(floor(0.46, 0.20, 0.50, 12.0), 0.40)
+        self.assertAlmostEqual(floor(0.46, 0.20, 0.40, 12.0), 0.50)
+        self.assertAlmostEqual(floor(0.46, 0.20, 0.30, 12.0), 2.0 / 3.0)
+        self.assertAlmostEqual(floor(0.46, 0.20, 0.20, 12.0), 0.70)
+        self.assertAlmostEqual(floor(0.46, 0.20, 1.0, 0.0), 0.520119535)
+        self.assertAlmostEqual(floor(0.46, 0.0, 0.30, 12.0), 0.46)
 
 
 if __name__ == "__main__":

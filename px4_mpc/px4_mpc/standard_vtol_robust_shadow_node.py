@@ -1319,16 +1319,28 @@ class StandardVtolRobustShadow(Node):
         configured_minimum: float,
         effective_lift_minimum: float,
         lift_fraction: float,
+        forward_speed: float = 0.0,
         maximum: float = 0.70,
     ) -> float:
-        """Keep the final mean lift-motor command above an identified floor."""
+        """Schedule final lift-motor command from hover to wing-borne flight."""
+        if effective_lift_minimum <= 0.0:
+            return float(np.clip(configured_minimum, 0.0, maximum))
+        speed_nodes = np.arange(11.0)
+        # Force-balanced corridor, with the ULog-identified high-speed residual
+        # lift command replacing the optimistic zero above 10 m/s.
+        effective_nodes = np.array([
+            0.520119535, 0.515250356, 0.493080651, 0.459032148,
+            0.435379671, 0.435132797, 0.397462199, 0.349616361,
+            0.280231964, 0.20, effective_lift_minimum,
+        ])
+        effective_target = max(
+            float(effective_lift_minimum),
+            float(np.interp(
+                max(float(forward_speed), 0.0), speed_nodes, effective_nodes
+            )),
+        )
         lift = max(float(lift_fraction), 1.0e-3)
-        allocation_compensated = float(effective_lift_minimum) / lift
-        return float(np.clip(
-            max(float(configured_minimum), allocation_compensated),
-            0.0,
-            maximum,
-        ))
+        return float(np.clip(effective_target / lift, 0.0, maximum))
 
     def _safety_reason(self) -> str | None:
         # State freshness is handled before solving in _update().  Rechecking
@@ -1684,6 +1696,7 @@ class StandardVtolRobustShadow(Node):
                         self.l3_collective_min,
                         self.l3_effective_lift_min,
                         requested[5],
+                        self._forward_speed(),
                     )
                 requested[0] = np.clip(
                     requested[0] + correction, collective_minimum, 0.70

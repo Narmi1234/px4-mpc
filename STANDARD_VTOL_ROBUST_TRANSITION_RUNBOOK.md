@@ -819,3 +819,31 @@ vertikalne brzine i nula solver failurea. Live preflight mora pokazati
 **Aktuelni go/no-go:** izvršava se jedan L3c v9 let. Samo puni timeout/PASS
 otključava L4; abort zahtijeva ULog analizu bez daljeg ručnog povećavanja
 collectivea ili safety limita.
+
+L3c v9 live let `2026-09-03/17_04_43.ulg` riješio je rani gubitak visine i
+prvi put uredno dostigao 12.179 m/s, 12.223 m/s CAS i
+`lambda_min=0.227`, uz 0.282 m cross-tracka i nula solver failurea. Tokom
+recoveryja/kočenja ipak je nastala vertikalna oscilacija: pitch je ostao ispod
+8.59°, ali je `|vz|>0.90 m/s` trajao 0.25 s i ispravno aktivirao 0.20 s
+safety guard. ULog pokazuje da su praktično trenutni lambda recovery
+(`recovery=0.1 s`) i početak kočenja bili spojeni. Uz fiksni raw collective
+floor, rast lambde je istovremeno naglo povećavao stvarni rotor lift.
+
+L3c v10 razdvaja te događaje. Na konstantnih 12 m/s lambda se prvo vraća
+0.20→0.70 tokom 10 s, tačno 0.05/s, a tek zatim počinje kočenje. Collective
+floor više nije konstantan u raw komandi. Koristi brzinski trim cilj za
+stvarnu komandu motora:
+
+```text
+u_lift,eff,min(V) = max(0.20, u_lift,corridor(V))
+collective_min(V,lambda) = clip(u_lift,eff,min(V)/lambda, 0, 0.70).
+```
+
+Zato pri high-speed lambda recoveryju stvarni rotor lift ostaje približno
+0.20; tek sa padom brzine raste glatko prema hover vrijednosti 0.5201.
+Offline exact live-layer v10 prolazi sa 11.970 m/s, 0.299 m maksimalne
+visinske greške, 0.094 m/s vertikalne brzine, 7.50° pitcha,
+`lambda_min=0.200` i nula solver failurea. Preflight mora pokazati
+`recovery=10.0` i `effective_lift_min=0.20`.
+
+**Aktuelni go/no-go:** jedan L3c v10 live let; PASS otključava L4.
