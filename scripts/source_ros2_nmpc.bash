@@ -24,7 +24,7 @@ source "${_PX4_MPC_ROOT}/scripts/setup_standard_vtol_nmpc.bash"
 
 # Refuse to start a mixed old/new DDS graph after a custom px4_msgs change.
 # A size mismatch otherwise appears only as repeated Fast DDS history errors.
-if ! python3 -c "from px4_msgs.msg import VtolNmpcAllocationSetpoint as S, VtolNmpcAllocationStatus as T; assert 'elevator_feedforward' in S.get_fields_and_field_types(); assert 'applied_elevator_feedforward' in T.get_fields_and_field_types()"; then
+if ! python3 -c "from px4_msgs.msg import VtolNmpcAllocationSetpoint as S, VtolNmpcAllocationStatus as T; sf=S.get_fields_and_field_types(); tf=T.get_fields_and_field_types(); assert {'mc_roll_pitch_weight','mc_yaw_weight','elevator_feedforward'} <= set(sf); assert {'applied_mc_roll_pitch_weight','applied_mc_yaw_weight','applied_elevator_feedforward'} <= set(tf)"; then
     echo "Stale px4_msgs overlay: rebuild px4_msgs and open a new terminal."
     unset _PX4_MPC_ROOT
     return 1

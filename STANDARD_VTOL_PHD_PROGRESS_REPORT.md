@@ -364,13 +364,14 @@ pravac.
 | L2 `lambda 1→0.55→1` | live PASS: 9.606 m/s, 0.086 m altitude error |
 | L3a `lambda 1→0.35→1` | live PASS: 10.570 m/s, 0.356 m altitude error |
 | L3b `lambda 1→0.30→1` | live PASS nakon yaw patcha: 10.916 m/s, 0.304 m altitude error, `lambda_min=0.324` |
+| per-axis L4 komandni ugovor | implementiran i buildan; L4a live test slijedi |
 | puna front/back tranzicija | nije izvedena |
 
 Naredno:
 
-1. dodati per-axis torque allocation i koordinisani bank/course gate;
-2. riješiti predviđenu visinsku grešku prije 12 m/s / `lambda=0.20`;
-3. L4 `lambda=0` i puna NMPC-owned front/back putanja;
+1. provesti L4a: roll/pitch surface takeover uz zadržan lift i MC yaw;
+2. dodati i provesti L4b koordinisani bank/course yaw transfer;
+3. L4c `lambda=0` i puna NMPC-owned front/back putanja;
 4. vjetar, model-uncertainty i Monte Carlo evaluacija.
 
 ### Live L1 rezultat — 2026-09-01

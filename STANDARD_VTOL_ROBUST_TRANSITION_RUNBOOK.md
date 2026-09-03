@@ -874,3 +874,61 @@ pusher/elevator:   NMPC komande kroz cijelu putanju
 Tek nakon bench provjere mapiranja i watchdog recoveryja slijedi prvi L4
 flight gate. Stock PX4 transition scheduler ne smije birati blend ili gasiti
 lift motore u tom eksperimentu.
+
+### R4-L4a — odvojeni roll/pitch torque transfer
+
+Implementiran je prošireni NMPC/PX4 ugovor sa tri nezavisna autoriteta:
+`transition_weight` sada znači samo lift thrust, a nova polja
+`mc_roll_pitch_weight` i `mc_yaw_weight` određuju MC torque autoritet. Svako
+polje PX4 zasebno validira, slew-limitira i pri stale/invalid poruci vraća na
+1.0. PX4 SITL build i 96 Python regresijskih testova prolaze.
+
+Prvi flight gate namjerno nije još motor-off tranzicija. L4a ponavlja dokazani
+L3c v10 profil do 12 m/s i `lambda_lift≈0.20`, ali spušta
+`mu_mc_rp≈0.05`. Time aerodinamičke površine preuzimaju približno 95% roll i
+pitch torque autoriteta. `mu_mc_yaw=1.0`, VTOL ostaje u MC stanju i lift
+thrust rezerva ostaje aktivna. Tek L4a PASS otključava L4b coordinated-course
+yaw transfer; tek L4b PASS otključava L4c `lambda_lift=0`.
+
+Nakon potpunog gašenja svih starih PX4/agent/ROS procesa, build i pokretanje
+su:
+
+```bash
+# Jednom nakon promjene poruka
+cd /home/imran/Repositories/PX4-Autopilot
+make px4_sitl_default
+
+cd /home/imran/Repositories/px4-mpc
+source /opt/ros/jazzy/setup.bash
+bash scripts/sync_l4_px4_messages.bash
+colcon build --packages-select px4_msgs px4_mpc --symlink-install
+
+# Terminal 1
+cd /home/imran/Repositories/PX4-Autopilot
+make px4_sitl gz_standard_vtol
+
+# PX4 konzola u Terminalu 1
+param set VT_EXT_PUSH_EN 1
+param set VT_EXT_PUSH_MAX 0.45
+param set VT_EXT_PUSH_SLEW 0.10
+param set VT_EXT_ALLOC_EN 1
+param set VT_EXT_AL_SLEW 0.05
+
+# Terminal 2
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+microxrce_agent_install/bin/MicroXRCEAgent udp4 -p 8888
+
+# Terminal 3
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+ros2 launch px4_mpc standard_vtol_robust_l4a_gate_launch.py
+
+# Terminal 4, tek nakon stabilnog Position hovera na 20-25 m
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_allocation_l4a_gate.bash
+```
+
+PASS mora sadržati `allocation_l4a_test_timeout`, nula solver failurea,
+`min_lambda=0.2...`, `min_mc_rp=0.0...`, `min_mc_yaw=1.000` i siguran povratak
+u Position. Operator ne smije slati QGC/PX4 transition komandu tokom L4a.

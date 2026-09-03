@@ -175,6 +175,13 @@ class TestStandardVtolL1Profile(unittest.TestCase):
         self.assertAlmostEqual(floor(0.46, 0.20, 1.0, 0.0), 0.520119535)
         self.assertAlmostEqual(floor(0.46, 0.0, 0.30, 12.0), 0.46)
 
+    def test_l4a_separates_roll_pitch_transfer_from_lift_and_keeps_bounds(self):
+        weight = StandardVtolRobustShadow._l4a_roll_pitch_weight
+        self.assertAlmostEqual(weight(1.0, 0.2, 0.05), 1.0)
+        self.assertAlmostEqual(weight(0.6, 0.2, 0.05), 0.525)
+        self.assertAlmostEqual(weight(0.2, 0.2, 0.05), 0.05)
+        self.assertAlmostEqual(weight(0.0, 0.2, 0.05), 0.05)
+
 
 if __name__ == "__main__":
     unittest.main()
