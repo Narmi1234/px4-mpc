@@ -32,7 +32,8 @@ if [[ "${preflight}" != *"publishes_fmu=True"* \
       || "${preflight}" != *"solver_failures=0"* \
       || "${preflight}" != *"l3_profile=[speed=12.0,accel=0.25,brake=0.30,lambda=0.20,pusher=0.45]"* \
       || "${preflight}" != *"l3_limits=[recovery=0.1,brake_entry_lambda=0.70,collective_min=0.46,pitch_rate=0.25,pitch_damping=1.50,vertical_gain=1.50]"* \
-      || "${preflight}" != *"vertical_guard=[limit=0.90,persistence=0.20,emergency=1.20]"* ]]; then
+      || "${preflight}" != *"vertical_guard=[limit=0.90,persistence=0.20,emergency=1.20]"* \
+      || "${preflight}" != *"prediction=[lambda_slew=0.05]"* ]]; then
     echo "ROBUST_ALLOCATION_L3C=FAIL:wrong_node_or_preflight"
     exit 1
 fi

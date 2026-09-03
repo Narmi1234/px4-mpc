@@ -45,6 +45,8 @@ from std_srvs.srv import Trigger
 class StandardVtolRobustShadow(Node):
     """Run the robust OCP read-only or in an explicit guarded hover gate."""
 
+    lambda_prediction_slew_rate = 0.05
+
     def __init__(self) -> None:
         super().__init__("standard_vtol_robust_shadow")
         self.declare_parameter("horizon_steps", 20)
@@ -660,6 +662,7 @@ class StandardVtolRobustShadow(Node):
             f"vertical_guard=[limit={self.l3_vertical_speed_limit:.2f},"
             f"persistence={self.l3_vertical_speed_persistence:.2f},"
             f"emergency={self.l3_vertical_speed_emergency_limit:.2f}],"
+            f"prediction=[lambda_slew={self.lambda_prediction_slew_rate:.2f}],"
             f"allocation=[{allocation},"
             f"inactive_for={allocation_inactive_duration:.3f}s],"
             f"motion=[forward_speed={forward_speed:.3f},"
@@ -1237,8 +1240,20 @@ class StandardVtolRobustShadow(Node):
                 ]
         return x_ref, u_ref, parameters
 
-    def _allocation_control_bounds(self, u_ref: np.ndarray):
-        """Keep allocation inside the scheduled NMPC transition corridor."""
+    def _allocation_control_bounds(
+        self,
+        u_ref: np.ndarray,
+        applied_lambda: float | None = None,
+        lambda_slew_rate: float | None = None,
+    ):
+        """Keep predicted allocation scheduled and physically reachable.
+
+        PX4 and the ROS output layer slew ``lambda`` at 0.05/s.  Without the
+        reachability cone the OCP can predict an immediate recovery of lift
+        authority while PX4 is still applying a much smaller value.  That
+        mismatch was measured in the L3c brake transient (predicted 0.77,
+        applied 0.39) and caused pitch saturation.
+        """
         _, _, _, minimum_lambda, _ = self._allocation_configuration()
         lower = np.tile(
             np.array([0.0, 0.0, -0.45, -0.45, -0.30, minimum_lambda]),
@@ -1254,6 +1269,30 @@ class StandardVtolRobustShadow(Node):
         # restoration of lift authority during braking.
         lower[:, 5] = np.clip(u_ref[:, 5] - 0.05, minimum_lambda, 1.0)
         upper[:, 5] = np.clip(u_ref[:, 5] + 0.05, minimum_lambda, 1.0)
+        if applied_lambda is not None:
+            if lambda_slew_rate is None:
+                lambda_slew_rate = self.lambda_prediction_slew_rate
+            anchor = float(np.clip(applied_lambda, minimum_lambda, 1.0))
+            stage_time = self.controller.dt * (np.arange(self.controller.N) + 1)
+            reachable_delta = float(lambda_slew_rate) * stage_time
+            lower[:, 5] = np.maximum(
+                lower[:, 5], np.clip(anchor - reachable_delta, minimum_lambda, 1.0)
+            )
+            upper[:, 5] = np.minimum(
+                upper[:, 5], np.clip(anchor + reachable_delta, minimum_lambda, 1.0)
+            )
+            # A schedule outside the reachability cone should not make the QP
+            # infeasible. Collapse only that stage to the nearest reachable
+            # schedule value; the next timer iteration advances the cone.
+            infeasible = lower[:, 5] > upper[:, 5]
+            if np.any(infeasible):
+                nearest = np.clip(
+                    u_ref[infeasible, 5],
+                    anchor - reachable_delta[infeasible],
+                    anchor + reachable_delta[infeasible],
+                )
+                lower[infeasible, 5] = nearest
+                upper[infeasible, 5] = nearest
         return lower, upper
 
     @staticmethod
@@ -1450,8 +1489,16 @@ class StandardVtolRobustShadow(Node):
             if self.test_mode in (
                 "allocation_l1", "allocation_l2", "allocation_l3"
             ):
+                applied_lambda = float(self.published_control[5])
+                if (
+                    self.allocation_status is not None
+                    and self.allocation_status.setpoint_valid
+                ):
+                    applied_lambda = float(
+                        self.allocation_status.applied_weight
+                    )
                 lower_bounds, upper_bounds = self._allocation_control_bounds(
-                    u_ref
+                    u_ref, applied_lambda=applied_lambda
                 )
             solution = self.controller.solve(
                 self.state,

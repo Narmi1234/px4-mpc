@@ -80,9 +80,10 @@ class StandardVtolRobustNmpc:
                 0.8, 0.8, 1.5,
             ]
         )
-        # [collective, pusher, p_sp, q_sp, r_sp, lambda]. Smooth lambda
-        # references supply the transition schedule until lambda is promoted
-        # to a state with a hard slew constraint in the live controller.
+        # [collective, pusher, p_sp, q_sp, r_sp, lambda]. Smooth references
+        # supply the transition schedule. The live layer additionally gives
+        # every OCP stage a reachability bound anchored at PX4's applied
+        # lambda, matching the physical/output 0.05/s slew limit.
         r_control = np.array([28.0, 7.0, 15.0, 22.0, 12.0, 18.0])
         ocp.cost.cost_type = "NONLINEAR_LS"
         ocp.cost.cost_type_e = "NONLINEAR_LS"

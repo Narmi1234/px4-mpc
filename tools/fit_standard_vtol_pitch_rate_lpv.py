@@ -23,6 +23,11 @@ def arguments():
     parser.add_argument("--horizon", type=float, default=0.5)
     parser.add_argument("--stride", type=int, default=5)
     parser.add_argument("--minimum-damping", type=float, default=0.02)
+    parser.add_argument(
+        "--required-zones", nargs="+", choices=ZONES,
+        default=["blend", "fw"],
+        help="zones that must satisfy the validation gate",
+    )
     return parser.parse_args()
 
 
@@ -170,11 +175,19 @@ def metrics(runs, coefficients, horizon, stride):
         errors = np.asarray(endpoint[zone])
         aggregate[zone] = {
             "samples": len(derivative),
-            "q_dot_rmse_rad_s2": float(np.sqrt(np.mean(derivative**2))),
-            "q_dot_p95_abs_rad_s2": float(np.percentile(np.abs(derivative), 95)),
+            "q_dot_rmse_rad_s2": (
+                float(np.sqrt(np.mean(derivative**2))) if len(derivative) else None
+            ),
+            "q_dot_p95_abs_rad_s2": (
+                float(np.percentile(np.abs(derivative), 95)) if len(derivative) else None
+            ),
             "windows": len(errors),
-            "endpoint_rmse_rad_s": float(np.sqrt(np.mean(errors**2))),
-            "endpoint_p95_abs_rad_s": float(np.percentile(np.abs(errors), 95)),
+            "endpoint_rmse_rad_s": (
+                float(np.sqrt(np.mean(errors**2))) if len(errors) else None
+            ),
+            "endpoint_p95_abs_rad_s": (
+                float(np.percentile(np.abs(errors), 95)) if len(errors) else None
+            ),
         }
     return aggregate, per_run
 
@@ -192,15 +205,17 @@ def main():
         validation, coefficients, horizon, options.stride
     )
     strict_pass = all(
-        validation_metrics[zone]["endpoint_rmse_rad_s"] <= 0.05
-        for zone in ("blend", "fw")
+        validation_metrics[zone]["endpoint_rmse_rad_s"] is not None
+        and validation_metrics[zone]["endpoint_rmse_rad_s"] <= 0.05
+        for zone in options.required_zones
     )
     bounded_candidate = (
         not strict_pass
         and all(coefficients[:4] >= options.minimum_damping - 1.0e-9)
         and all(
-            validation_metrics[zone]["endpoint_p95_abs_rad_s"] <= 0.25
-            for zone in ("blend", "fw")
+            validation_metrics[zone]["endpoint_p95_abs_rad_s"] is not None
+            and validation_metrics[zone]["endpoint_p95_abs_rad_s"] <= 0.25
+            for zone in options.required_zones
         )
     )
     status = "PASS" if strict_pass else "BOUNDED_CANDIDATE" if bounded_candidate else "FAIL"
@@ -213,6 +228,7 @@ def main():
         "allocation_nodes_mu": [0.0, 1.0],
         "minimum_damping_per_s": options.minimum_damping,
         "horizon_s": options.horizon,
+        "required_zones": options.required_zones,
         "training_csv": [str(path) for path in options.train],
         "validation_csv": [str(path) for path in options.validate],
         "training": train_metrics,
@@ -238,14 +254,17 @@ def main():
         "| split | zone | qdot RMSE / p95 [rad/s²] | 0.5 s endpoint RMSE / p95 [rad/s] |",
         "|---|---|---:|---:|",
     ]
+    def formatted(value):
+        return "n/a" if value is None else f"{value:.4f}"
+
     for split, values in (("train", train_metrics), ("validation", validation_metrics)):
         for zone in ZONES:
             value = values[zone]
             lines.append(
-                f"| {split} | {zone} | {value['q_dot_rmse_rad_s2']:.4f} / "
-                f"{value['q_dot_p95_abs_rad_s2']:.4f} | "
-                f"{value['endpoint_rmse_rad_s']:.4f} / "
-                f"{value['endpoint_p95_abs_rad_s']:.4f} |"
+                f"| {split} | {zone} | {formatted(value['q_dot_rmse_rad_s2'])} / "
+                f"{formatted(value['q_dot_p95_abs_rad_s2'])} | "
+                f"{formatted(value['endpoint_rmse_rad_s'])} / "
+                f"{formatted(value['endpoint_p95_abs_rad_s'])} |"
             )
     lines.extend([
         "",

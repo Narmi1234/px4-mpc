@@ -753,9 +753,40 @@ nodeova pa pokretanje potpuno novih procesa. Poruka
 proces sa starom 35-byte definicijom; nije NMPC niti flight-dynamics kvar.
 `source_ros2_nmpc.bash` sada provjerava nova polja i odbija stale overlay.
 
-**Go/no-go prema punoj tranziciji:** jedan L2 live pokušaj se analizira prije
-ponavljanja. Ako pokaže strukturirane pitch/altitude oscilacije ili ne može
-zadržati envelope bez popuštanja navedenih limita, trenutni model/interfejs se
-proglašava nedovoljnim za L3/L4 i prvo se radi reidentifikacija. Ako L2 prođe,
-slijedi L3 (`11–13 m/s`, `lambda>=0.2`), a tek zatim L4 sa `lambda=0` i
-gašenjem lift motora.
+L3c v7 live pokušaj `2026-09-03/06_04_21.ulg` bio je stabilan kroz ubrzanje:
+12.408 m/s groundspeed, 12.378 m/s CAS, `lambda_min=0.241`, 0.543 m
+cross-tracka i nula solver failurea. Nije pao pri 6–7 m/s. ULog pokazuje da
+je Offboard prekinut ranije, pri približno 9.23 m/s i 18.46° pitcha; brzina
+6–7 m/s pripada naknadnom PX4 Position fallbacku. Pri početku kočenja status
+je istovremeno pokazao NMPC rješenje `lambda=0.770` i stvarno objavljenu
+`lambda=0.389`. OCP je zato predviđao skoro vraćen MC pitch/lift autoritet
+koji fizički još nije postojao, zahtijevao saturirani pitch-rate i pobudio
+pitch transient.
+
+L3c v8 uklanja taj model–aktuator nesklad. Za svaki predikcijski korak OCP
+ograničava lambdu na fizički dostižan interval
+
+```text
+lambda_k in [lambda_applied - 0.05 t_k,
+             lambda_applied + 0.05 t_k],
+```
+
+presječen sa postojećim sigurnim profilnim koridorom. `lambda_applied` dolazi
+iz PX4 allocation-status poruke, a 0.05/s je isti slew limit koji koristi
+ROS output layer. Terminal 4 odbija stari node ako status ne sadrži
+`prediction=[lambda_slew=0.05]`. Sigurnosni pragovi, cilj 12 m/s,
+`lambda_min=0.20`, collective floor i pitch damping nisu promijenjeni.
+
+Za provjeru modela ekstraktor ima `--external-allocation`: u MC-only L3 letu
+rekonstruiše stvarno primijenjenu lambdu kao
+`mean(lift_motor_0..3) / collective_setpoint`, umjesto da zbog
+`vtol_state=MC` pogrešno upiše 1.0. Na dva ranija L3c leta treniran je stabilni
+LPV pitch kandidat i provjeren na v7 letu. Njegov 0.5 s blend pitch-rate RMSE
+je 0.0480 rad/s, naspram 0.0984 rad/s postojećeg modela. Kandidat još nije
+ubačen u flight controller: prvo se izolovano testira v8 slew-consistent OCP,
+čime se ne miješaju dvije promjene u istom letu.
+
+**Go/no-go prema punoj tranziciji:** ponavlja se samo L3c v8. PASS je
+`allocation_l3_test_timeout`, nula solver failurea, povrat na `lambda=1` i
+Position. Tek taj rezultat otključava L4 implementaciju sa per-axis torque
+transferom i konačnim `lambda=0`; svaki drugi abort se prvo analizira iz ULoga.

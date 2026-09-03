@@ -27,6 +27,14 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("ulog", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--rate", type=float, default=50.0)
+    parser.add_argument(
+        "--external-allocation",
+        action="store_true",
+        help=(
+            "infer the applied lift allocation from final lift-motor commands "
+            "and the collective setpoint; use for NMPC-owned MC allocation logs"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -69,7 +77,17 @@ def nearest(data, field: str, timeline: np.ndarray, origin_us: float):
     return np.asarray(data[field])[indices]
 
 
-def phase_zone(vtol_state: int) -> str:
+def phase_zone(vtol_state: int, lift_fraction: float | None = None) -> str:
+    # The custom PX4 allocation interface deliberately leaves vehicle_vtol_state
+    # in MC while NMPC transfers lift authority.  Label that interval as blend
+    # when a measured allocation proxy is available.
+    if (
+        vtol_state == 3
+        and lift_fraction is not None
+        and np.isfinite(lift_fraction)
+        and lift_fraction < 0.98
+    ):
+        return "blend"
     if vtol_state == 3:
         return "mc"
     if vtol_state == 4:
@@ -239,11 +257,33 @@ def main() -> int:
         lift_fraction = np.clip(lift_mean / hover_lift, 0.0, 1.2)
     else:
         lift_fraction = np.full(len(timeline), np.nan)
-    # This is an allocation-weight proxy, not a thrust fraction: PX4's MC and
-    # FW states define the endpoints exactly. Motor ratio is used only while
-    # the stock transition controller is blending the two actuator groups.
-    lift_fraction[vtol_state == 3] = 1.0
-    lift_fraction[vtol_state == 4] = 0.0
+    if options.external_allocation:
+        # In the patched PX4 path the final lift command is approximately
+        # collective * lambda.  This ratio reconstructs the *applied* lambda,
+        # including PX4 slew limiting, without trusting the ROS command.  A
+        # small collective floor avoids division while disarmed or stopped.
+        collective = -thrust_sp[:, 2]
+        allocation_mask = (
+            (vtol_state == 3)
+            & np.isfinite(lift_mean)
+            & np.isfinite(collective)
+            & (collective > 0.05)
+        )
+        lift_fraction = np.full(len(timeline), np.nan)
+        lift_fraction[allocation_mask] = np.clip(
+            lift_mean[allocation_mask] / collective[allocation_mask], 0.0, 1.2
+        )
+        lift_fraction[vtol_state == 4] = 0.0
+    else:
+        # Stock PX4 MC and FW states define the allocation endpoints exactly.
+        # The hover-normalized motor ratio is used only during stock transition.
+        lift_fraction[vtol_state == 3] = 1.0
+        lift_fraction[vtol_state == 4] = 0.0
+
+    zones = np.asarray([
+        phase_zone(int(state), float(lift_fraction[index]))
+        for index, state in enumerate(vtol_state)
+    ])
 
     finite = (
         np.all(np.isfinite(rate_sp), axis=1)
@@ -289,7 +329,7 @@ def main() -> int:
                 "timestamp_us": int(round(origin_us + time_s * 1.0e6)),
                 "vtol_state": state,
                 "vtol_phase": VTOL_NAMES.get(state, "unknown"),
-                "zone": phase_zone(state),
+                "zone": zones[i],
                 "airspeed_mps": f"{cas[i]:.9g}",
                 "fw_filtered_airspeed_mps": f"{fw_filtered_airspeed[i]:.9g}",
                 "lift_fraction_proxy": f"{lift_fraction[i]:.9g}",
@@ -351,7 +391,7 @@ def main() -> int:
             })
 
     counts = {
-        zone: int(np.count_nonzero(valid & np.asarray([phase_zone(s) == zone for s in vtol_state])))
+        zone: int(np.count_nonzero(valid & (zones == zone)))
         for zone in ("mc", "blend", "fw")
     }
     report = [
@@ -361,7 +401,13 @@ def main() -> int:
         f"- Sample rate: `{options.rate:.1f} Hz`",
         f"- Valid samples: `{int(np.count_nonzero(valid))}`",
         f"- Hover lift reference: `{hover_lift:.6f}`",
-        "- `lift_fraction_proxy` is measured mean lift-motor command divided by the MC-hover median; it is diagnostic, not the future commanded lambda.",
+        (
+            "- Allocation source: final lift-motor mean divided by collective "
+            "setpoint (patched external-allocation path)."
+            if options.external_allocation else
+            "- `lift_fraction_proxy` is measured mean lift-motor command divided "
+            "by the MC-hover median; it is diagnostic, not the future commanded lambda."
+        ),
         "",
         "| Zone | Samples | Duration |",
         "|---|---:|---:|",

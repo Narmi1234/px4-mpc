@@ -41,12 +41,13 @@ class TestStandardVtolL1Profile(unittest.TestCase):
             vertical_speed_violation_since_ns=0,
             max_state_age=0.20,
             active_state_stale_abort=0.45,
+            lambda_prediction_slew_rate=0.05,
         )
         self.node._allocation_configuration = MethodType(
             StandardVtolRobustShadow._allocation_configuration,
             self.node,
         )
-        self.node.controller = SimpleNamespace(N=20)
+        self.node.controller = SimpleNamespace(N=20, dt=0.1)
 
     def speed(self, elapsed):
         return StandardVtolRobustShadow._l1_speed_reference(
@@ -114,6 +115,18 @@ class TestStandardVtolL1Profile(unittest.TestCase):
         )
         self.assertAlmostEqual(lower[-1, 5], 0.35)
         self.assertAlmostEqual(upper[-1, 5], 0.40)
+
+    def test_allocation_prediction_is_anchored_to_applied_slew(self):
+        self.node.test_mode = "allocation_l3"
+        references = np.zeros((20, 6))
+        references[:, 5] = 0.70
+        lower, upper = StandardVtolRobustShadow._allocation_control_bounds(
+            self.node, references, applied_lambda=0.39
+        )
+        self.assertAlmostEqual(lower[0, 5], 0.395)
+        self.assertAlmostEqual(upper[0, 5], 0.395)
+        self.assertLessEqual(upper[9, 5], 0.44 + 1.0e-12)
+        self.assertLessEqual(upper[-1, 5], 0.49 + 1.0e-12)
 
     def test_elevator_feedforward_is_zero_in_mc_and_hard_limited(self):
         command = StandardVtolRobustCasadiModel.elevator_feedforward
