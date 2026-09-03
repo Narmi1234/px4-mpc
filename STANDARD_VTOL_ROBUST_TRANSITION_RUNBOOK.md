@@ -726,6 +726,16 @@ transfer. Exact live-layer sa ovom korekcijom prolazi sa 11.993 m/s,
 0.472 m visinske greške, 0.100 m/s vertikalne brzine, `lambda_min=0.200` i
 nula solver failurea. Live `status` mora pokazati `pitch_damping=0.75`.
 
+L3c v5 live pokušaj `2026-09-03/05_34_43.ulg` dostigao je 12.334 m/s uz
+0.308 m cross-tracka, ali je tokom sporog povratka `lambda` razvio dvije pitch
+oscilacije. Posljednja je dostigla 14.20° i držala `|vz|>0.9 m/s` tokom
+0.280 s, pa je safety ispravno prekinuo let. Exact sweep koeficijenta pokazuje
+da gornja unaprijed ograničena vrijednost 1.50 prolazi bez solver failurea:
+11.993 m/s, 0.472 m visinske greške i 0.095 m/s vertikalne brzine. L3c v6
+zato mijenja samo `pitch_damping=1.50`; svi ostali profilni i sigurnosni
+limiti ostaju isti. Ako se isti oscilatorni mod ponovi, gain se više ne
+povećava nego se pitch LPV dinamika ponovo identificira iz novih ULogova.
+
 Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
 nodeova pa pokretanje potpuno novih procesa. Poruka
 `Change payload size ... 40 ... larger ... 35` znači da je u DDS grafu ostao
