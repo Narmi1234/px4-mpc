@@ -29,6 +29,7 @@ def main() -> None:
     parser.add_argument("--minimum-lambda", type=float)
     parser.add_argument("--pusher-max", type=float)
     parser.add_argument("--collective-min", type=float, default=0.30)
+    parser.add_argument("--effective-lift-min", type=float, default=0.0)
     parser.add_argument("--pitch-rate-limit", type=float, default=0.18)
     parser.add_argument("--pitch-damping-gain", type=float, default=0.0)
     parser.add_argument("--vertical-correction-gain", type=float, default=1.0)
@@ -75,6 +76,7 @@ def main() -> None:
         l3_min_lambda=commanded_minimum_lambda,
         l3_pusher_max=configured_pusher_max,
         l3_collective_min=args.collective_min,
+        l3_effective_lift_min=args.effective_lift_min,
         l3_pitch_rate_limit=args.pitch_rate_limit,
         l3_pitch_damping_gain=args.pitch_damping_gain,
         l3_vertical_correction_gain=args.vertical_correction_gain,
@@ -179,9 +181,18 @@ def main() -> None:
         correction = args.vertical_correction_gain * (
             base_lift - controller.model.plant.hover_command
         ) / requested[5]
+        collective_minimum = args.collective_min if level == 3 else 0.30
+        if level == 3:
+            collective_minimum = (
+                StandardVtolRobustShadow._minimum_collective_for_allocation(
+                    args.collective_min,
+                    args.effective_lift_min,
+                    requested[5],
+                )
+            )
         requested[0] = np.clip(
             requested[0] + correction,
-            args.collective_min if level == 3 else 0.30,
+            collective_minimum,
             0.70,
         )
         requested[1] = np.clip(requested[1], 0.0, pusher_max)

@@ -32,6 +32,7 @@ class TestStandardVtolL1Profile(unittest.TestCase):
             l3_min_lambda=0.35,
             l3_pusher_max=0.42,
             l3_collective_min=0.30,
+            l3_effective_lift_min=0.0,
             l3_pitch_rate_limit=0.18,
             l3_pitch_damping_gain=0.0,
             l3_vertical_correction_gain=1.0,
@@ -164,6 +165,13 @@ class TestStandardVtolL1Profile(unittest.TestCase):
         self.assertAlmostEqual(damp(-0.05, -0.16, 1.0, 0.75, 0.25), -0.05)
         self.assertGreater(damp(-0.05, -0.16, 0.25, 0.75, 0.25), 0.0)
         self.assertAlmostEqual(damp(0.2, -1.0, 0.2, 1.0, 0.25), 0.25)
+
+    def test_effective_lift_floor_compensates_allocation_and_is_bounded(self):
+        floor = StandardVtolRobustShadow._minimum_collective_for_allocation
+        self.assertAlmostEqual(floor(0.46, 0.20, 0.50), 0.46)
+        self.assertAlmostEqual(floor(0.46, 0.20, 0.40), 0.50)
+        self.assertAlmostEqual(floor(0.46, 0.20, 0.30), 2.0 / 3.0)
+        self.assertAlmostEqual(floor(0.46, 0.20, 0.20), 0.70)
 
 
 if __name__ == "__main__":

@@ -79,6 +79,7 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("l3_min_lambda", 0.35)
         self.declare_parameter("l3_pusher_max", 0.42)
         self.declare_parameter("l3_collective_min", 0.30)
+        self.declare_parameter("l3_effective_lift_min", 0.0)
         self.declare_parameter("l3_pitch_rate_limit", 0.18)
         self.declare_parameter("l3_pitch_damping_gain", 0.0)
         self.declare_parameter("l3_vertical_correction_gain", 1.0)
@@ -218,6 +219,9 @@ class StandardVtolRobustShadow(Node):
         self.l3_collective_min = float(
             self.get_parameter("l3_collective_min").value
         )
+        self.l3_effective_lift_min = float(
+            self.get_parameter("l3_effective_lift_min").value
+        )
         self.l3_pitch_rate_limit = float(
             self.get_parameter("l3_pitch_rate_limit").value
         )
@@ -246,6 +250,7 @@ class StandardVtolRobustShadow(Node):
             and 0.2 <= self.l3_min_lambda <= 0.4
             and 0.35 <= self.l3_pusher_max <= 0.50
             and 0.05 <= self.l3_collective_min <= 0.50
+            and 0.0 <= self.l3_effective_lift_min <= 0.25
             and 0.18 <= self.l3_pitch_rate_limit <= 0.25
             and 0.0 <= self.l3_pitch_damping_gain <= 1.5
             and 1.0 <= self.l3_vertical_correction_gain <= 4.0
@@ -656,6 +661,7 @@ class StandardVtolRobustShadow(Node):
             f"l3_limits=[recovery={self.l3_recovery_seconds:.1f},"
             f"brake_entry_lambda={self.l3_brake_entry_lambda:.2f},"
             f"collective_min={self.l3_collective_min:.2f},"
+            f"effective_lift_min={self.l3_effective_lift_min:.2f},"
             f"pitch_rate={self.l3_pitch_rate_limit:.2f},"
             f"pitch_damping={self.l3_pitch_damping_gain:.2f},"
             f"vertical_gain={self.l3_vertical_correction_gain:.2f}],"
@@ -1308,6 +1314,22 @@ class StandardVtolRobustShadow(Node):
         damped = command - damping_gain * aerodynamic_weight * measured_rate
         return float(np.clip(damped, -rate_limit, rate_limit))
 
+    @staticmethod
+    def _minimum_collective_for_allocation(
+        configured_minimum: float,
+        effective_lift_minimum: float,
+        lift_fraction: float,
+        maximum: float = 0.70,
+    ) -> float:
+        """Keep the final mean lift-motor command above an identified floor."""
+        lift = max(float(lift_fraction), 1.0e-3)
+        allocation_compensated = float(effective_lift_minimum) / lift
+        return float(np.clip(
+            max(float(configured_minimum), allocation_compensated),
+            0.0,
+            maximum,
+        ))
+
     def _safety_reason(self) -> str | None:
         # State freshness is handled before solving in _update().  Rechecking
         # it here after a 15-30 ms solve caused false aborts whenever a sample
@@ -1656,9 +1678,13 @@ class StandardVtolRobustShadow(Node):
                 correction = correction_gain * (
                     base_lift - self.controller.model.plant.hover_command
                 ) / requested[5]
-                collective_minimum = (
-                    self.l3_collective_min if l3 else 0.30
-                )
+                collective_minimum = 0.30
+                if l3:
+                    collective_minimum = self._minimum_collective_for_allocation(
+                        self.l3_collective_min,
+                        self.l3_effective_lift_min,
+                        requested[5],
+                    )
                 requested[0] = np.clip(
                     requested[0] + correction, collective_minimum, 0.70
                 )

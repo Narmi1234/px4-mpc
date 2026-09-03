@@ -790,3 +790,32 @@ ubačen u flight controller: prvo se izolovano testira v8 slew-consistent OCP,
 `allocation_l3_test_timeout`, nula solver failurea, povrat na `lambda=1` i
 Position. Tek taj rezultat otključava L4 implementaciju sa per-axis torque
 transferom i konačnim `lambda=0`; svaki drugi abort se prvo analizira iz ULoga.
+
+L3c v8 live let `2026-09-03/16_51_02.ulg` potvrđuje da je slew-consistent
+predikcija uklonila prethodni allocation mismatch: komandovana i primijenjena
+lambda ostaju jednake kroz cijeli aktivni interval, a pitch ostaje ispod
+7.57° uz nula solver failurea. Let ipak nije stigao do kočenja. ULog mjeri
+43.99 s Offboarda i prekid pri približno 11.4 m/s zbog 1.28 m kumulativnog
+gubitka visine. Dok stvarna srednja komanda lift motora ostaje iznad 0.20,
+visina je približno stabilna; nakon pada sa 0.23 na 0.17 i 0.14 gubitak visine
+ubrzava. Terminalski uzorci poslije Position fallbacka nisu dio NMPC kočenja.
+
+L3c v9 zato ne mijenja profil, pitch zakon niti safety pragove. Uvodi
+identificirani floor na stvarno efektivnu lift-motor komandu:
+
+```text
+collective_min(lambda) = clip(max(0.46, 0.20/lambda), 0, 0.70)
+lambda * collective >= 0.20, dok collective nije saturiran.
+```
+
+Za `lambda=0.40` minimum collective je 0.50, za `lambda=0.30` je 0.667,
+a ispod približno 0.286 ostaje ograničen na 0.70. Pri recoveryju minimum
+automatski opada kako lambda raste, umjesto da fiksni visoki collective napravi
+penjanje. Exact live-layer v9 prolazi sa 11.970 m/s,
+`lambda_min=0.200`, 0.707 m maksimalne visinske greške, 0.104 m/s maksimalne
+vertikalne brzine i nula solver failurea. Live preflight mora pokazati
+`effective_lift_min=0.20`.
+
+**Aktuelni go/no-go:** izvršava se jedan L3c v9 let. Samo puni timeout/PASS
+otključava L4; abort zahtijeva ULog analizu bez daljeg ručnog povećavanja
+collectivea ili safety limita.
