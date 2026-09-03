@@ -702,6 +702,17 @@ limit 0.90 m/s, ali traži da prekoračenje traje 0.20 s; zaseban emergency limi
 `vertical_guard=[limit=0.90,persistence=0.20,emergency=1.20]`. L4 ostaje
 zaključan dok ovaj L3c gate ne završi sa `allocation_l3_test_timeout`.
 
+L3c v3 je zatim ispravno ignorisao kratki vertikalni impuls, ali je live let
+`2026-09-02/20_35_39.ulg` otkrio drugi problem: tokom 45.20 s Offboarda
+stvarni prosjek lift motora pada približno sa 0.295 na 0.130 i nakuplja se
+1.23 m gubitka visine. Dostignuto je 11.760 m/s uz nula solver failurea.
+Uzrok je optimističan aerodynamic-lift trim pri 10–12 m/s i collective
+feedback koji reaguje tek nakon nastanka greške. L3c v4 zato koristi
+anticipativni raw collective floor 0.40; `lambda_lift` i dalje pada do 0.20,
+pa ovo ne uklanja duboki transfer autoriteta. Exact live-layer kandidat sa
+ovim floorom prolazi: 11.994 m/s, `lambda_min=0.200`, 0.472 m maksimalne
+visinske greške, 0.106 m/s vertikalne brzine i nula solver failurea.
+
 Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
 nodeova pa pokretanje potpuno novih procesa. Poruka
 `Change payload size ... 40 ... larger ... 35` znači da je u DDS grafu ostao

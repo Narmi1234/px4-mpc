@@ -239,7 +239,7 @@ class StandardVtolRobustShadow(Node):
             and 3.0 <= self.l3_hold_seconds <= 5.0
             and 0.2 <= self.l3_min_lambda <= 0.4
             and 0.35 <= self.l3_pusher_max <= 0.50
-            and 0.05 <= self.l3_collective_min <= 0.30
+            and 0.05 <= self.l3_collective_min <= 0.50
             and 0.18 <= self.l3_pitch_rate_limit <= 0.25
             and 1.0 <= self.l3_vertical_correction_gain <= 4.0
             and 0.8 <= self.l3_vertical_speed_limit <= 1.0
