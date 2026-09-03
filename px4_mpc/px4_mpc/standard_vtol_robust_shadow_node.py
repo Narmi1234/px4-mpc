@@ -78,6 +78,7 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("l3_pusher_max", 0.42)
         self.declare_parameter("l3_collective_min", 0.30)
         self.declare_parameter("l3_pitch_rate_limit", 0.18)
+        self.declare_parameter("l3_pitch_damping_gain", 0.0)
         self.declare_parameter("l3_vertical_correction_gain", 1.0)
         self.declare_parameter("l3_vertical_speed_limit", 0.90)
         self.declare_parameter("l3_vertical_speed_persistence_seconds", 0.20)
@@ -218,6 +219,9 @@ class StandardVtolRobustShadow(Node):
         self.l3_pitch_rate_limit = float(
             self.get_parameter("l3_pitch_rate_limit").value
         )
+        self.l3_pitch_damping_gain = float(
+            self.get_parameter("l3_pitch_damping_gain").value
+        )
         self.l3_vertical_correction_gain = float(
             self.get_parameter("l3_vertical_correction_gain").value
         )
@@ -241,6 +245,7 @@ class StandardVtolRobustShadow(Node):
             and 0.35 <= self.l3_pusher_max <= 0.50
             and 0.05 <= self.l3_collective_min <= 0.50
             and 0.18 <= self.l3_pitch_rate_limit <= 0.25
+            and 0.0 <= self.l3_pitch_damping_gain <= 1.5
             and 1.0 <= self.l3_vertical_correction_gain <= 4.0
             and 0.8 <= self.l3_vertical_speed_limit <= 1.0
             and 0.1 <= self.l3_vertical_speed_persistence <= 0.3
@@ -650,6 +655,7 @@ class StandardVtolRobustShadow(Node):
             f"brake_entry_lambda={self.l3_brake_entry_lambda:.2f},"
             f"collective_min={self.l3_collective_min:.2f},"
             f"pitch_rate={self.l3_pitch_rate_limit:.2f},"
+            f"pitch_damping={self.l3_pitch_damping_gain:.2f},"
             f"vertical_gain={self.l3_vertical_correction_gain:.2f}],"
             f"vertical_guard=[limit={self.l3_vertical_speed_limit:.2f},"
             f"persistence={self.l3_vertical_speed_persistence:.2f},"
@@ -1250,6 +1256,19 @@ class StandardVtolRobustShadow(Node):
         upper[:, 5] = np.clip(u_ref[:, 5] + 0.05, minimum_lambda, 1.0)
         return lower, upper
 
+    @staticmethod
+    def _damped_pitch_rate_command(
+        command: float,
+        measured_rate: float,
+        lift_fraction: float,
+        damping_gain: float,
+        rate_limit: float,
+    ) -> float:
+        """Add measured-rate damping as aerodynamic authority takes over."""
+        aerodynamic_weight = 1.0 - np.clip(lift_fraction, 0.0, 1.0)
+        damped = command - damping_gain * aerodynamic_weight * measured_rate
+        return float(np.clip(damped, -rate_limit, rate_limit))
+
     def _safety_reason(self) -> str | None:
         # State freshness is handled before solving in _update().  Rechecking
         # it here after a 15-30 ms solve caused false aborts whenever a sample
@@ -1609,6 +1628,12 @@ class StandardVtolRobustShadow(Node):
                         0.10,
                     ],
                 )
+                if l3:
+                    requested[3] = self._damped_pitch_rate_command(
+                        requested[3], self.state[11], requested[5],
+                        self.l3_pitch_damping_gain,
+                        self.l3_pitch_rate_limit,
+                    )
             else:
                 requested[0] = np.clip(
                     base_lift / requested[5], 0.48, 0.68

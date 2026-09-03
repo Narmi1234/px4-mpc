@@ -713,6 +713,19 @@ pa ovo ne uklanja duboki transfer autoriteta. Exact live-layer kandidat sa
 ovim floorom prolazi: 11.994 m/s, `lambda_min=0.200`, 0.472 m maksimalne
 visinske greške, 0.106 m/s vertikalne brzine i nula solver failurea.
 
+L3c v4 live let `2026-09-03/05_20_50.ulg` potvrđuje da je collective floor
+riješio gubitak visine: maksimalna visinska greška pala je na 0.380 m uz
+12.222 m/s i `lambda_min=0.233`. Preostali abort nije mjerni impuls:
+`|vz|>0.9 m/s` trajao je 0.288 s. ULog pokazuje da pri `lambda≈0.23` stvarni
+pitch rate ostaje oko +0.16 rad/s dok zadani pitch rate već mijenja smjer;
+pitch nastavlja rasti i brzina se pretvara u kratko penjanje. L3c v5 zato
+dodaje bounded ancillary damping
+`q_cmd <- q_cmd - 0.75*(1-lambda)*q_measured` prije postojećeg rate i slew
+limita. Damping je nula u hoveru i postepeno raste samo uz aerodinamički
+transfer. Exact live-layer sa ovom korekcijom prolazi sa 11.993 m/s,
+0.472 m visinske greške, 0.100 m/s vertikalne brzine, `lambda_min=0.200` i
+nula solver failurea. Live `status` mora pokazati `pitch_damping=0.75`.
+
 Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
 nodeova pa pokretanje potpuno novih procesa. Poruka
 `Change payload size ... 40 ... larger ... 35` znači da je u DDS grafu ostao

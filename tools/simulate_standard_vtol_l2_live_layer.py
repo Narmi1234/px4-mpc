@@ -30,6 +30,7 @@ def main() -> None:
     parser.add_argument("--pusher-max", type=float)
     parser.add_argument("--collective-min", type=float, default=0.30)
     parser.add_argument("--pitch-rate-limit", type=float, default=0.18)
+    parser.add_argument("--pitch-damping-gain", type=float, default=0.0)
     parser.add_argument("--vertical-correction-gain", type=float, default=1.0)
     parser.add_argument("--inject-time", type=float, default=-1.0)
     parser.add_argument("--inject-cross-track", type=float, default=0.0)
@@ -75,6 +76,7 @@ def main() -> None:
         l3_pusher_max=configured_pusher_max,
         l3_collective_min=args.collective_min,
         l3_pitch_rate_limit=args.pitch_rate_limit,
+        l3_pitch_damping_gain=args.pitch_damping_gain,
         l3_vertical_correction_gain=args.vertical_correction_gain,
         reference_forward=np.array([1.0, 0.0]),
         reference_lateral=np.array([0.0, 1.0]),
@@ -188,6 +190,11 @@ def main() -> None:
             [-0.12, -args.pitch_rate_limit, -0.10],
             [0.12, args.pitch_rate_limit, 0.10],
         )
+        if level == 3:
+            requested[3] = StandardVtolRobustShadow._damped_pitch_rate_command(
+                requested[3], state[11], requested[5],
+                args.pitch_damping_gain, args.pitch_rate_limit,
+            )
         slew = np.array([0.10, 0.05, 0.20, 0.20, 0.15, 0.05])
         limited = command + np.clip(
             requested - command, -slew * dt, slew * dt

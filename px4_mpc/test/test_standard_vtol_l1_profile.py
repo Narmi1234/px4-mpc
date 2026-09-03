@@ -33,6 +33,7 @@ class TestStandardVtolL1Profile(unittest.TestCase):
             l3_pusher_max=0.42,
             l3_collective_min=0.30,
             l3_pitch_rate_limit=0.18,
+            l3_pitch_damping_gain=0.0,
             l3_vertical_correction_gain=1.0,
             l3_vertical_speed_limit=0.9,
             l3_vertical_speed_persistence=0.2,
@@ -144,6 +145,12 @@ class TestStandardVtolL1Profile(unittest.TestCase):
             guard(self.node, 0.81, 0.8, False, 1_000_000_000),
             "vertical_speed_limit",
         )
+
+    def test_pitch_damping_grows_as_lift_allocation_decreases(self):
+        damp = StandardVtolRobustShadow._damped_pitch_rate_command
+        self.assertAlmostEqual(damp(-0.05, -0.16, 1.0, 0.75, 0.25), -0.05)
+        self.assertGreater(damp(-0.05, -0.16, 0.25, 0.75, 0.25), 0.0)
+        self.assertAlmostEqual(damp(0.2, -1.0, 0.2, 1.0, 0.25), 0.25)
 
 
 if __name__ == "__main__":
