@@ -736,6 +736,17 @@ zato mijenja samo `pitch_damping=1.50`; svi ostali profilni i sigurnosni
 limiti ostaju isti. Ako se isti oscilatorni mod ponovi, gain se više ne
 povećava nego se pitch LPV dinamika ponovo identificira iz novih ULogova.
 
+L3c v6 live pokušaj `2026-09-03/05_47_36.ulg` nije ponovio pitch oscilaciju:
+pitch je ostao ispod 7.06°, a stvarni pitch rate blizu nule. Time je damping
+validiran. Let je prekinut na 1.181 m visinske greške pri 12.107 m/s jer
+stvarni lift-motor izlaz u dubokom unloadingu padne sa 0.308 na 0.117; to je
+direktan dokaz da nominalni model precjenjuje wing lift pri 10–12 m/s.
+L3c v7 zadržava dokazani damping i podiže anticipativni raw collective floor
+sa 0.40 na 0.46. `lambda_min=0.20` ostaje nepromijenjen, tako da efektivni
+lift-motor autoritet i dalje pada za više od 80% u odnosu na hover. Exact
+live-layer kandidat prolazi sa 11.988 m/s, 0.707 m visinske greške,
+0.096 m/s vertikalne brzine i nula solver failurea.
+
 Promjena custom poruke zahtijeva gašenje PX4-a, Micro XRCE Agenta i svih ROS
 nodeova pa pokretanje potpuno novih procesa. Poruka
 `Change payload size ... 40 ... larger ... 35` znači da je u DDS grafu ostao
