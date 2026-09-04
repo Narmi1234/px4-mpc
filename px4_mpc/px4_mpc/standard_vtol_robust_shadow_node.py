@@ -60,7 +60,9 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("allow_l2_output", False)
         self.declare_parameter("allow_l3_output", False)
         self.declare_parameter("allow_l4a_output", False)
+        self.declare_parameter("allow_l4b_output", False)
         self.declare_parameter("l4a_min_roll_pitch_weight", 0.05)
+        self.declare_parameter("l4b_min_yaw_weight", 0.05)
         self.declare_parameter("hover_test_seconds", 5.0)
         self.declare_parameter("l1_target_speed", 5.0)
         self.declare_parameter("l1_acceleration", 0.4)
@@ -140,17 +142,26 @@ class StandardVtolRobustShadow(Node):
         self.allow_l4a_output = bool(
             self.get_parameter("allow_l4a_output").value
         )
+        self.allow_l4b_output = bool(
+            self.get_parameter("allow_l4b_output").value
+        )
         self.l4a_min_roll_pitch_weight = float(
             self.get_parameter("l4a_min_roll_pitch_weight").value
         )
         if not 0.05 <= self.l4a_min_roll_pitch_weight <= 0.20:
             raise ValueError("L4a roll/pitch weight must be in [0.05, 0.20]")
+        self.l4b_min_yaw_weight = float(
+            self.get_parameter("l4b_min_yaw_weight").value
+        )
+        if not 0.05 <= self.l4b_min_yaw_weight <= 0.20:
+            raise ValueError("L4b yaw weight must be in [0.05, 0.20]")
         self.allow_output = (
             self.allow_hover_output
             or self.allow_l1_output
             or self.allow_l2_output
             or self.allow_l3_output
             or self.allow_l4a_output
+            or self.allow_l4b_output
         )
         self.hover_test_seconds = float(
             self.get_parameter("hover_test_seconds").value
@@ -398,6 +409,11 @@ class StandardVtolRobustShadow(Node):
         )
         self.create_service(
             Trigger,
+            "/standard_vtol_robust_shadow/enable_allocation_l4b",
+            self._enable_allocation_l4b,
+        )
+        self.create_service(
+            Trigger,
             "/standard_vtol_robust_shadow/disable",
             self._disable_output,
         )
@@ -421,7 +437,12 @@ class StandardVtolRobustShadow(Node):
                 qos,
             )
         self.create_timer(0.05, self._update)
-        if self.allow_l4a_output:
+        if self.allow_l4b_output:
+            self.get_logger().info(
+                "Robust Standard VTOL NMPC started in guarded L4b "
+                "coordinated-course torque-transfer mode (MC state retained)"
+            )
+        elif self.allow_l4a_output:
             self.get_logger().info(
                 "Robust Standard VTOL NMPC started in guarded L4a "
                 "roll/pitch torque-transfer mode (MC state retained)"
@@ -726,6 +747,8 @@ class StandardVtolRobustShadow(Node):
             f"{self.controller.model.roll_aero_damping:.3f},"
             f"roll_surface={self.controller.model.roll_surface_gain:.4f},"
             f"course_gain={self.controller.model.coordinated_turn_gain:.2f}],"
+            f"l4_transfer=[rp_min={self.l4a_min_roll_pitch_weight:.2f},"
+            f"yaw_min={self.l4b_min_yaw_weight:.2f}],"
             f"allocation=[{allocation},"
             f"inactive_for={allocation_inactive_duration:.3f}s],"
             f"motion=[forward_speed={forward_speed:.3f},"
@@ -907,15 +930,24 @@ class StandardVtolRobustShadow(Node):
     def _enable_allocation_l4a(self, _request, response):
         return self._enable_deep_allocation(response, 4)
 
+    def _enable_allocation_l4b(self, _request, response):
+        return self._enable_deep_allocation(response, 5)
+
     def _enable_deep_allocation(self, response, level: int):
         if level == 2:
             allowed = self.allow_l2_output
         elif level == 3:
             allowed = self.allow_l3_output
-        else:
+        elif level == 4:
             allowed = self.allow_l4a_output
-        label = "L4a" if level == 4 else f"L{level}"
-        mode = "allocation_l4a" if level == 4 else f"allocation_l{level}"
+        else:
+            allowed = self.allow_l4b_output
+        label = "L4b" if level == 5 else "L4a" if level == 4 else f"L{level}"
+        mode = (
+            "allocation_l4b" if level == 5
+            else "allocation_l4a" if level == 4
+            else f"allocation_l{level}"
+        )
         if not allowed:
             response.success = False
             response.message = f"launch guarded {label} allocation mode first"
@@ -1003,12 +1035,16 @@ class StandardVtolRobustShadow(Node):
         self.vertical_speed_violation_since_ns = 0
         response.success = True
         target, _, _, minimum_lambda, _ = self._allocation_configuration()
-        if level == 4:
+        if level in (4, 5):
             response.message = (
                 f"guarded {label} prestream started; 0->{target:.0f}->0 "
                 f"m/s, lift 1->{minimum_lambda:.1f}->1, MC roll/pitch "
-                f"1->{self.l4a_min_roll_pitch_weight:.2f}->1; MC state "
-                "and yaw retained"
+                f"1->{self.l4a_min_roll_pitch_weight:.2f}->1; "
+                + (
+                    f"MC yaw 1->{self.l4b_min_yaw_weight:.2f}->1"
+                    if level == 5 else "MC yaw retained"
+                )
+                + "; MC state retained"
             )
         else:
             response.message = (
@@ -1058,7 +1094,7 @@ class StandardVtolRobustShadow(Node):
         # the same proven lift path, but transfers roll/pitch authority more
         # deeply to the aerodynamic surfaces. Yaw remains on the lift motors
         # until the separate coordinated-course L4b gate is implemented.
-        if self.test_mode == "allocation_l4a":
+        if self.test_mode in ("allocation_l4a", "allocation_l4b"):
             allocation.mc_roll_pitch_weight = self._l4a_roll_pitch_weight(
                 allocation.transition_weight,
                 self.l3_min_lambda,
@@ -1066,7 +1102,15 @@ class StandardVtolRobustShadow(Node):
             )
         else:
             allocation.mc_roll_pitch_weight = allocation.transition_weight
-        allocation.mc_yaw_weight = 1.0
+        allocation.mc_yaw_weight = (
+            self._l4a_roll_pitch_weight(
+                allocation.transition_weight,
+                self.l3_min_lambda,
+                self.l4b_min_yaw_weight,
+            )
+            if self.test_mode == "allocation_l4b"
+            else 1.0
+        )
         airspeed = max(self._calibrated_airspeed(), self._forward_speed(), 0.0)
         allocation.elevator_feedforward = (
             self.controller.model.elevator_feedforward(
@@ -1081,7 +1125,7 @@ class StandardVtolRobustShadow(Node):
         message.roll = float(control[2])
         message.pitch = float(-control[3])
         yaw_command_flu = float(control[4])
-        if self.test_mode == "allocation_l4a":
+        if self.test_mode in ("allocation_l4a", "allocation_l4b"):
             qw, qx, qy, qz = self.state[6:10]
             roll_flu = math.atan2(
                 2.0 * (qw * qx + qy * qz),
@@ -1129,7 +1173,7 @@ class StandardVtolRobustShadow(Node):
 
     def _allocation_configuration(self):
         if getattr(self, "test_mode", "allocation_l1") in (
-            "allocation_l3", "allocation_l4a"
+            "allocation_l3", "allocation_l4a", "allocation_l4b"
         ):
             return (
                 self.l3_target_speed,
@@ -1175,7 +1219,9 @@ class StandardVtolRobustShadow(Node):
         accelerate = target_speed / acceleration
         brake_rate = (
             self.l3_brake_rate
-            if getattr(self, "test_mode", "") in ("allocation_l3", "allocation_l4a")
+            if getattr(self, "test_mode", "") in (
+                "allocation_l3", "allocation_l4a", "allocation_l4b"
+            )
             else 0.5
         )
         brake = target_speed / brake_rate
@@ -1185,7 +1231,9 @@ class StandardVtolRobustShadow(Node):
         time -= accelerate
         recovery_seconds = (
             self.l3_recovery_seconds
-            if getattr(self, "test_mode", "") in ("allocation_l3", "allocation_l4a")
+            if getattr(self, "test_mode", "") in (
+                "allocation_l3", "allocation_l4a", "allocation_l4b"
+            )
             else 0.0
         )
         if time < hold_seconds + recovery_seconds:
@@ -1201,7 +1249,9 @@ class StandardVtolRobustShadow(Node):
         )
         brake_rate = (
             self.l3_brake_rate
-            if getattr(self, "test_mode", "") in ("allocation_l3", "allocation_l4a")
+            if getattr(self, "test_mode", "") in (
+                "allocation_l3", "allocation_l4a", "allocation_l4b"
+            )
             else 0.5
         )
         return (
@@ -1210,13 +1260,17 @@ class StandardVtolRobustShadow(Node):
             + hold_seconds
             + (
                 self.l3_recovery_seconds
-                if getattr(self, "test_mode", "") in ("allocation_l3", "allocation_l4a")
+                if getattr(self, "test_mode", "") in (
+                    "allocation_l3", "allocation_l4a", "allocation_l4b"
+                )
                 else 0.0
             )
             + target_speed / brake_rate
             + (
                 5.0
-                if getattr(self, "test_mode", "") in ("allocation_l3", "allocation_l4a")
+                if getattr(self, "test_mode", "") in (
+                    "allocation_l3", "allocation_l4a", "allocation_l4b"
+                )
                 else 4.0
                 if getattr(self, "test_mode", "") == "allocation_l2"
                 else 3.0
@@ -1242,7 +1296,8 @@ class StandardVtolRobustShadow(Node):
             self._allocation_configuration()
         )
         deep_allocation = self.test_mode in (
-            "allocation_l2", "allocation_l3", "allocation_l4a"
+            "allocation_l2", "allocation_l3", "allocation_l4a",
+            "allocation_l4b",
         )
         x_ref = np.zeros(
             (self.controller.N + 1, self.controller.model.state_size)
@@ -1321,7 +1376,9 @@ class StandardVtolRobustShadow(Node):
             fraction = speed / target_speed
             allocation = 1.0 - (1.0 - minimum_lambda) * fraction
             if (
-                self.test_mode in ("allocation_l3", "allocation_l4a")
+                self.test_mode in (
+                    "allocation_l3", "allocation_l4a", "allocation_l4b"
+                )
                 and self.l3_recovery_seconds > 0.0
             ):
                 recovery_start = (
@@ -1349,10 +1406,18 @@ class StandardVtolRobustShadow(Node):
                     self.l3_min_lambda,
                     self.l4a_min_roll_pitch_weight,
                 )
-                if self.test_mode == "allocation_l4a"
+                if self.test_mode in ("allocation_l4a", "allocation_l4b")
                 else allocation
             )
-            parameters[stage, 7] = 1.0
+            parameters[stage, 7] = (
+                self._l4a_roll_pitch_weight(
+                    allocation,
+                    self.l3_min_lambda,
+                    self.l4b_min_yaw_weight,
+                )
+                if self.test_mode == "allocation_l4b"
+                else 1.0
+            )
             if stage < self.controller.N:
                 if deep_allocation:
                     lift = float(
@@ -1363,7 +1428,9 @@ class StandardVtolRobustShadow(Node):
                     # see the same residual effective-lift floor enforced by
                     # the published-control safety layer; otherwise it predicts
                     # collective=0 while PX4 receives up to 0.70.
-                    if self.test_mode in ("allocation_l3", "allocation_l4a"):
+                    if self.test_mode in (
+                        "allocation_l3", "allocation_l4a", "allocation_l4b"
+                    ):
                         lift = max(lift, self.l3_effective_lift_min)
                     collective = np.clip(lift / allocation, 0.0, 0.70)
                     pusher = min(
@@ -1501,11 +1568,14 @@ class StandardVtolRobustShadow(Node):
             return "reference_missing"
         allocation_gate = self.test_mode in (
             "allocation_l1", "allocation_l2", "allocation_l3",
-            "allocation_l4a",
+            "allocation_l4a", "allocation_l4b",
         )
         l2 = self.test_mode == "allocation_l2"
-        l3 = self.test_mode in ("allocation_l3", "allocation_l4a")
-        label = "l4a" if self.test_mode == "allocation_l4a" else (
+        l3 = self.test_mode in (
+            "allocation_l3", "allocation_l4a", "allocation_l4b"
+        )
+        label = "l4b" if self.test_mode == "allocation_l4b" else (
+            "l4a" if self.test_mode == "allocation_l4a" else
             "l3" if l3 else "l2" if l2 else "l1"
         )
         altitude_limit = (
@@ -1628,7 +1698,7 @@ class StandardVtolRobustShadow(Node):
             and self.abort_reason != "none"
             and self.test_mode in (
                 "allocation_l1", "allocation_l2", "allocation_l3",
-                "allocation_l4a",
+                "allocation_l4a", "allocation_l4b",
             )
         ):
             return
@@ -1654,7 +1724,7 @@ class StandardVtolRobustShadow(Node):
             ) * 1.0e-9
         if self.test_mode in (
             "allocation_l1", "allocation_l2", "allocation_l3",
-            "allocation_l4a",
+            "allocation_l4a", "allocation_l4b",
         ):
             x_ref, u_ref, parameters = self._l1_references(elapsed)
         else:
@@ -1671,7 +1741,7 @@ class StandardVtolRobustShadow(Node):
             upper_bounds = None
             if self.test_mode in (
                 "allocation_l1", "allocation_l2", "allocation_l3",
-                "allocation_l4a",
+                "allocation_l4a", "allocation_l4b",
             ):
                 applied_lambda = float(self.published_control[5])
                 if (
@@ -1780,11 +1850,14 @@ class StandardVtolRobustShadow(Node):
         elapsed = (now_ns - self.offboard_start_ns) * 1.0e-9
         allocation_gate = self.test_mode in (
             "allocation_l1", "allocation_l2", "allocation_l3",
-            "allocation_l4a",
+            "allocation_l4a", "allocation_l4b",
         )
         l2 = self.test_mode == "allocation_l2"
-        l3 = self.test_mode in ("allocation_l3", "allocation_l4a")
-        label = "l4a" if self.test_mode == "allocation_l4a" else (
+        l3 = self.test_mode in (
+            "allocation_l3", "allocation_l4a", "allocation_l4b"
+        )
+        label = "l4b" if self.test_mode == "allocation_l4b" else (
+            "l4a" if self.test_mode == "allocation_l4a" else
             "l3" if l3 else "l2" if l2 else "l1"
         )
         if allocation_gate and elapsed >= self._l1_total_seconds():
@@ -1806,16 +1879,22 @@ class StandardVtolRobustShadow(Node):
             elif self.min_applied_lambda > maximum_proof_lambda:
                 self._abort(f"{label}_allocation_not_exercised")
             elif (
-                self.test_mode == "allocation_l4a"
+                self.test_mode in ("allocation_l4a", "allocation_l4b")
                 and self.min_applied_mc_roll_pitch_weight
                 > self.l4a_min_roll_pitch_weight + 0.08
             ):
-                self._abort("l4a_roll_pitch_transfer_not_exercised")
+                self._abort(f"{label}_roll_pitch_transfer_not_exercised")
             elif (
                 self.test_mode == "allocation_l4a"
                 and self.min_applied_mc_yaw_weight < 0.95
             ):
                 self._abort("l4a_yaw_authority_not_retained")
+            elif (
+                self.test_mode == "allocation_l4b"
+                and self.min_applied_mc_yaw_weight
+                > self.l4b_min_yaw_weight + 0.08
+            ):
+                self._abort("l4b_yaw_transfer_not_exercised")
             elif (l2 or l3) and abs(self._forward_speed()) > settle_speed:
                 self._abort(f"{label}_did_not_settle")
             else:

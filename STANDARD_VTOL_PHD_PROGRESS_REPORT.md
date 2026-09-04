@@ -486,3 +486,21 @@ opravdava L4b/L4c i punu NMPC tranziciju. Ako ponovo nastane divergentan
 roll/course ili se mjereni odziv ne nalazi u identificiranom intervalu, nema
 daljeg podešavanja pragova: rezultat se dokumentuje kao ograničenje trenutne
 grey-box arhitekture, a full-transition tvrdnja se ne daje.
+
+### L4a-v2 live PASS — 2026-09-04
+
+Korektivni pokušaj je prošao punih 108.00 s sa
+`abort_reason=allocation_l4a_test_timeout`, statusom solvera 0 i nula solver
+failurea. Dostignuto je 12.207 m/s groundspeed i 12.028 m/s CAS. Maksimalna
+visinska greška bila je 0.176 m, cross-track 0.387 m, pusher 0.321,
+`lambda_lift=0.234`, a `mu_mc_rp=0.092`; `mu_mc_yaw=1.000` ostao je aktivan.
+Na kraju su težine vraćene na 1.0, brzina na približno nulu i PX4 se uredno
+vratio u Position mode.
+
+ULog je sačuvan kao
+`validation_logs/accepted/robust_allocation_l4a_v2_pass_2026-09-04.ulg.zst`
+(73,312,086 B sirovo, približno 23.3 MiB kompresovano). Ovaj rezultat
+zatvara L4a: aerodinamičke površine su preuzele približno 91% roll/pitch
+torque autoriteta dok su lift rezerva i MC yaw ostali dostupni. To još nije
+motor-off tranzicija. L4b mora dokazati coordinated-course let uz skoro
+potpuno uklonjen direktni MC yaw torque; zatim L4c spušta lift težinu na nulu.

@@ -994,3 +994,36 @@ Odluka nakon leta:
 - bilo koji `FAIL`: ne ponavljati i ne širiti limite; analizirati ULog i
   zaključiti je li identificirani lateralni interval prekršen. Ako jeste,
   zaustaviti ovu arhitekturu kao trenutni go/no-go negativan rezultat.
+
+## L4a-v2 rezultat i L4b coordinated-course gate
+
+L4a-v2 je prošao 2026-09-04: 108.00 s, 12.207 m/s, 0.176 m maksimalne
+visinske greške, 0.387 m cross-tracka, nula solver failurea,
+`lambda_min=0.234`, `mu_mc_rp,min=0.092` i `mu_mc_yaw=1.000`. Time je L4a
+zatvoren.
+
+L4b koristi potpuno isti profil, lift, pusher, elevator i roll/pitch transfer.
+Jedina nova promjena je `mu_mc_yaw: 1 -> 0.05 -> 1`. Direktni MC yaw moment
+se time skoro uklanja, dok rate referenca i 8-parametarski OCP koriste
+identificirani koordinisani odnos `chi_dot=0.95*g*tan(phi)/V`. Standard VTOL
+nema rudder; cilj nije prebaciti yaw na nepostojeći aktuator, nego dokazati
+da course prati bank uz zadržanu sigurnu lift rezervu. Vozilo i dalje ostaje
+u MC VTOL stanju i ne šalje se PX4 transition komanda.
+
+Terminali 1 i 2 i PX4 parametri ostaju identični L4a-v2 testu. Koristi novi
+Terminal 3 i 4:
+
+```bash
+# Terminal 3
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+ros2 launch px4_mpc standard_vtol_robust_l4b_gate_launch.py
+
+# Terminal 4, stabilan Position hover na 20–25 m
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_allocation_l4b_gate.bash
+```
+
+PASS zahtijeva puni timeout, solver failures 0, `min_lambda=0.2...`,
+`min_mc_rp=0.0...`, `min_mc_yaw=0.0...`, završnu brzinu ispod 0.7 m/s i
+automatski Position fallback. Samo L4b PASS otključava L4c motor-off test.
