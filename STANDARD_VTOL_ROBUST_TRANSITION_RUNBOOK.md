@@ -1002,13 +1002,14 @@ visinske greške, 0.387 m cross-tracka, nula solver failurea,
 `lambda_min=0.234`, `mu_mc_rp,min=0.092` i `mu_mc_yaw=1.000`. Time je L4a
 zatvoren.
 
-L4b koristi potpuno isti profil, lift, pusher, elevator i roll/pitch transfer.
-Jedina nova promjena je `mu_mc_yaw: 1 -> 0.05 -> 1`. Direktni MC yaw moment
-se time skoro uklanja, dok rate referenca i 8-parametarski OCP koriste
+L4b koristi isti profil, lift, pusher, elevator i roll/pitch transfer.
+`mu_mc_yaw: 1 -> 0.05 -> 1`, a pri punoj brzini referenca izvršava gladak
+bočni lane-change 0 -> 0.75 -> 0 m tokom 12 s. Direktni MC yaw moment se time
+skoro uklanja, dok rate referenca i 8-parametarski OCP koriste
 identificirani koordinisani odnos `chi_dot=0.95*g*tan(phi)/V`. Standard VTOL
 nema rudder; cilj nije prebaciti yaw na nepostojeći aktuator, nego dokazati
-da course prati bank uz zadržanu sigurnu lift rezervu. Vozilo i dalje ostaje
-u MC VTOL stanju i ne šalje se PX4 transition komanda.
+da course prati bank u oba smjera uz zadržanu sigurnu lift rezervu. Vozilo i
+dalje ostaje u MC VTOL stanju i ne šalje se PX4 transition komanda.
 
 Terminali 1 i 2 i PX4 parametri ostaju identični L4a-v2 testu. Koristi novi
 Terminal 3 i 4:

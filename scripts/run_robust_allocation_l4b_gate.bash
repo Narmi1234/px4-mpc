@@ -39,7 +39,8 @@ if [[ "${preflight}" != *"publishes_fmu=True"* \
 fi
 
 echo "L4b repeats the accepted 108 s L4a path and transfers direct MC yaw"
-echo "toward the identified coordinated bank/course dynamics. No VTOL mode change."
+echo "toward the identified coordinated bank/course dynamics. At 12 m/s it"
+echo "commands one smooth 0 -> 0.75 -> 0 m lane change. No VTOL mode change."
 read -r -p "Type YES only while stable at 20-25 m in Position mode: " answer
 if [[ "${answer}" != "YES" ]]; then
     echo "ROBUST_ALLOCATION_L4B=CANCELLED"
@@ -69,7 +70,8 @@ if [[ "${start}" != *"success=True"* ]]; then
     exit 1
 fi
 
-echo "Watching L4b. Do not command a QGC/PX4 VTOL transition."
+echo "Watching L4b. Expect one small S-like lateral correction near full speed."
+echo "Do not command a QGC/PX4 VTOL transition."
 for sample in $(seq 1 23); do
     sleep 5
     status="$(ros2 service call /standard_vtol_robust_shadow/status std_srvs/srv/Trigger '{}')"

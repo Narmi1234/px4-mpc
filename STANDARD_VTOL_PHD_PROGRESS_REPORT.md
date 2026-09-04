@@ -503,4 +503,7 @@ ULog je sačuvan kao
 zatvara L4a: aerodinamičke površine su preuzele približno 91% roll/pitch
 torque autoriteta dok su lift rezerva i MC yaw ostali dostupni. To još nije
 motor-off tranzicija. L4b mora dokazati coordinated-course let uz skoro
-potpuno uklonjen direktni MC yaw torque; zatim L4c spušta lift težinu na nulu.
+potpuno uklonjen direktni MC yaw torque. Za mjerljivu validaciju L4b pri
+12 m/s zadaje gladak bočni pomak `0 -> 0.75 -> 0 m` tokom 12 s, pa se provjeri
+bank/course odziv u oba smjera bez PX4 transition komande. Tek zatim L4c
+spušta lift težinu na nulu.

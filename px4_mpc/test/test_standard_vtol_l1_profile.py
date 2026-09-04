@@ -182,6 +182,24 @@ class TestStandardVtolL1Profile(unittest.TestCase):
         self.assertAlmostEqual(weight(0.2, 0.2, 0.05), 0.05)
         self.assertAlmostEqual(weight(0.0, 0.2, 0.05), 0.05)
 
+    def test_l4b_lateral_reference_is_smooth_and_returns_to_track(self):
+        self.node.l3_target_speed = 12.0
+        self.node.l3_acceleration = 0.25
+        reference = StandardVtolRobustShadow._l4b_lateral_reference
+        start = 1.0 + 12.0 / 0.25
+
+        self.assertEqual(reference(self.node, start), (0.0, 0.0))
+        position, speed = reference(self.node, start + 3.0)
+        self.assertAlmostEqual(position, 0.375)
+        self.assertAlmostEqual(speed, 0.75 * np.pi / 12.0)
+        position, speed = reference(self.node, start + 6.0)
+        self.assertAlmostEqual(position, 0.75)
+        self.assertAlmostEqual(speed, 0.0)
+        position, speed = reference(self.node, start + 9.0)
+        self.assertAlmostEqual(position, 0.375)
+        self.assertAlmostEqual(speed, -0.75 * np.pi / 12.0)
+        self.assertEqual(reference(self.node, start + 12.0), (0.0, 0.0))
+
 
 if __name__ == "__main__":
     unittest.main()

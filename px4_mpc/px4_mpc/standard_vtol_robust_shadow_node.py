@@ -1291,6 +1291,19 @@ class StandardVtolRobustShadow(Node):
         degrees = np.array([0.0, -3.0, -6.0, -8.0, -4.0, -1.36])
         return float(np.deg2rad(np.interp(speed, nodes, degrees)))
 
+    def _l4b_lateral_reference(self, stage_time: float) -> tuple[float, float]:
+        """Smooth 0.75 m lane change and return at full forward speed."""
+        start = 1.0 + self.l3_target_speed / self.l3_acceleration
+        duration = 12.0
+        phase = (float(stage_time) - start) / duration
+        if phase <= 0.0 or phase >= 1.0:
+            return 0.0, 0.0
+        lateral_position = 0.75 * math.sin(math.pi * phase) ** 2
+        lateral_speed = (
+            0.75 * math.pi / duration * math.sin(2.0 * math.pi * phase)
+        )
+        return lateral_position, lateral_speed
+
     def _l1_references(self, elapsed: float):
         target_speed, _, _, minimum_lambda, pusher_max = (
             self._allocation_configuration()
@@ -1363,16 +1376,29 @@ class StandardVtolRobustShadow(Node):
                 along * self.reference_forward
                 + cross_origin * self.reference_lateral
             )
+            lateral_position = 0.0
+            lateral_speed = 0.0
+            if self.test_mode == "allocation_l4b":
+                lateral_position, lateral_speed = (
+                    self._l4b_lateral_reference(stage_time)
+                )
+                position_xy += lateral_position * self.reference_lateral
             x_ref[stage, 0:3] = [
                 position_xy[0], position_xy[1], self.reference[2]
             ]
-            x_ref[stage, 3:5] = speed * self.reference_forward
+            x_ref[stage, 3:5] = (
+                speed * self.reference_forward
+                + lateral_speed * self.reference_lateral
+            )
             pitch = (
                 self._l2_pitch_reference(speed, target_speed)
                 if deep_allocation
                 else 0.0
             )
-            x_ref[stage, 6:10] = self._yaw_pitch_quaternion(yaw, pitch)
+            course_offset = math.atan2(lateral_speed, max(speed, 0.1))
+            x_ref[stage, 6:10] = self._yaw_pitch_quaternion(
+                yaw + course_offset, pitch
+            )
             fraction = speed / target_speed
             allocation = 1.0 - (1.0 - minimum_lambda) * fraction
             if (
