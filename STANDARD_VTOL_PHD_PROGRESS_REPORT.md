@@ -519,3 +519,15 @@ su vraćene na 1.0 i PX4 je uredno preuzeo Position. Ovo zatvara L4b, ali još
 ne dokazuje motor-off ili promjenu VTOL stanja. Sljedeći eksperiment L4c mora
 kontrolisano dovesti lift/motor autoritet do nule uz zadržavanje aerodinamičke
 kontrole, pa tek nakon toga slijedi puna NMPC front/back tranzicija.
+
+### L4c implementiran, live rezultat još nije izveden
+
+L4c je odvojen od pune VTOL mode promjene da bi tvrdnja bila provjerljiva i
+reverzibilna. NMPC koristi isti validirani 12 m/s koridor, ali dozvoljava
+`lambda_lift -> 0`, uz prethodno dokazane surface i coordinated-course torque
+putanje. PX4 još ostaje formalno u MC stanju kako bi Position fallback odmah
+vratio lift motore. PASS nije samo trenutni minimum: traži najmanje 2 s
+kontinuiranog primijenjenog `lambda_lift <= 0.03`, oba MC torque weighta
+`<= 0.13`, nula solver failurea, kočenje i povratak u Position. Ovaj gate je
+implementiran i softverski testiran; ne smije se u izvještaju označiti kao
+flight PASS dok live SITL rezultat ne bude zabilježen.

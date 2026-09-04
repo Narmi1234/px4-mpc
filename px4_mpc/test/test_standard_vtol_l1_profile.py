@@ -200,6 +200,16 @@ class TestStandardVtolL1Profile(unittest.TestCase):
         self.assertAlmostEqual(speed, -0.75 * np.pi / 12.0)
         self.assertEqual(reference(self.node, start + 12.0), (0.0, 0.0))
 
+    def test_l4c_bounds_force_predicted_motor_off_when_reachable(self):
+        self.node.test_mode = "allocation_l4c"
+        self.node.l3_min_lambda = 0.0
+        references = np.zeros((20, 6))
+        lower, upper = StandardVtolRobustShadow._allocation_control_bounds(
+            self.node, references, applied_lambda=0.0
+        )
+        np.testing.assert_allclose(lower[:, 5], 0.0)
+        np.testing.assert_allclose(upper[:, 5], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

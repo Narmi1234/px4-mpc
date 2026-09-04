@@ -1043,3 +1043,32 @@ ULog je sačuvan kao
 Prvobitni terminalski `ROBUST_ALLOCATION_L4B=FAIL` bio je lažno negativan:
 stara bash provjera tražila je tekstualni prefiks `0.0`, iako je nodeov
 unaprijed definisani numerički kriterij bio `<= 0.13`. Provjera je ispravljena.
+
+## L4c: reverzibilni lift-motor-off gate
+
+L4c je prvi test u kojem NMPC stvarno dovodi PX4 lift allocation weight do
+nule. Vozilo namjerno ostaje u PX4 MC VTOL stanju: to nije tvrdnja da je puna
+tranzicija završena, nego omogućava da Position fallback odmah vrati težinu
+na 1 i ponovo uključi lift motore ako guard reaguje. Profil ostaje na
+validiranih 12 m/s, sa osam sekundi pune brzine. PASS zahtijeva najmanje dvije
+sekunde kontinuiranog `applied_weight <= 0.03`, dubok roll/pitch i yaw transfer,
+nula solver failurea, potpuno kočenje i automatski povratak u Position.
+
+Koriste se isti PX4 parametri i Terminal 1/2 kao za L4b. Nakon zasebnog
+polijetanja i stabilnog hovera na 20–25 m:
+
+```bash
+# Terminal 3
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+ros2 launch px4_mpc standard_vtol_robust_l4c_gate_launch.py
+
+# Terminal 4
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_allocation_l4c_gate.bash
+```
+
+Terminal 4 traži eksplicitnu potvrdu `MOTOR-OFF`. Ne šalji QGC transition
+komandu. `allocation_l4c_test_timeout` i `ROBUST_ALLOCATION_L4C=PASS` jedini
+su prihvatljiv PASS. Bilo koji guard/FAIL zahtijeva slijetanje i analizu ULoga
+prije odluke da li povećati wing-borne brzinu ili zaustaviti ovu arhitekturu.
