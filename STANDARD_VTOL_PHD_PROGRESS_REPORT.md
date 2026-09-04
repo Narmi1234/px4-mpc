@@ -566,3 +566,12 @@ vertikalnu oscilaciju do 1.27 m/s. To nije motor-off kvar, nego posljedica
 direktnog korištenja nepouzdanog pitot signala blizu hovera. Interlock i
 procjena vjetra su zato dobili deadband/blending: puni MC lift do 4 m/s CAS,
 a glatki transfer samo u aerodinamički informativnom području 4–12 m/s.
+
+Naredni live pokušaj dokazao je da CAS deadband zadržava
+`lambda_lift=1.000`, ali je gate ipak završio nakon 5.02 s zbog vertikalne
+brzine. ULog bilježi ulazni drift oko 0.11 m/s i kasniju oscilaciju do
+1.00 m/s, uz `CAS_max=1.959 m/s`, `V_ground,max=1.026 m/s` i nula solver
+failurea. Time je problem dalje izolovan na bumpless prijenos vertikalnog
+kanala, prije aerodinamičkog transfera. Nova revizija zahtijeva
+`|vz|<=0.08 m/s`, zadržava dokazani hover kolektiv do 4 m/s CAS i glatko
+predaje kolektiv NMPC-u u intervalu 4–6 m/s.

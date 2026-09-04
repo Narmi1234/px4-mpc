@@ -1118,3 +1118,12 @@ ispod 0.910 i motori nisu bili ugašeni; solver failures su ostali nula. Zato
 sljedeća revizija drži `lambda=1` do CAS=4 m/s i tek zatim glatko prelazi
 prema nuli na CAS=12 m/s. Procjena vjetra se također glatko uključuje tek
 iznad 4 m/s. Safety pragovi nisu promijenjeni.
+
+Sljedeći pokušaj potvrdio je da je taj CAS deadband radio (`lambda_min=1.000`),
+ali je otkrio odvojen problem pri vertikalnom Offboard preuzimanju. Vozilo je
+ušlo sa približno 0.11 m/s vertikalne brzine, a kombinacija OCP kolektiva i
+dodatne visinske korekcije proizvela je oscilaciju do 1.00 m/s nakon 5.02 s.
+Motori nisu rasterećeni, CAS nije prešao 1.959 m/s i solver nije zakazao.
+Korigovani handover zato zahtijeva `|vz| <= 0.08 m/s`, koristi dokazani hover
+zakon kolektiva do CAS=4 m/s i glatko ga miješa sa NMPC kolektivom od 4 do
+6 m/s. Ovo mijenja kontrolnu strukturu, ne safety limite.

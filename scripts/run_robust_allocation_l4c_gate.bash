@@ -33,7 +33,8 @@ if [[ "${preflight}" != *"publishes_fmu=True"* \
       || "${preflight}" != *"l3_profile=[speed=15.0,accel=0.25,brake=0.30,lambda=0.00,pusher=0.45]"* \
       || "${preflight}" != *"l4_transfer=[rp_min=0.05,yaw_min=0.05]"* \
       || "${preflight}" != *"l4c_trim=[pitch_deg=4.10,hold=4.0]"* \
-      || "${preflight}" != *"l4c_airspeed=[unload_start=4.0,motor_off_min=12.0]"* ]]; then
+      || "${preflight}" != *"l4c_airspeed=[unload_start=4.0,motor_off_min=12.0]"* \
+      || "${preflight}" != *"l4c_collective=[hover_to=4.0,nmpc_from=6.0,settle_vz=0.08]"* ]]; then
     echo "ROBUST_ALLOCATION_L4C=FAIL:wrong_node_model_or_preflight"
     exit 1
 fi

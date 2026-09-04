@@ -225,6 +225,15 @@ class TestStandardVtolL1Profile(unittest.TestCase):
         self.assertEqual(floor(12.0, 4.0, 12.0), 0.0)
         self.assertEqual(floor(15.0, 4.0, 12.0), 0.0)
 
+    def test_l4c_collective_handover_is_bumpless_above_low_cas(self):
+        blend = StandardVtolRobustShadow._l4c_nmpc_collective_blend
+        self.assertEqual(blend(float("nan"), 4.0), 0.0)
+        self.assertEqual(blend(-1.0, 4.0), 0.0)
+        self.assertEqual(blend(4.0, 4.0), 0.0)
+        self.assertAlmostEqual(blend(5.0, 4.0), 0.5)
+        self.assertEqual(blend(6.0, 4.0), 1.0)
+        self.assertEqual(blend(12.0, 4.0), 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

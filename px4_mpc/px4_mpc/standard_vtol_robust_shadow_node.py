@@ -815,6 +815,9 @@ class StandardVtolRobustShadow(Node):
             f"l4c_airspeed=[unload_start="
             f"{self.l4c_airspeed_unload_start:.1f},motor_off_min="
             f"{self.l4c_motor_off_min_airspeed:.1f}],"
+            f"l4c_collective=[hover_to="
+            f"{self.l4c_airspeed_unload_start:.1f},nmpc_from="
+            f"{self.l4c_airspeed_unload_start + 2.0:.1f},settle_vz=0.08],"
             f"allocation=[{allocation},"
             f"inactive_for={allocation_inactive_duration:.3f}s],"
             f"motion=[forward_speed={forward_speed:.3f},"
@@ -1085,9 +1088,17 @@ class StandardVtolRobustShadow(Node):
             response.success = False
             response.message = "vehicle_already_offboard"
             return response
-        if abs(self.state[5]) > 0.15 or np.linalg.norm(self.state[3:5]) > 0.5:
+        vertical_settle_limit = 0.08 if level == 6 else 0.15
+        if (
+            abs(self.state[5]) > vertical_settle_limit
+            or np.linalg.norm(self.state[3:5]) > 0.5
+        ):
             response.success = False
-            response.message = f"vehicle_not_settled_for_l{level}"
+            response.message = (
+                f"vehicle_not_settled_for_l{level}:"
+                f"vz={self.state[5]:.3f},"
+                f"vxy={np.linalg.norm(self.state[3:5]):.3f}"
+            )
             return response
         self.output_requested = True
         self.test_mode = mode
@@ -1288,6 +1299,19 @@ class StandardVtolRobustShadow(Node):
             self.l4c_airspeed_unload_start,
             self.l4c_motor_off_min_airspeed,
         )
+
+    @staticmethod
+    def _l4c_nmpc_collective_blend(
+        calibrated_airspeed: float, unload_start_airspeed: float
+    ) -> float:
+        """Blend hover collective into NMPC only after CAS becomes useful."""
+        if not np.isfinite(calibrated_airspeed):
+            return 0.0
+        return float(np.clip(
+            (calibrated_airspeed - unload_start_airspeed) / 2.0,
+            0.0,
+            1.0,
+        ))
 
     def _allocation_configuration(self):
         if getattr(self, "test_mode", "allocation_l1") in (
@@ -2203,6 +2227,25 @@ class StandardVtolRobustShadow(Node):
                 requested[0] = np.clip(
                     requested[0] + correction, collective_minimum, 0.70
                 )
+                if self.test_mode == "allocation_l4c":
+                    # The L4c-v3 flight showed that the OCP collective and
+                    # the low-speed vertical correction can fight during the
+                    # first seconds of Offboard handover.  Use the already
+                    # flight-proven hover law while the pitot is uninformative,
+                    # then make a bumpless two-m/s blend into full NMPC.
+                    collective_blend = self._l4c_nmpc_collective_blend(
+                        self._calibrated_airspeed(),
+                        self.l4c_airspeed_unload_start,
+                    )
+                    hover_collective = float(np.clip(
+                        base_lift,
+                        self.controller.model.plant.hover_command - 0.08,
+                        0.70,
+                    ))
+                    requested[0] = (
+                        (1.0 - collective_blend) * hover_collective
+                        + collective_blend * requested[0]
+                    )
                 requested[2:5] = np.clip(
                     np.array([0.40, 1.00, 0.40]) * requested[2:5],
                     [
