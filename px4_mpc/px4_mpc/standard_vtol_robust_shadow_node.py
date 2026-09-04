@@ -64,6 +64,7 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("allow_l4c_output", False)
         self.declare_parameter("l4a_min_roll_pitch_weight", 0.05)
         self.declare_parameter("l4b_min_yaw_weight", 0.05)
+        self.declare_parameter("l4c_motor_off_min_airspeed", 12.0)
         self.declare_parameter("hover_test_seconds", 5.0)
         self.declare_parameter("l1_target_speed", 5.0)
         self.declare_parameter("l1_acceleration", 0.4)
@@ -159,6 +160,11 @@ class StandardVtolRobustShadow(Node):
         )
         if not 0.05 <= self.l4b_min_yaw_weight <= 0.20:
             raise ValueError("L4b yaw weight must be in [0.05, 0.20]")
+        self.l4c_motor_off_min_airspeed = float(
+            self.get_parameter("l4c_motor_off_min_airspeed").value
+        )
+        if not 11.0 <= self.l4c_motor_off_min_airspeed <= 14.0:
+            raise ValueError("L4c motor-off airspeed must be in [11, 14] m/s")
         self.allow_output = (
             self.allow_hover_output
             or self.allow_l1_output
@@ -268,7 +274,9 @@ class StandardVtolRobustShadow(Node):
             self.get_parameter("l3_vertical_speed_emergency_limit").value
         )
         if not (
-            10.0 <= self.l3_target_speed <= 13.0
+            10.0 <= self.l3_target_speed <= (
+                15.0 if self.allow_l4c_output else 13.0
+            )
             and 0.2 <= self.l3_acceleration <= 0.35
             and 0.2 <= self.l3_brake_rate <= 0.5
             and 0.0 <= self.l3_recovery_seconds <= 12.0
@@ -796,6 +804,8 @@ class StandardVtolRobustShadow(Node):
             f"l4_transfer=[rp_min={self.l4a_min_roll_pitch_weight:.2f},"
             f"yaw_min={self.l4b_min_yaw_weight:.2f}],"
             f"l4c_trim=[pitch_deg=4.10,hold={self.l3_hold_seconds:.1f}],"
+            f"l4c_airspeed=[motor_off_min="
+            f"{self.l4c_motor_off_min_airspeed:.1f}],"
             f"allocation=[{allocation},"
             f"inactive_for={allocation_inactive_duration:.3f}s],"
             f"motion=[forward_speed={forward_speed:.3f},"
@@ -1155,6 +1165,11 @@ class StandardVtolRobustShadow(Node):
         allocation = VtolNmpcAllocationSetpoint()
         allocation.timestamp = timestamp
         allocation.transition_weight = float(np.clip(control[5], 0.0, 1.0))
+        if self.test_mode == "allocation_l4c":
+            allocation.transition_weight = max(
+                allocation.transition_weight,
+                self._l4c_airspeed_allocation_floor(),
+            )
         # L4a-L4c independently transfer attitude authority to the surfaces;
         # L4c additionally permits the lift allocation itself to reach zero.
         if self.test_mode in (
@@ -1236,6 +1251,24 @@ class StandardVtolRobustShadow(Node):
                 self.state[0:2] - self.reference[0:2],
                 self.reference_lateral,
             )
+        )
+
+    @staticmethod
+    def _airspeed_allocation_floor(
+        calibrated_airspeed: float, motor_off_airspeed: float
+    ) -> float:
+        """Retain lift authority until measured airspeed supports motor-off."""
+        if not np.isfinite(calibrated_airspeed) or calibrated_airspeed < 0.0:
+            return 1.0
+        return float(np.clip(
+            1.0 - calibrated_airspeed / motor_off_airspeed, 0.0, 1.0
+        ))
+
+    def _l4c_airspeed_allocation_floor(self) -> float:
+        if not self._airspeed_stream_ready():
+            return 1.0
+        return self._airspeed_allocation_floor(
+            self._calibrated_airspeed(), self.l4c_motor_off_min_airspeed
         )
 
     def _allocation_configuration(self):
@@ -1411,6 +1444,15 @@ class StandardVtolRobustShadow(Node):
         )
         yaw = self._yaw(self.reference[6:10])
         hover = self.controller.model.plant.hover_command
+        l4c_wind_forward = 0.0
+        if self.test_mode == "allocation_l4c":
+            measured_cas = self._calibrated_airspeed()
+            if np.isfinite(measured_cas) and measured_cas >= 0.0:
+                l4c_wind_forward = float(np.clip(
+                    max(self._forward_speed(), 0.0) - measured_cas,
+                    -5.0,
+                    5.0,
+                ))
         corridor_speed = np.arange(19.0)
         corridor_lift = np.array(
             [
@@ -1454,6 +1496,7 @@ class StandardVtolRobustShadow(Node):
         for stage in range(self.controller.N + 1):
             stage_time = elapsed + stage * self.controller.dt
             speed = self._l1_speed_reference(stage_time)
+            aerodynamic_speed = max(speed - l4c_wind_forward, 0.0)
             if stage:
                 along += speed * self.controller.dt
             position_xy = (
@@ -1477,7 +1520,10 @@ class StandardVtolRobustShadow(Node):
             pitch = 0.0
             if deep_allocation:
                 pitch = (
-                    self._l4c_pitch_reference(speed, target_speed)
+                    self._l4c_pitch_reference(
+                        aerodynamic_speed,
+                        self.l4c_motor_off_min_airspeed,
+                    )
                     if self.test_mode == "allocation_l4c"
                     else self._l2_pitch_reference(speed, target_speed)
                 )
@@ -1486,7 +1532,16 @@ class StandardVtolRobustShadow(Node):
                 yaw + course_offset, pitch
             )
             fraction = speed / target_speed
-            allocation = 1.0 - (1.0 - minimum_lambda) * fraction
+            allocation_fraction = fraction
+            if self.test_mode == "allocation_l4c":
+                allocation_fraction = np.clip(
+                    aerodynamic_speed / self.l4c_motor_off_min_airspeed,
+                    0.0,
+                    1.0,
+                )
+            allocation = 1.0 - (
+                1.0 - minimum_lambda
+            ) * allocation_fraction
             if (
                 self.test_mode in (
                     "allocation_l3", "allocation_l4a", "allocation_l4b",
@@ -1513,6 +1568,10 @@ class StandardVtolRobustShadow(Node):
                         1.0 - self.l3_brake_entry_lambda
                     ) * fraction
             parameters[stage] = self.controller.model.nominal_parameters()
+            if self.test_mode == "allocation_l4c":
+                parameters[stage, 0:2] = (
+                    l4c_wind_forward * self.reference_forward
+                )
             parameters[stage, 6] = (
                 self._l4a_roll_pitch_weight(
                     allocation,
@@ -1536,7 +1595,9 @@ class StandardVtolRobustShadow(Node):
             if stage < self.controller.N:
                 if deep_allocation:
                     lift = float(
-                        np.interp(speed, corridor_speed, corridor_lift)
+                        np.interp(
+                            aerodynamic_speed, corridor_speed, corridor_lift
+                        )
                     )
                     # L3 flight data showed that the zero-lift high-speed trim
                     # is optimistic for this SITL plant. Make the OCP reference
@@ -1558,7 +1619,11 @@ class StandardVtolRobustShadow(Node):
                         ),
                     )
                     elevator = float(
-                        np.interp(speed, corridor_speed, corridor_elevator)
+                        np.interp(
+                            aerodynamic_speed,
+                            corridor_speed,
+                            corridor_elevator,
+                        )
                     )
                     x_ref[stage, 15] = (1.0 - allocation) * elevator
                 else:
@@ -1733,6 +1798,15 @@ class StandardVtolRobustShadow(Node):
             and self._forward_speed() > target_speed + speed_margin
         ):
             return f"{label}_forward_speed_limit"
+        if (
+            self.test_mode == "allocation_l4c"
+            and self.allocation_status is not None
+            and self.allocation_status.active
+            and self.allocation_status.applied_weight <= 0.03
+            and self._calibrated_airspeed()
+            < self.l4c_motor_off_min_airspeed - 0.3
+        ):
+            return "l4c_motor_off_below_airspeed"
         cross_limit = 2.5 if l3 else 2.0 if l2 else 1.5
         if allocation_gate and abs(self._cross_track()) > cross_limit:
             return f"{label}_cross_track_limit"
@@ -1993,7 +2067,11 @@ class StandardVtolRobustShadow(Node):
                 self._allocation_configuration()
             )
             minimum_speed = target_speed - (1.0 if l3 or l2 else 1.0)
-            minimum_airspeed = target_speed - 1.0
+            minimum_airspeed = (
+                self.l4c_motor_off_min_airspeed
+                if self.test_mode == "allocation_l4c"
+                else target_speed - 1.0
+            )
             maximum_proof_lambda = (
                 minimum_lambda + 0.10 if l3 else 0.60 if l2 else 0.90
             )

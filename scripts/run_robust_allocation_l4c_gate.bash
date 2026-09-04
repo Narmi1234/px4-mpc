@@ -30,14 +30,16 @@ if [[ "${preflight}" != *"publishes_fmu=True"* \
       || "${preflight}" != *"armed=True"* \
       || "${preflight}" != *"vtol_state=3"* \
       || "${preflight}" != *"solver_failures=0"* \
-      || "${preflight}" != *"l3_profile=[speed=12.0,accel=0.25,brake=0.30,lambda=0.00,pusher=0.45]"* \
+      || "${preflight}" != *"l3_profile=[speed=15.0,accel=0.25,brake=0.30,lambda=0.00,pusher=0.45]"* \
       || "${preflight}" != *"l4_transfer=[rp_min=0.05,yaw_min=0.05]"* \
-      || "${preflight}" != *"l4c_trim=[pitch_deg=4.10,hold=4.0]"* ]]; then
+      || "${preflight}" != *"l4c_trim=[pitch_deg=4.10,hold=4.0]"* \
+      || "${preflight}" != *"l4c_airspeed=[motor_off_min=12.0]"* ]]; then
     echo "ROBUST_ALLOCATION_L4C=FAIL:wrong_node_model_or_preflight"
     exit 1
 fi
 
-echo "DANGER: L4c commands lift allocation to zero at 12 m/s for >=2 s."
+echo "DANGER: L4c commands lift allocation to zero only above 12 m/s CAS."
+echo "The 15 m/s groundspeed target provides margin for measured wind/CAS."
 echo "PX4 remains in MC state only so Position fallback can restore the motors."
 echo "Do not command a QGC/PX4 VTOL transition. Keep Position ready."
 read -r -p "Type MOTOR-OFF only while stable at 20-25 m in Position mode: " answer
@@ -70,7 +72,7 @@ if [[ "${start}" != *"success=True"* ]]; then
 fi
 
 echo "Watching L4c. The motors should unload gradually, never switch abruptly."
-for sample in $(seq 1 25); do
+for sample in $(seq 1 29); do
     sleep 5
     status="$(ros2 service call /standard_vtol_robust_shadow/status std_srvs/srv/Trigger '{}')"
     message="$(grep -o "message='[^']*" <<< "${status}" || true)"

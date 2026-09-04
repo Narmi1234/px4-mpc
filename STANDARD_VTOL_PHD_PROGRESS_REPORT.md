@@ -523,7 +523,7 @@ kontrole, pa tek nakon toga slijedi puna NMPC front/back tranzicija.
 ### L4c implementiran, live rezultat još nije izveden
 
 L4c je odvojen od pune VTOL mode promjene da bi tvrdnja bila provjerljiva i
-reverzibilna. NMPC koristi isti validirani 12 m/s koridor, ali dozvoljava
+reverzibilna. NMPC nastavlja kroz identificirani koridor, ali dozvoljava
 `lambda_lift -> 0`, uz prethodno dokazane surface i coordinated-course torque
 putanje. PX4 još ostaje formalno u MC stanju kako bi Position fallback odmah
 vratio lift motore. PASS nije samo trenutni minimum: traži najmanje 2 s
@@ -544,3 +544,16 @@ referenci 1.36°. L4c-v2 mijenja samo taj high-speed trim na 4.10° i vraća
 hold na četiri sekunde; nijedan safety limit nije povećan. Stoga se pokušaj 1
 ne predstavlja kao gate PASS, ali dokumentuje da je NMPC/PX4 interfejs za
 potpuno rasterećenje lift motora funkcionalan.
+
+### L4c-v2 — otkriven groundspeed/airspeed scheduling problem
+
+Drugi pokušaj je ponovo ostvario `lambda_lift=0.000`, oba torque weighta
+0.050 i 4.58 s motor-off rada, ali je guard reagovao na 1.193 m visinske
+greške. Solver je ostao uredan. Let je dostigao 12.571 m/s groundspeed, ali
+samo 9.922 m/s maksimalnog CAS-a. Time je izolovana arhitektonska greška:
+lift transfer je bio raspoređen prema groundspeed referenci, dok wing lift
+zavisi od relativne brzine zraka. L4c-v3 zato OCP-u daje procijenjeni uzdužni
+vjetar `V_ground-CAS`, uvodi fizički airspeed interlock
+`lambda >= 1-CAS/12` i podiže groundspeed cilj na 15 m/s. Motor-off ostaje
+zabranjen ispod 12 m/s CAS; safety pragovi za visinu, vertikalnu brzinu i
+tilt nisu promijenjeni.

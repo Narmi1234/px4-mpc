@@ -1049,8 +1049,9 @@ unaprijed definisani numerički kriterij bio `<= 0.13`. Provjera je ispravljena.
 L4c je prvi test u kojem NMPC stvarno dovodi PX4 lift allocation weight do
 nule. Vozilo namjerno ostaje u PX4 MC VTOL stanju: to nije tvrdnja da je puna
 tranzicija završena, nego omogućava da Position fallback odmah vrati težinu
-na 1 i ponovo uključi lift motore ako guard reaguje. Profil ostaje na
-validiranih 12 m/s, sa četiri sekunde pune brzine. PASS zahtijeva najmanje dvije
+na 1 i ponovo uključi lift motore ako guard reaguje. Nakon L4c-v2 analize
+profil koristi 15 m/s groundspeed cilj, 12 m/s minimalni CAS za motor-off i
+četiri sekunde pune brzine. PASS zahtijeva najmanje dvije
 sekunde kontinuiranog `applied_weight <= 0.03`, dubok roll/pitch i yaw transfer,
 nula solver failurea, potpuno kočenje i automatski povratak u Position.
 
@@ -1086,3 +1087,23 @@ m/s i `|vz| <= 0.3 m/s` daje median pitch 4.10°. Stara L4c high-speed
 referenca bila je 1.36°. L4c-v2 zato koristi izmjereni 4.10° trim i originalni
 četverosekundni hold; sigurnosni pragovi nisu prošireni. Pokušaj 1 ostaje
 vrijedan motor-off dokaz, ali nije puni PASS jer nije završio povratni profil.
+
+### L4c-v2 — gate FAIL i ispravka airspeed schedulinga
+
+L4c-v2 je ponovo dostigao `lambda=0.000`, torque weights 0.050 i 4.58 s
+motor-off rada bez solver failurea, ali je završio sa
+`altitude_error=1.193 m`. Ključna razlika između senzora bila je
+`groundspeed_max=12.571 m/s`, a `CAS_max=9.922 m/s`. Regulator je spuštao
+lift alokaciju prema groundspeed referenci i u modelu pretpostavljao nulti
+vjetar, iako krilo reaguje na airspeed. Zato je motor-off aktiviran bez
+potrebne aerodinamičke rezerve.
+
+L4c-v3 uvodi tri vezane korekcije bez širenja safety limita:
+
+- procjenjuje uzdužni vjetar kao `V_ground - CAS` i šalje ga 16-state OCP-u;
+- fizički ograničava lift weight sa `max(lambda_NMPC, 1-CAS/12)`;
+- koristi 15 m/s groundspeed cilj, ali dozvoljava motor-off samo pri
+  `CAS >= 12 m/s`.
+
+Ako tu brzinu nije moguće postići, gate mora sigurno završiti kao FAIL bez
+gašenja motora.
