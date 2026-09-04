@@ -932,3 +932,65 @@ bash scripts/run_robust_allocation_l4a_gate.bash
 PASS mora sadržati `allocation_l4a_test_timeout`, nula solver failurea,
 `min_lambda=0.2...`, `min_mc_rp=0.0...`, `min_mc_yaw=1.000` i siguran povratak
 u Position. Operator ne smije slati QGC/PX4 transition komandu tokom L4a.
+
+## L4a-v2: posljednji go/no-go pokušaj
+
+Ovaj pokušaj koristi identificiranu roll/course dinamiku i PX4 commit
+`b722b3e6bb`. Nemoj ponavljati stari firmware ili stari ROS node. Prije leta
+Terminal 4 status mora sadržati tačno:
+
+```text
+lateral_model=[roll_damping=0.500,roll_surface=0.0475,course_gain=0.95]
+```
+
+Potpuno ugasi stari PX4, agent i ROS node. Zatim:
+
+```bash
+# Terminal 1
+cd /home/imran/Repositories/PX4-Autopilot
+git branch --show-current        # mora: nmpc-external-pusher
+git rev-parse --short HEAD       # mora: b722b3e6bb ili noviji
+make px4_sitl gz_standard_vtol
+```
+
+U PX4 konzolu Terminala 1:
+
+```text
+param set VT_EXT_PUSH_EN 1
+param set VT_EXT_PUSH_MAX 0.45
+param set VT_EXT_PUSH_SLEW 0.10
+param set VT_EXT_ALLOC_EN 1
+param set VT_EXT_AL_SLEW 0.05
+param show VT_EXT_PUSH_EN
+param show VT_EXT_PUSH_MAX
+param show VT_EXT_PUSH_SLEW
+param show VT_EXT_ALLOC_EN
+param show VT_EXT_AL_SLEW
+```
+
+```bash
+# Terminal 2
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+microxrce_agent_install/bin/MicroXRCEAgent udp4 -p 8888
+
+# Terminal 3 (prvi start može oko 30 s regenerisati solver)
+cd /home/imran/Repositories/px4-mpc
+source scripts/source_ros2_nmpc.bash
+ros2 launch px4_mpc standard_vtol_robust_l4a_gate_launch.py
+
+# Terminal 4, tek nakon arm + stabilnog Position hovera na 20–25 m
+cd /home/imran/Repositories/px4-mpc
+bash scripts/run_robust_allocation_l4a_gate.bash
+```
+
+Tokom testa gledaj roll/course, visinu i QGC failsafe. Ne šalji transition
+komandu. Prekini ručno u Position ako roll kontinuirano raste, cross-track se
+divergentno povećava ili visina odstupi približno 1 m prije automatskog guarda.
+
+Odluka nakon leta:
+
+- `ROBUST_ALLOCATION_L4A=PASS`: sačuvati ULog i implementirati L4b/L4c;
+- bilo koji `FAIL`: ne ponavljati i ne širiti limite; analizirati ULog i
+  zaključiti je li identificirani lateralni interval prekršen. Ako jeste,
+  zaustaviti ovu arhitekturu kao trenutni go/no-go negativan rezultat.

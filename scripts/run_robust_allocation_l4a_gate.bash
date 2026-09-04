@@ -30,9 +30,10 @@ if [[ "${preflight}" != *"publishes_fmu=True"* \
       || "${preflight}" != *"armed=True"* \
       || "${preflight}" != *"vtol_state=3"* \
       || "${preflight}" != *"solver_failures=0"* \
+      || "${preflight}" != *"lateral_model=[roll_damping=0.500,roll_surface=0.0475,course_gain=0.95]"* \
       || "${preflight}" != *"mc_rp_applied="* \
       || "${preflight}" != *"mc_yaw_applied="* ]]; then
-    echo "ROBUST_ALLOCATION_L4A=FAIL:wrong_node_schema_or_preflight"
+    echo "ROBUST_ALLOCATION_L4A=FAIL:wrong_node_model_schema_or_preflight"
     exit 1
 fi
 

@@ -120,7 +120,7 @@ class StandardVtolRobustNmpc:
         ocp.constraints.lh = np.sin(np.deg2rad([-22.0, -22.0]))
         ocp.constraints.uh = np.sin(np.deg2rad([22.0, 18.0]))
 
-        ocp.parameter_values = np.zeros(self.model.parameter_size)
+        ocp.parameter_values = self.model.nominal_parameters()
         ocp.solver_options.qp_solver = "PARTIAL_CONDENSING_HPIPM"
         ocp.solver_options.hessian_approx = "GAUSS_NEWTON"
         ocp.solver_options.integrator_type = "ERK"

@@ -429,3 +429,52 @@ STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md  operativni gateovi
 STANDARD_VTOL_RATE_IDENTIFICATION.md        identifikacija
 STANDARD_VTOL_PLANT_VALIDATION.md           SDF/Gazebo validacija
 ```
+
+## 14. L4a pokušaj 1 i posljednji korektivni ciklus
+
+Prvi L4a let (`2026-09-03/17_56_14.ulg`) nije prošao. Dostigao je
+12.657 m/s i `mu_mc_rp=0.094`, ali je cross-track narastao na 2.473 m.
+ULog pokazuje da to nije kvar solvera: lateralna predikcija je bila pogrešna.
+Stari model je koristio fiksni zatvoreni MC odziv
+
+```math
+\dot p = 6(p_{sp}-p)
+```
+
+čak i kada je PX4 primjenjivao samo 5–10% MC roll momenta. Iz L3c PASS i
+L4a FAIL loga ponovljivo je identificirano
+
+```math
+\dot p=-a_p p+b_p V^2\delta_a+c,
+```
+
+sa `a_p=0.34..0.67`, `b_p=0.041..0.055` i `R²=0.68..0.94`.
+NMPC koristi nominalno `a_p=0.50`, `b_p=0.0475`. Nezavisna provjera daje
+
+```math
+\dot\chi=k_\chi\frac{g\tan\phi}{V},\qquad k_\chi=0.94..0.96,
+```
+
+uz korelaciju 0.96; model i izlazni sloj koriste `k_chi=0.95`.
+Reprodukcija identifikacije je u
+`tools/identify_standard_vtol_roll_course.py`.
+
+Drugi otkriveni nesklad bio je u PX4 `FixedwingRateControl`: eksterni NMPC
+transfer namjerno ostavlja vozilo u MC stanju, zbog čega je stock uslov
+resetovao FW rate-control stanje svakih 20 ms. PX4 commit `b722b3e6bb`
+zadržava FW rate-control stanje samo kada je NMPC allocation svjež, validan,
+aktivan, roll/pitch težina manja od 0.95 i airspeed iznad stall brzine.
+Stale signal, landed stanje i svaki let bez eksternog allocationa zadržavaju
+stock reset/failsafe ponašanje. PX4 SITL build prolazi.
+
+Novi model ima osam parametara; posljednja dva su primijenjeni
+`mu_mc_rp` i `mu_mc_yaw`. Površinska komanda prati `1-mu_mc_rp`, a ne više
+`1-lambda_lift`. Model uključuje i PX4 roll P/FF airspeed scaling. Generisani
+acados solver prolazi hover solve sa statusom 0 (izmjereno 4.86–13.81 ms);
+model i profilni regresijski testovi prolaze.
+
+**Konačni go/no-go:** izvodi se samo jedan L4a-v2 let po runbooku. PASS
+opravdava L4b/L4c i punu NMPC tranziciju. Ako ponovo nastane divergentan
+roll/course ili se mjereni odziv ne nalazi u identificiranom intervalu, nema
+daljeg podešavanja pragova: rezultat se dokumentuje kao ograničenje trenutne
+grey-box arhitekture, a full-transition tvrdnja se ne daje.

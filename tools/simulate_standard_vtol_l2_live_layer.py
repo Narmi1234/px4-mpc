@@ -219,7 +219,7 @@ def main() -> None:
             dynamics,
             state,
             command,
-            np.zeros(controller.model.parameter_size),
+            controller.model.nominal_parameters(),
             dt,
         )
         pitch = np.arcsin(

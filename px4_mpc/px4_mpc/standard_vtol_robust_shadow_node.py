@@ -722,6 +722,10 @@ class StandardVtolRobustShadow(Node):
             f"persistence={self.l3_vertical_speed_persistence:.2f},"
             f"emergency={self.l3_vertical_speed_emergency_limit:.2f}],"
             f"prediction=[lambda_slew={self.lambda_prediction_slew_rate:.2f}],"
+            f"lateral_model=[roll_damping="
+            f"{self.controller.model.roll_aero_damping:.3f},"
+            f"roll_surface={self.controller.model.roll_surface_gain:.4f},"
+            f"course_gain={self.controller.model.coordinated_turn_gain:.2f}],"
             f"allocation=[{allocation},"
             f"inactive_for={allocation_inactive_duration:.3f}s],"
             f"motion=[forward_speed={forward_speed:.3f},"
@@ -1047,15 +1051,6 @@ class StandardVtolRobustShadow(Node):
         mode.timestamp = timestamp
         mode.body_rate = True
         self.offboard_publisher.publish(mode)
-        message = VehicleRatesSetpoint()
-        message.timestamp = timestamp
-        message.roll = float(control[2])
-        message.pitch = float(-control[3])
-        message.yaw = float(-control[4])
-        message.thrust_body = [
-            float(control[1]), 0.0, float(-control[0])
-        ]
-        self.rates_publisher.publish(message)
         allocation = VtolNmpcAllocationSetpoint()
         allocation.timestamp = timestamp
         allocation.transition_weight = float(np.clip(control[5], 0.0, 1.0))
@@ -1081,6 +1076,33 @@ class StandardVtolRobustShadow(Node):
         self.published_elevator_feedforward = float(
             allocation.elevator_feedforward
         )
+        message = VehicleRatesSetpoint()
+        message.timestamp = timestamp
+        message.roll = float(control[2])
+        message.pitch = float(-control[3])
+        yaw_command_flu = float(control[4])
+        if self.test_mode == "allocation_l4a":
+            qw, qx, qy, qz = self.state[6:10]
+            roll_flu = math.atan2(
+                2.0 * (qw * qx + qy * qz),
+                1.0 - 2.0 * (qx * qx + qy * qy),
+            )
+            coordinated_yaw_flu = (
+                -self.controller.model.coordinated_turn_gain
+                * self.controller.model.plant.gravity
+                * math.tan(roll_flu)
+                / max(airspeed, self.controller.model.minimum_coordinated_speed)
+            )
+            coordination = 1.0 - allocation.mc_roll_pitch_weight
+            yaw_command_flu = (
+                (1.0 - coordination) * yaw_command_flu
+                + coordination * coordinated_yaw_flu
+            )
+        message.yaw = float(-yaw_command_flu)
+        message.thrust_body = [
+            float(control[1]), 0.0, float(-control[0])
+        ]
+        self.rates_publisher.publish(message)
         self.allocation_publisher.publish(allocation)
 
     def _tilt_degrees(self) -> float:
@@ -1296,31 +1318,42 @@ class StandardVtolRobustShadow(Node):
                 else 0.0
             )
             x_ref[stage, 6:10] = self._yaw_pitch_quaternion(yaw, pitch)
-            if stage < self.controller.N:
-                fraction = speed / target_speed
-                allocation = 1.0 - (1.0 - minimum_lambda) * fraction
-                if (
-                    self.test_mode in ("allocation_l3", "allocation_l4a")
-                    and self.l3_recovery_seconds > 0.0
-                ):
-                    recovery_start = (
-                        1.0
-                        + target_speed / self.l3_acceleration
-                        + self.l3_hold_seconds
+            fraction = speed / target_speed
+            allocation = 1.0 - (1.0 - minimum_lambda) * fraction
+            if (
+                self.test_mode in ("allocation_l3", "allocation_l4a")
+                and self.l3_recovery_seconds > 0.0
+            ):
+                recovery_start = (
+                    1.0
+                    + target_speed / self.l3_acceleration
+                    + self.l3_hold_seconds
+                )
+                recovery_end = recovery_start + self.l3_recovery_seconds
+                if recovery_start <= stage_time < recovery_end:
+                    recovery_fraction = (
+                        (stage_time - recovery_start)
+                        / self.l3_recovery_seconds
                     )
-                    recovery_end = recovery_start + self.l3_recovery_seconds
-                    if recovery_start <= stage_time < recovery_end:
-                        recovery_fraction = (
-                            (stage_time - recovery_start)
-                            / self.l3_recovery_seconds
-                        )
-                        allocation = minimum_lambda + recovery_fraction * (
-                            self.l3_brake_entry_lambda - minimum_lambda
-                        )
-                    elif stage_time >= recovery_end:
-                        allocation = 1.0 - (
-                            1.0 - self.l3_brake_entry_lambda
-                        ) * fraction
+                    allocation = minimum_lambda + recovery_fraction * (
+                        self.l3_brake_entry_lambda - minimum_lambda
+                    )
+                elif stage_time >= recovery_end:
+                    allocation = 1.0 - (
+                        1.0 - self.l3_brake_entry_lambda
+                    ) * fraction
+            parameters[stage] = self.controller.model.nominal_parameters()
+            parameters[stage, 6] = (
+                self._l4a_roll_pitch_weight(
+                    allocation,
+                    self.l3_min_lambda,
+                    self.l4a_min_roll_pitch_weight,
+                )
+                if self.test_mode == "allocation_l4a"
+                else allocation
+            )
+            parameters[stage, 7] = 1.0
+            if stage < self.controller.N:
                 if deep_allocation:
                     lift = float(
                         np.interp(speed, corridor_speed, corridor_lift)
@@ -1622,8 +1655,9 @@ class StandardVtolRobustShadow(Node):
             u_ref = np.tile(
                 self.controller.model.hover_control(), (self.controller.N, 1)
             )
-            parameters = np.zeros(
-                (self.controller.N + 1, self.controller.model.parameter_size)
+            parameters = np.tile(
+                self.controller.model.nominal_parameters(),
+                (self.controller.N + 1, 1),
             )
         try:
             lower_bounds = None
@@ -1675,11 +1709,23 @@ class StandardVtolRobustShadow(Node):
             (now_ns - self.last_update_ns) * 1.0e-9, 0.0, 0.10
         )
         self.last_update_ns = now_ns
+        live_parameters = self.controller.model.nominal_parameters()
+        if self.allocation_status is not None and getattr(
+            self.allocation_status, "setpoint_valid", False
+        ):
+            live_parameters[6] = float(getattr(
+                self.allocation_status,
+                "applied_mc_roll_pitch_weight",
+                self.allocation_status.applied_weight,
+            ))
+            live_parameters[7] = float(getattr(
+                self.allocation_status, "applied_mc_yaw_weight", 1.0
+            ))
         derivative = np.asarray(
             self.model_function(
                 self.state,
                 self.last_control,
-                np.zeros(self.controller.model.parameter_size),
+                live_parameters,
             ),
             dtype=float,
         ).reshape(-1)

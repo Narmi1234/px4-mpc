@@ -59,7 +59,9 @@ def references(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     x_ref = np.zeros((controller.N + 1, controller.model.state_size))
     u_ref = np.zeros((controller.N, controller.model.control_size))
-    parameters = np.zeros((controller.N + 1, controller.model.parameter_size))
+    parameters = np.tile(
+        controller.model.nominal_parameters(), (controller.N + 1, 1)
+    )
     forward_position = float(state[0])
     hover = controller.model.plant.hover_command
 
@@ -209,7 +211,7 @@ def main() -> None:
         statuses.append(solution.status)
         requested = command if solution.status != 0 else solution.control
         command = limit_command(command, requested, controller.dt)
-        plant_parameters = np.zeros(controller.model.parameter_size)
+        plant_parameters = controller.model.nominal_parameters()
         scheduled_blend = u_ref[0, 5]
         plant_parameters[5] = disturbance_amplitude * (
             4.0 * scheduled_blend * (1.0 - scheduled_blend)
