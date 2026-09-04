@@ -1127,3 +1127,30 @@ Motori nisu rasterećeni, CAS nije prešao 1.959 m/s i solver nije zakazao.
 Korigovani handover zato zahtijeva `|vz| <= 0.08 m/s`, koristi dokazani hover
 zakon kolektiva do CAS=4 m/s i glatko ga miješa sa NMPC kolektivom od 4 do
 6 m/s. Ovo mijenja kontrolnu strukturu, ne safety limite.
+
+### L4c motor-off rezultat i go/no-go odluka
+
+Naredni let je uspješno prošao low-speed handover i dokazao kompletan
+aktuatorski transfer: `lambda_min=0.000`, oba MC torque weighta 0.050,
+`CAS_max=13.654 m/s` i 7.30 s kontinuiranog motor-off rada, uz nula solver
+failurea. Gate ipak nije PASS. U motor-off intervalu stvarni pitch je
+oscilirao od -1.76 do +5.01 deg, a NED vertikalna brzina od -1.02 do
++0.69 m/s. Guard je reagovao sa `vertical_speed_limit` nakon 51.97 s ULog
+Offboard vremena (node je prijavio 56.50 s).
+
+Ovo se desilo još u fazi ubrzanja: planirana referenca bila je približno
+12.74 m/s, ne u fazi kočenja. Usporavanje koje se vidjelo u Gazebu nastalo je
+nakon aborta, kada je Position mode preuzeo kontrolu. CAS-based interlock
+konceptualno vraća MC lift pri padu airspeeda, ali ovaj let nije došao do
+planiranog brake segmenta.
+
+**Go/no-go:** ne ponavljati L4c niti otključavati punu VTOL mode promjenu sa
+trenutnim modelom. ROS, acados solver, PX4 allocation kanal, surface transfer
+i motor-off komanda su dokazani. Nevalidiran dio je wing-borne longitudinalna
+dinamika bez MC uzgona. Sljedeći opravdan korak nije još jedno podešavanje
+gate limita, nego offline identifikacija/revalidacija lift-drag-pitch modela
+iz ovog 7.30 s motor-off prozora, zatim zatvorena offline simulacija. Tek ako
+ona predvidi izmjerenu pitch/vertical dinamiku i stabilan povrat autoriteta,
+smije se napraviti novi flight gate. Za povrat pri stvarnom kočenju treba i
+asimetričan allocation slew: sporo rasterećenje, brže ponovno uključenje MC
+motora.

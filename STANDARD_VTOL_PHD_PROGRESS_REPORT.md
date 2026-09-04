@@ -575,3 +575,27 @@ failurea. Time je problem dalje izolovan na bumpless prijenos vertikalnog
 kanala, prije aerodinamičkog transfera. Nova revizija zahtijeva
 `|vz|<=0.08 m/s`, zadržava dokazani hover kolektiv do 4 m/s CAS i glatko
 predaje kolektiv NMPC-u u intervalu 4–6 m/s.
+
+### L4c motor-off dokaz i granica trenutnog modela
+
+Nakon bumpless low-speed korekcije live let je ostvario puni aktuatorski
+transfer: `lambda_lift=0.000`, `mu_mc_rp=mu_mc_yaw=0.050`,
+`CAS_max=13.654 m/s` i 7.30 s kontinuiranog rada bez lift motora. Solver je
+ostao status 0 bez failurea. Ovo je pozitivan dokaz da NMPC→PX4 interfejs i
+custom allocation arhitektura mogu fizički izvršiti motor-off komandu.
+
+Ukupni gate je ipak FAIL: u motor-off prozoru pitch je oscilirao -1.76 do
++5.01 deg, a NED `vz` -1.02 do +0.69 m/s, nakon čega je reagovao
+`vertical_speed_limit`. Događaj je nastao tokom ubrzanja, prije planiranog
+brake segmenta; vidljivo usporavanje bilo je posljedica automatskog Position
+fallbacka. Time je eksperimentalno izolovana granica sadašnjeg 16-state
+modela: wing-borne longitudinalna dinamika bez MC lift/torque rezerve nije
+dovoljno tačno predviđena.
+
+Zato puna NMPC VTOL tranzicija trenutno nije validirana i novi live pokušaj
+nije opravdan samo promjenom gainova ili guardova. Nastavak istraživanja
+zahtijeva identifikaciju aerodinamičkog lift-drag-pitch podsistema iz
+motor-off segmenta, offline closed-loop validaciju te asimetričan allocation
+recovery (spor motor-off, brže ponovno uključenje). Ako se taj dodatni opseg
+ne prihvati, korektan završni rezultat je dokumentovani parcijalni motor-off
+dokaz, a ne tvrdnja o uspješnoj punoj tranziciji.
