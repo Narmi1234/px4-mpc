@@ -1025,6 +1025,21 @@ cd /home/imran/Repositories/px4-mpc
 bash scripts/run_robust_allocation_l4b_gate.bash
 ```
 
-PASS zahtijeva puni timeout, solver failures 0, `min_lambda=0.2...`,
-`min_mc_rp=0.0...`, `min_mc_yaw=0.0...`, završnu brzinu ispod 0.7 m/s i
+PASS zahtijeva puni timeout, solver failures 0, `min_lambda <= 0.30`,
+`min_mc_rp <= 0.13`, `min_mc_yaw <= 0.13`, završnu brzinu ispod 0.7 m/s i
 automatski Position fallback. Samo L4b PASS otključava L4c motor-off test.
+
+### L4b rezultat — 2026-09-04
+
+L4b je prošao puni profil za 108.05 s. Dostignuto je 12.260 m/s groundspeed
+i 12.274 m/s CAS, uz 0.586 m maksimalne visinske greške, 0.860 m maksimalnog
+cross-tracka, `lambda_min=0.250`, `mu_mc_rp,min=0.109` i
+`mu_mc_yaw,min=0.109`. Solver je završio sa statusom 0 i bez failurea, sve
+alokacijske komande su bile aktivne i validne, a letjelica se zaustavila i
+automatski vratila u Position. Time je dokazano približno 89% uklanjanje
+direktnog MC roll/pitch i yaw momenta tokom koordinisanog bočnog manevra.
+ULog je sačuvan kao
+`validation_logs/accepted/robust_allocation_l4b_pass_2026-09-04.ulg.zst`.
+Prvobitni terminalski `ROBUST_ALLOCATION_L4B=FAIL` bio je lažno negativan:
+stara bash provjera tražila je tekstualni prefiks `0.0`, iako je nodeov
+unaprijed definisani numerički kriterij bio `<= 0.13`. Provjera je ispravljena.

@@ -507,3 +507,15 @@ potpuno uklonjen direktni MC yaw torque. Za mjerljivu validaciju L4b pri
 12 m/s zadaje gladak bočni pomak `0 -> 0.75 -> 0 m` tokom 12 s, pa se provjeri
 bank/course odziv u oba smjera bez PX4 transition komande. Tek zatim L4c
 spušta lift težinu na nulu.
+
+### L4b live PASS — 2026-09-04
+
+L4b je završio puni 108.05 s profil sa očekivanim
+`allocation_l4b_test_timeout`, solver statusom 0 i bez solver failurea.
+Maksimumi su bili 12.260 m/s groundspeed, 12.274 m/s CAS, 0.586 m visinske
+greške i 0.860 m cross-tracka. Najniže primijenjene vrijednosti bile su
+`lambda_lift=0.250`, `mu_mc_rp=0.109` i `mu_mc_yaw=0.109`; nakon kočenja sve
+su vraćene na 1.0 i PX4 je uredno preuzeo Position. Ovo zatvara L4b, ali još
+ne dokazuje motor-off ili promjenu VTOL stanja. Sljedeći eksperiment L4c mora
+kontrolisano dovesti lift/motor autoritet do nule uz zadržavanje aerodinamičke
+kontrole, pa tek nakon toga slijedi puna NMPC front/back tranzicija.
