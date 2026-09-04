@@ -5,36 +5,38 @@ The MPC uses the [acados framework](https://github.com/acados/acados)
 
 ## Standard VTOL hover-to-forward-flight rad
 
-Standard VTOL plant i MC gateovi A/B su potvrđeni, a Gate C je dao stock PX4
-transition baseline. Eksperimentalni Gate D sa 10-state modelom i PX4-owned
-lift blendom je povučen: ULogovi su pokazali da taj model ne predviđa rate
-transient i da PX4, a ne NMPC, bira ključni dio tranzicije. Aktivni pravac je
-16-state robustni NMPC sa eksplicitnim NMPC-owned lift weightom `lambda`.
-Za nastavak rada prvo čitaj:
+Standard VTOL NMPC je validiran do L4b authority-transfer gatea pri približno
+12.27 m/s. Puna VTOL tranzicija nije dokazana: L4c je ugasio lift motore, ali je
+pao zbog longitudinalne/vertikalne nestabilnosti. Za trenutno dokazano stanje,
+ograničenja i poštenu ocjenu PhD doprinosa prvo čitaj:
 
-1. [`STANDARD_VTOL_PROFESSOR_DEMO.md`](STANDARD_VTOL_PROFESSOR_DEMO.md) —
-   najkraći offline i live SITL demo za konsultacije.
-2. [`STANDARD_VTOL_PHD_PROGRESS_REPORT.md`](STANDARD_VTOL_PHD_PROGRESS_REPORT.md)
+1. [`STANDARD_VTOL_NMPC_FINAL_SUMMARY.md`](STANDARD_VTOL_NMPC_FINAL_SUMMARY.md)
+   — autoritativni završni presjek: model, jednačine, porijeklo parametara,
+   NMPC/PX4 podjela, rezultati, posljednji uspješni demo, ograničenja i odluka.
+2. [`STANDARD_VTOL_PROFESSOR_DEMO.md`](STANDARD_VTOL_PROFESSOR_DEMO.md) —
+   kraći demonstracijski materijal; za aktuelni live demo koristiti L4b komandu
+   iz završnog presjeka.
+3. [`STANDARD_VTOL_PHD_PROGRESS_REPORT.md`](STANDARD_VTOL_PHD_PROGRESS_REPORT.md)
    — samostalan presjek za mentorski sastanak: cilj, model, porijeklo
    parametara, PX4 patch, rezultati, ograničenja i naredne odluke.
-3. [`STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md`](STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md)
+4. [`STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md`](STANDARD_VTOL_ROBUST_TRANSITION_RUNBOOK.md)
    — aktivne komande i R0–R4 gateovi novog 16-state NMPC pristupa.
 
-4. [`STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md`](STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md)
+5. [`STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md`](STANDARD_VTOL_ROBUST_NMPC_ARCHITECTURE.md)
    — aktivna arhitektura, tačna podjela NMPC/PX4 odgovornosti, jednačine i
    faze do pune NMPC tranzicije.
-4. [`STANDARD_VTOL_RATE_IDENTIFICATION.md`](STANDARD_VTOL_RATE_IDENTIFICATION.md)
+6. [`STANDARD_VTOL_RATE_IDENTIFICATION.md`](STANDARD_VTOL_RATE_IDENTIFICATION.md)
    — aktivna Faza 1, train/validation rezultati i razlog prelaska sa
    first-order laga na torque-informed 16-state rotacijski model.
-5. [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md) — historija
+7. [`STANDARD_VTOL_NMPC_ROADMAP.md`](STANDARD_VTOL_NMPC_ROADMAP.md) — historija
    prihvaćenih gateova i razlog povlačenja starog Gate D pristupa.
-6. [`STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md`](STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md)
+8. [`STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md`](STANDARD_VTOL_PUSHER_FORWARD_RUNBOOK.md)
    — zaključani Gate A postupak i prihvaćeni rezultat.
-7. [`STANDARD_VTOL_GATE_B_RUNBOOK.md`](STANDARD_VTOL_GATE_B_RUNBOOK.md) —
+9. [`STANDARD_VTOL_GATE_B_RUNBOOK.md`](STANDARD_VTOL_GATE_B_RUNBOOK.md) —
    prihvaćeni odvojeni 5 m/s i 8 m/s MC gateovi.
-8. [`STANDARD_VTOL_GATE_C_RUNBOOK.md`](STANDARD_VTOL_GATE_C_RUNBOOK.md) —
+10. [`STANDARD_VTOL_GATE_C_RUNBOOK.md`](STANDARD_VTOL_GATE_C_RUNBOOK.md) —
    prihvaćeni stock PX4 front/back transition uz NMPC shadow računanje.
-9. [`STANDARD_VTOL_GATE_D_RUNBOOK.md`](STANDARD_VTOL_GATE_D_RUNBOOK.md) —
+11. [`STANDARD_VTOL_GATE_D_RUNBOOK.md`](STANDARD_VTOL_GATE_D_RUNBOOK.md) —
    arhivirani eksperimentalni postupak; nije dozvoljen za novi let.
 
 Pozadinski dokumenti su:
