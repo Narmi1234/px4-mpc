@@ -217,12 +217,13 @@ class TestStandardVtolL1Profile(unittest.TestCase):
 
     def test_l4c_airspeed_interlock_prevents_early_motor_off(self):
         floor = StandardVtolRobustShadow._airspeed_allocation_floor
-        self.assertEqual(floor(float("nan"), 12.0), 1.0)
-        self.assertEqual(floor(-1.0, 12.0), 1.0)
-        self.assertAlmostEqual(floor(9.0, 12.0), 0.25)
-        self.assertAlmostEqual(floor(11.4, 12.0), 0.05)
-        self.assertEqual(floor(12.0, 12.0), 0.0)
-        self.assertEqual(floor(15.0, 12.0), 0.0)
+        self.assertEqual(floor(float("nan"), 4.0, 12.0), 1.0)
+        self.assertEqual(floor(-1.0, 4.0, 12.0), 1.0)
+        self.assertEqual(floor(4.0, 4.0, 12.0), 1.0)
+        self.assertAlmostEqual(floor(8.0, 4.0, 12.0), 0.5)
+        self.assertAlmostEqual(floor(11.6, 4.0, 12.0), 0.05)
+        self.assertEqual(floor(12.0, 4.0, 12.0), 0.0)
+        self.assertEqual(floor(15.0, 4.0, 12.0), 0.0)
 
 
 if __name__ == "__main__":

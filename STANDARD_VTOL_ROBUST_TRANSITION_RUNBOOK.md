@@ -1101,9 +1101,20 @@ potrebne aerodinamičke rezerve.
 L4c-v3 uvodi tri vezane korekcije bez širenja safety limita:
 
 - procjenjuje uzdužni vjetar kao `V_ground - CAS` i šalje ga 16-state OCP-u;
-- fizički ograničava lift weight sa `max(lambda_NMPC, 1-CAS/12)`;
+- zadržava punu lift alokaciju kroz nepouzdan low-CAS opseg do 4 m/s, zatim
+  je fizički ograničava glatkim interlockom
+  `lambda >= (12-CAS)/(12-4)`;
 - koristi 15 m/s groundspeed cilj, ali dozvoljava motor-off samo pri
   `CAS >= 12 m/s`.
 
 Ako tu brzinu nije moguće postići, gate mora sigurno završiti kao FAIL bez
 gašenja motora.
+
+Prvi v3 pokušaj otkrio je da se sirovi pitot ne smije koristiti za linearno
+rasterećenje od nulte brzine. U hover/low-speed području CAS je oscilirao
+približno od -2.5 do +2.2 m/s, lift interlock je mijenjao efektivnu alokaciju,
+a vertikalna brzina dostigla 1.27 m/s nakon samo 7.40 s. `lambda` nije pala
+ispod 0.910 i motori nisu bili ugašeni; solver failures su ostali nula. Zato
+sljedeća revizija drži `lambda=1` do CAS=4 m/s i tek zatim glatko prelazi
+prema nuli na CAS=12 m/s. Procjena vjetra se također glatko uključuje tek
+iznad 4 m/s. Safety pragovi nisu promijenjeni.

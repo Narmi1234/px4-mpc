@@ -20,6 +20,7 @@ def generate_launch_description():
                         "max_airspeed_age_seconds": 0.75,
                         "allocation_inactive_abort_seconds": 0.35,
                         "allow_l4c_output": True,
+                        "l4c_airspeed_unload_start": 4.0,
                         "l4c_motor_off_min_airspeed": 12.0,
                         "l4a_min_roll_pitch_weight": 0.05,
                         "l4b_min_yaw_weight": 0.05,

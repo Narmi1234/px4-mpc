@@ -64,6 +64,7 @@ class StandardVtolRobustShadow(Node):
         self.declare_parameter("allow_l4c_output", False)
         self.declare_parameter("l4a_min_roll_pitch_weight", 0.05)
         self.declare_parameter("l4b_min_yaw_weight", 0.05)
+        self.declare_parameter("l4c_airspeed_unload_start", 4.0)
         self.declare_parameter("l4c_motor_off_min_airspeed", 12.0)
         self.declare_parameter("hover_test_seconds", 5.0)
         self.declare_parameter("l1_target_speed", 5.0)
@@ -160,11 +161,18 @@ class StandardVtolRobustShadow(Node):
         )
         if not 0.05 <= self.l4b_min_yaw_weight <= 0.20:
             raise ValueError("L4b yaw weight must be in [0.05, 0.20]")
+        self.l4c_airspeed_unload_start = float(
+            self.get_parameter("l4c_airspeed_unload_start").value
+        )
         self.l4c_motor_off_min_airspeed = float(
             self.get_parameter("l4c_motor_off_min_airspeed").value
         )
+        if not 3.0 <= self.l4c_airspeed_unload_start <= 6.0:
+            raise ValueError("L4c airspeed unload start must be in [3, 6] m/s")
         if not 11.0 <= self.l4c_motor_off_min_airspeed <= 14.0:
             raise ValueError("L4c motor-off airspeed must be in [11, 14] m/s")
+        if self.l4c_airspeed_unload_start >= self.l4c_motor_off_min_airspeed:
+            raise ValueError("L4c airspeed unload start must precede motor-off")
         self.allow_output = (
             self.allow_hover_output
             or self.allow_l1_output
@@ -804,7 +812,8 @@ class StandardVtolRobustShadow(Node):
             f"l4_transfer=[rp_min={self.l4a_min_roll_pitch_weight:.2f},"
             f"yaw_min={self.l4b_min_yaw_weight:.2f}],"
             f"l4c_trim=[pitch_deg=4.10,hold={self.l3_hold_seconds:.1f}],"
-            f"l4c_airspeed=[motor_off_min="
+            f"l4c_airspeed=[unload_start="
+            f"{self.l4c_airspeed_unload_start:.1f},motor_off_min="
             f"{self.l4c_motor_off_min_airspeed:.1f}],"
             f"allocation=[{allocation},"
             f"inactive_for={allocation_inactive_duration:.3f}s],"
@@ -1255,20 +1264,29 @@ class StandardVtolRobustShadow(Node):
 
     @staticmethod
     def _airspeed_allocation_floor(
-        calibrated_airspeed: float, motor_off_airspeed: float
+        calibrated_airspeed: float,
+        unload_start_airspeed: float,
+        motor_off_airspeed: float,
     ) -> float:
-        """Retain lift authority until measured airspeed supports motor-off."""
+        """Retain full lift through noisy low-CAS flight, then unload smoothly."""
         if not np.isfinite(calibrated_airspeed) or calibrated_airspeed < 0.0:
             return 1.0
+        if calibrated_airspeed <= unload_start_airspeed:
+            return 1.0
         return float(np.clip(
-            1.0 - calibrated_airspeed / motor_off_airspeed, 0.0, 1.0
+            (motor_off_airspeed - calibrated_airspeed)
+            / (motor_off_airspeed - unload_start_airspeed),
+            0.0,
+            1.0,
         ))
 
     def _l4c_airspeed_allocation_floor(self) -> float:
         if not self._airspeed_stream_ready():
             return 1.0
         return self._airspeed_allocation_floor(
-            self._calibrated_airspeed(), self.l4c_motor_off_min_airspeed
+            self._calibrated_airspeed(),
+            self.l4c_airspeed_unload_start,
+            self.l4c_motor_off_min_airspeed,
         )
 
     def _allocation_configuration(self):
@@ -1447,8 +1465,19 @@ class StandardVtolRobustShadow(Node):
         l4c_wind_forward = 0.0
         if self.test_mode == "allocation_l4c":
             measured_cas = self._calibrated_airspeed()
-            if np.isfinite(measured_cas) and measured_cas >= 0.0:
-                l4c_wind_forward = float(np.clip(
+            if (
+                np.isfinite(measured_cas)
+                and measured_cas > self.l4c_airspeed_unload_start
+            ):
+                # Below the unload threshold the simulated pitot regularly
+                # changes sign.  Blend in its wind estimate only after the
+                # signal contains useful aerodynamic information.
+                blend = np.clip(
+                    (measured_cas - self.l4c_airspeed_unload_start) / 2.0,
+                    0.0,
+                    1.0,
+                )
+                l4c_wind_forward = float(blend * np.clip(
                     max(self._forward_speed(), 0.0) - measured_cas,
                     -5.0,
                     5.0,

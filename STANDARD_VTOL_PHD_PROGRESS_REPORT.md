@@ -554,6 +554,15 @@ samo 9.922 m/s maksimalnog CAS-a. Time je izolovana arhitektonska greška:
 lift transfer je bio raspoređen prema groundspeed referenci, dok wing lift
 zavisi od relativne brzine zraka. L4c-v3 zato OCP-u daje procijenjeni uzdužni
 vjetar `V_ground-CAS`, uvodi fizički airspeed interlock
-`lambda >= 1-CAS/12` i podiže groundspeed cilj na 15 m/s. Motor-off ostaje
+koji drži punu lift alokaciju do CAS=4 m/s, zatim koristi
+`lambda >= (12-CAS)/(12-4)`, i podiže groundspeed cilj na 15 m/s. Motor-off ostaje
 zabranjen ispod 12 m/s CAS; safety pragovi za visinu, vertikalnu brzinu i
 tilt nisu promijenjeni.
+
+Prvi live pokušaj ove korekcije pao je rano, prije dubokog transfera:
+`lambda_min=0.910`, `V_ground,max=1.713 m/s`, `CAS_max=2.155 m/s`, bez solver
+failurea. ULog je pokazao low-speed CAS šum približno -2.5 do +2.2 m/s i
+vertikalnu oscilaciju do 1.27 m/s. To nije motor-off kvar, nego posljedica
+direktnog korištenja nepouzdanog pitot signala blizu hovera. Interlock i
+procjena vjetra su zato dobili deadband/blending: puni MC lift do 4 m/s CAS,
+a glatki transfer samo u aerodinamički informativnom području 4–12 m/s.

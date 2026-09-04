@@ -33,12 +33,13 @@ if [[ "${preflight}" != *"publishes_fmu=True"* \
       || "${preflight}" != *"l3_profile=[speed=15.0,accel=0.25,brake=0.30,lambda=0.00,pusher=0.45]"* \
       || "${preflight}" != *"l4_transfer=[rp_min=0.05,yaw_min=0.05]"* \
       || "${preflight}" != *"l4c_trim=[pitch_deg=4.10,hold=4.0]"* \
-      || "${preflight}" != *"l4c_airspeed=[motor_off_min=12.0]"* ]]; then
+      || "${preflight}" != *"l4c_airspeed=[unload_start=4.0,motor_off_min=12.0]"* ]]; then
     echo "ROBUST_ALLOCATION_L4C=FAIL:wrong_node_model_or_preflight"
     exit 1
 fi
 
 echo "DANGER: L4c commands lift allocation to zero only above 12 m/s CAS."
+echo "Lift motors remain fully allocated through the noisy CAS region below 4 m/s."
 echo "The 15 m/s groundspeed target provides margin for measured wind/CAS."
 echo "PX4 remains in MC state only so Position fallback can restore the motors."
 echo "Do not command a QGC/PX4 VTOL transition. Keep Position ready."
