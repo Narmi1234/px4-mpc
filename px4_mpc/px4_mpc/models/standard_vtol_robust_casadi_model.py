@@ -220,7 +220,7 @@ class StandardVtolRobustCasadiModel(StandardVtolTransitionCasadiModel):
             * (rate_sp[0] - body_rates[0])
             + roll_aero_derivative,
             self._pitch_rate_derivative(
-                body_rates[1], rate_sp[1], airspeed, lift_fraction,
+                body_rates[1], rate_sp[1], airspeed, mc_roll_pitch_weight,
                 alpha, pitch_flu, parameters[5],
             ),
             mc_yaw_weight * self.yaw_rate_gain

@@ -104,6 +104,25 @@ class TestStandardVtolRobustCasadiModel(unittest.TestCase):
             places=7,
         )
 
+    def test_l4_pitch_dynamics_use_torque_not_lift_weight(self):
+        state = self.model.hover_state()
+        state[3] = 12.0
+        state[11] = 0.15
+        control = self.model.hover_control()
+        control[5] = 0.20
+        full_mc = self.model.nominal_parameters()
+        transferred = full_mc.copy()
+        transferred[6] = 0.05
+        full_derivative = np.asarray(
+            self.function(state, control, full_mc)
+        ).reshape(-1)
+        transferred_derivative = np.asarray(
+            self.function(state, control, transferred)
+        ).reshape(-1)
+        self.assertNotAlmostEqual(
+            full_derivative[11], transferred_derivative[11], places=5
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

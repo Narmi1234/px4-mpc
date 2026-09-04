@@ -469,7 +469,9 @@ stock reset/failsafe ponašanje. PX4 SITL build prolazi.
 
 Novi model ima osam parametara; posljednja dva su primijenjeni
 `mu_mc_rp` i `mu_mc_yaw`. Površinska komanda prati `1-mu_mc_rp`, a ne više
-`1-lambda_lift`. Model uključuje i PX4 roll P/FF airspeed scaling. Generisani
+`1-lambda_lift`; i LPV pitch torque dinamika sada je raspoređena po
+`mu_mc_rp`, dok samo vertikalna motorna sila ostaje vezana za
+`lambda_lift`. Model uključuje i PX4 roll P/FF airspeed scaling. Generisani
 acados solver prolazi hover solve sa statusom 0 (izmjereno 4.86–13.81 ms);
 model i profilni regresijski testovi prolaze.
 
