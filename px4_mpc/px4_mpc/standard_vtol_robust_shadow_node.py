@@ -1358,7 +1358,14 @@ class StandardVtolRobustShadow(Node):
                     lift = float(
                         np.interp(speed, corridor_speed, corridor_lift)
                     )
-                    collective = np.clip(lift / allocation, 0.0, 0.68)
+                    # L3 flight data showed that the zero-lift high-speed trim
+                    # is optimistic for this SITL plant. Make the OCP reference
+                    # see the same residual effective-lift floor enforced by
+                    # the published-control safety layer; otherwise it predicts
+                    # collective=0 while PX4 receives up to 0.70.
+                    if self.test_mode in ("allocation_l3", "allocation_l4a"):
+                        lift = max(lift, self.l3_effective_lift_min)
+                    collective = np.clip(lift / allocation, 0.0, 0.70)
                     pusher = min(
                         pusher_max,
                         float(

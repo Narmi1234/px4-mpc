@@ -473,6 +473,12 @@ Novi model ima osam parametara; posljednja dva su primijenjeni
 acados solver prolazi hover solve sa statusom 0 (izmjereno 4.86–13.81 ms);
 model i profilni regresijski testovi prolaze.
 
+Pre-flight L4 operating-point provjera dodatno je otkrila da je stara OCP
+high-speed referenca još koristila `collective_ref=0`, dok je validirani
+izlazni floor objavljivao do 0.70. To je u OCP-u stvaralo lažan vertikalni
+model i saturirani pitch zahtjev. L4a-v2 sada koristi isti identificirani
+`effective_lift_min=0.20` u predikcijskoj referenci i u izlaznom limiteru.
+
 **Konačni go/no-go:** izvodi se samo jedan L4a-v2 let po runbooku. PASS
 opravdava L4b/L4c i punu NMPC tranziciju. Ako ponovo nastane divergentan
 roll/course ili se mjereni odziv ne nalazi u identificiranom intervalu, nema
