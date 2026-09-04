@@ -531,3 +531,16 @@ kontinuiranog primijenjenog `lambda_lift <= 0.03`, oba MC torque weighta
 `<= 0.13`, nula solver failurea, kočenje i povratak u Position. Ovaj gate je
 implementiran i softverski testiran; ne smije se u izvještaju označiti kao
 flight PASS dok live SITL rezultat ne bude zabilježen.
+
+### L4c pokušaj 1 — parcijalni motor-off dokaz, ukupni FAIL
+
+Prvi live L4c pokušaj zaista je primijenio `lambda_lift=0.000` i
+`mu_mc_rp=mu_mc_yaw=0.050` te zadržao motor-off uslov 8.36 s, bez solver
+failurea. Ipak je nakon 56.05 s guard reagovao na 1.193 m visinske greške.
+ULog pokazuje rastuću pitch/vertical oscilaciju, ne gubitak komunikacije ili
+alokacijskog kanala. Nezavisni raniji 12 m/s PX4 run daje median stabilnog
+pitcha 4.10° u CAS intervalu 10–12.5 m/s, nasuprot korištenoj završnoj
+referenci 1.36°. L4c-v2 mijenja samo taj high-speed trim na 4.10° i vraća
+hold na četiri sekunde; nijedan safety limit nije povećan. Stoga se pokušaj 1
+ne predstavlja kao gate PASS, ali dokumentuje da je NMPC/PX4 interfejs za
+potpuno rasterećenje lift motora funkcionalan.

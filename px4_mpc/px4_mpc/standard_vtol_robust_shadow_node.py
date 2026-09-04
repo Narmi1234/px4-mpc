@@ -795,6 +795,7 @@ class StandardVtolRobustShadow(Node):
             f"course_gain={self.controller.model.coordinated_turn_gain:.2f}],"
             f"l4_transfer=[rp_min={self.l4a_min_roll_pitch_weight:.2f},"
             f"yaw_min={self.l4b_min_yaw_weight:.2f}],"
+            f"l4c_trim=[pitch_deg=4.10,hold={self.l3_hold_seconds:.1f}],"
             f"allocation=[{allocation},"
             f"inactive_for={allocation_inactive_duration:.3f}s],"
             f"motion=[forward_speed={forward_speed:.3f},"
@@ -1363,6 +1364,17 @@ class StandardVtolRobustShadow(Node):
         degrees = np.array([0.0, -3.0, -6.0, -8.0, -4.0, -1.36])
         return float(np.deg2rad(np.interp(speed, nodes, degrees)))
 
+    @staticmethod
+    def _l4c_pitch_reference(speed: float, target_speed: float) -> float:
+        """ULog-anchored wing-borne pitch corridor for zero lift allocation."""
+        nodes = target_speed / 15.0 * np.array(
+            [0.0, 4.0, 7.0, 9.0, 12.0, 15.0]
+        )
+        # The independent 12 m/s PX4 validation run measured a stable
+        # 4.10 deg FRD pitch at CAS 10-12.5 m/s. FLU uses the opposite sign.
+        degrees = np.array([0.0, -3.0, -6.0, -8.0, -4.0, -4.10])
+        return float(np.deg2rad(np.interp(speed, nodes, degrees)))
+
     def _l4b_lateral_reference(self, stage_time: float) -> tuple[float, float]:
         """Smooth 0.75 m lane change and return at full forward speed."""
         start = 1.0 + self.l3_target_speed / self.l3_acceleration
@@ -1462,11 +1474,13 @@ class StandardVtolRobustShadow(Node):
                 speed * self.reference_forward
                 + lateral_speed * self.reference_lateral
             )
-            pitch = (
-                self._l2_pitch_reference(speed, target_speed)
-                if deep_allocation
-                else 0.0
-            )
+            pitch = 0.0
+            if deep_allocation:
+                pitch = (
+                    self._l4c_pitch_reference(speed, target_speed)
+                    if self.test_mode == "allocation_l4c"
+                    else self._l2_pitch_reference(speed, target_speed)
+                )
             course_offset = math.atan2(lateral_speed, max(speed, 0.1))
             x_ref[stage, 6:10] = self._yaw_pitch_quaternion(
                 yaw + course_offset, pitch

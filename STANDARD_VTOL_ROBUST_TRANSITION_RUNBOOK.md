@@ -1050,7 +1050,7 @@ L4c je prvi test u kojem NMPC stvarno dovodi PX4 lift allocation weight do
 nule. Vozilo namjerno ostaje u PX4 MC VTOL stanju: to nije tvrdnja da je puna
 tranzicija završena, nego omogućava da Position fallback odmah vrati težinu
 na 1 i ponovo uključi lift motore ako guard reaguje. Profil ostaje na
-validiranih 12 m/s, sa osam sekundi pune brzine. PASS zahtijeva najmanje dvije
+validiranih 12 m/s, sa četiri sekunde pune brzine. PASS zahtijeva najmanje dvije
 sekunde kontinuiranog `applied_weight <= 0.03`, dubok roll/pitch i yaw transfer,
 nula solver failurea, potpuno kočenje i automatski povratak u Position.
 
@@ -1072,3 +1072,17 @@ Terminal 4 traži eksplicitnu potvrdu `MOTOR-OFF`. Ne šalji QGC transition
 komandu. `allocation_l4c_test_timeout` i `ROBUST_ALLOCATION_L4C=PASS` jedini
 su prihvatljiv PASS. Bilo koji guard/FAIL zahtijeva slijetanje i analizu ULoga
 prije odluke da li povećati wing-borne brzinu ili zaustaviti ovu arhitekturu.
+
+### L4c pokušaj 1 — motor-off ostvaren, gate FAIL
+
+Prvi L4c let dostigao je `lambda=0.000`, MC roll/pitch i yaw težine 0.050 i
+držao lift alokaciju ispod 0.03 tokom 8.36 s. Dostignuto je 12.479 m/s
+groundspeed i 11.117 m/s CAS uz nula solver failurea. Gate je ipak ispravno
+prekinut sa `altitude_error=1.193 m`. ULog pokazuje rastuću phugoid-like
+oscilaciju: pitch približno 2.5–6.6°, dok su lift motori bili približno 0.01.
+
+Nezavisni identifikacijski `standard_vtol_run_03_12ms.ulg` pri CAS 10–12.5
+m/s i `|vz| <= 0.3 m/s` daje median pitch 4.10°. Stara L4c high-speed
+referenca bila je 1.36°. L4c-v2 zato koristi izmjereni 4.10° trim i originalni
+četverosekundni hold; sigurnosni pragovi nisu prošireni. Pokušaj 1 ostaje
+vrijedan motor-off dokaz, ali nije puni PASS jer nije završio povratni profil.

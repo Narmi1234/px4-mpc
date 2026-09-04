@@ -27,7 +27,7 @@ def generate_launch_description():
                         "l3_brake_rate": 0.30,
                         "l3_recovery_seconds": 10.0,
                         "l3_brake_entry_lambda": 0.70,
-                        "l3_hold_seconds": 8.0,
+                        "l3_hold_seconds": 4.0,
                         "l3_min_lambda": 0.0,
                         "l3_pusher_max": 0.45,
                         "l3_collective_min": 0.46,

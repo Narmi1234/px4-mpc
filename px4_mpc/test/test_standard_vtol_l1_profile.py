@@ -210,6 +210,11 @@ class TestStandardVtolL1Profile(unittest.TestCase):
         np.testing.assert_allclose(lower[:, 5], 0.0)
         np.testing.assert_allclose(upper[:, 5], 0.0)
 
+    def test_l4c_pitch_uses_independent_12mps_ulog_trim(self):
+        pitch = StandardVtolRobustShadow._l4c_pitch_reference
+        self.assertAlmostEqual(np.degrees(pitch(12.0, 12.0)), -4.10)
+        self.assertAlmostEqual(np.degrees(pitch(0.0, 12.0)), 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
