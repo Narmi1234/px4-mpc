@@ -73,9 +73,9 @@ na zabilježenoj PX4 reviziji `5f1eae330b`.
 
 Puni plant ima 18 stanja:
 
-\[
+$$
 x_p=[p_W^T,\ v_W^T,\ q_{WB}^T,\ \omega_B^T,\ \Omega_1,\ldots,\Omega_5]^T,
-\]
+$$
 
 odnosno poziciju 3, brzinu 3, quaternion 4, ugaone brzine 3 i brzine pet
 rotora 5. To je model letjelice sa šest fizičkih stepeni slobode; broj 18 je
@@ -84,30 +84,27 @@ tri aerodinamičke površine.
 
 Osnovne jednačine su:
 
-\[
-\dot p_W=v_W,
-\]
-
-\[
-\dot v_W=\frac{1}{m}R(q_{WB})
-\left(F_{mot,B}+F_{aero,B}\right)+[0,0,-g]^T,
-\]
-
-\[
-\dot q_{WB}=\frac{1}{2}q_{WB}\otimes[0,\omega_B]^T,
-\]
-
-\[
-\dot\omega_B=J^{-1}\left(\tau_{mot,B}+\tau_{aero,B}
--\omega_B\times J\omega_B\right).
-\]
+$$
+\begin{aligned}
+\dot p_W &= v_W, \\
+\dot v_W &= \frac{1}{m}R(q_{WB})
+\left(F_{\mathrm{mot},B}+F_{\mathrm{aero},B}\right)
++\begin{bmatrix}0&0&-g\end{bmatrix}^{T}, \\
+\dot q_{WB} &= \frac{1}{2}q_{WB}\otimes
+\begin{bmatrix}0&\omega_B^T\end{bmatrix}^{T}, \\
+\dot\omega_B &= J^{-1}\left(\tau_{\mathrm{mot},B}
++\tau_{\mathrm{aero},B}-\omega_B\times J\omega_B\right).
+\end{aligned}
+$$
 
 Za svaki rotor vrijedi prvi red dinamike pogona i kvadratni thrust:
 
-\[
-\dot\Omega_i=\frac{\Omega_{i,cmd}-\Omega_i}{\tau_i},\qquad
-T_i=k_{T,i}\Omega_i^2.
-\]
+$$
+\begin{aligned}
+\dot\Omega_i &= \frac{\Omega_{i,\mathrm{cmd}}-\Omega_i}{\tau_i}, \\
+T_i &= k_{T,i}\Omega_i^2.
+\end{aligned}
+$$
 
 U implementaciji je masa približno 5.025 kg, bazna inercija je
 `diag(0.47771, 0.34167, 0.81104) kg m²` prije composite korekcije, a analitička
@@ -117,11 +114,12 @@ hover komanda je približno 0.5201. To nisu proizvoljno pogođeni brojevi.
 
 Početni kontrolni model imao je
 
-\[
-x_{10}=[p_W^T,v_W^T,q_{WB}^T]^T,
-\quad
-u=[c_l,c_p,p_{sp},q_{sp},r_{sp}]^T.
-\]
+$$
+\begin{aligned}
+x_{10} &= \begin{bmatrix}p_W^T&v_W^T&q_{WB}^T\end{bmatrix}^{T}, \\
+u &= \begin{bmatrix}c_l&c_p&p_{\mathrm{sp}}&q_{\mathrm{sp}}&r_{\mathrm{sp}}\end{bmatrix}^{T}.
+\end{aligned}
+$$
 
 Pretpostavljao je da PX4 body-rate petlja trenutno ostvaruje
 `omega = omega_sp`. Model je bio dovoljan za hover i blage MC gateove, ali nije
@@ -134,13 +132,14 @@ je stanje reducirano.
 Aktivni model je u
 [`standard_vtol_robust_casadi_model.py`](px4_mpc/px4_mpc/models/standard_vtol_robust_casadi_model.py):
 
-\[
-x=[p_W^T,v_W^T,q_{WB}^T,\omega_B^T,\delta^T]^T\in\mathbb R^{16},
-\]
-
-\[
-u=[c_l,c_p,p_{sp},q_{sp},r_{sp},\lambda]^T\in\mathbb R^6.
-\]
+$$
+\begin{aligned}
+x &= \begin{bmatrix}p_W^T&v_W^T&q_{WB}^T&\omega_B^T&\delta^T\end{bmatrix}^{T}
+\in\mathbb{R}^{16}, \\
+u &= \begin{bmatrix}c_l&c_p&p_{\mathrm{sp}}&q_{\mathrm{sp}}&r_{\mathrm{sp}}&\lambda\end{bmatrix}^{T}
+\in\mathbb{R}^{6}.
+\end{aligned}
+$$
 
 Ovdje su `c_l` kolektiv lift motora, `c_p` pusher, tri body-rate reference i
 `lambda` traženi udio vertikalnog MC/lift autoriteta. `lambda=1` predstavlja
@@ -148,9 +147,11 @@ MC oslonac, a `lambda=0` planirano potpuno rasterećenje lift motora.
 
 Model ima i osam online parametara:
 
-\[
-\theta=[w_x,w_y,w_z,b_{F_x},b_{F_z},d_q,\mu_{rp},\mu_y]^T,
-\]
+$$
+\theta=\begin{bmatrix}
+w_x&w_y&w_z&b_{F_x}&b_{F_z}&d_q&\mu_{rp}&\mu_y
+\end{bmatrix}^{T},
+$$
 
 gdje su vjetar, bias sile, bounded pitch disturbance i stvarno primijenjene
 PX4 roll/pitch i yaw allocation težine.
@@ -158,10 +159,11 @@ PX4 roll/pitch i yaw allocation težine.
 Translacijska i quaternion dinamika ostaju oblika punog planta. Rotacijska
 dinamika je grey-box model. Za pitch je identificiran LPV oblik
 
-\[
-\dot q=-a(V,\lambda)q+b(V,\lambda)q_{sp}
--4\lambda(1-\lambda)(c_0+c_\alpha\alpha-c_\theta\theta)-d_q,
-\]
+$$
+\dot q=-a(V,\lambda)q+b(V,\lambda)q_{\mathrm{sp}}
+-4\lambda(1-\lambda)
+\left(c_0+c_\alpha\alpha-c_\theta\theta\right)-d_q,
+$$
 
 uz `|d_q| <= 0.47 rad/s²`. Koeficijenti se bilinearno interpoliraju između
 četiri čvora u
@@ -170,26 +172,26 @@ Oni su fitovani iz 12 i 15 m/s ULogova, nisu uzeti iz SDF-a.
 
 Roll model je
 
-\[
-\dot p=\mu_{rp}k_p(p_{sp}-p)
+$$
+\dot p=\mu_{rp}k_p(p_{\mathrm{sp}}-p)
 -(1-\mu_{rp})a_p p+b_pV^2\delta_a,
-\]
+$$
 
 sa nominalnim `a_p=0.50` i `b_p=0.0475`. Identificirani pojedinačni fitovi su
 obuhvatili približno `a_p=0.34...0.67` i `b_p=0.041...0.055`.
 
 Koordinirani zaokret koristi
 
-\[
-\dot\psi_{coord}=-0.95\frac{g\tan\phi}{\max(V,4)},
-\]
+$$
+\dot\psi_{\mathrm{coord}}=-0.95\frac{g\tan\phi}{\max(V,4)},
+$$
 
 a površine imaju prvi red
 
-\[
-\dot\delta=(\delta_{cmd}-\delta)/\tau_\delta,
-\qquad \tau_\delta=1.0\ \mathrm{s}.
-\]
+$$
+\dot\delta=\frac{\delta_{\mathrm{cmd}}-\delta}{\tau_\delta},
+\qquad \tau_\delta=1.0\,\mathrm{s}.
+$$
 
 Važno ograničenje: `lambda` je optimizirani NMPC ulaz, dok nezavisne PX4
 roll/pitch i yaw allocation težine live čvor raspoređuje iz `lambda`. One još
@@ -218,20 +220,21 @@ OCP je implementiran u
 [`standard_vtol_robust_nmpc.py`](px4_mpc/px4_mpc/controllers/standard_vtol_robust_nmpc.py).
 Na svakom koraku rješava problem
 
-\[
-\min_{x_k,u_k}\sum_{k=0}^{N-1}
-\left(\lVert x_k-x_k^r\rVert_Q^2+
+$$
+\begin{aligned}
+\underset{x_k,u_k}{\operatorname{minimize}}\quad
+&\sum_{k=0}^{N-1}\left(
+\lVert x_k-x_k^r\rVert_Q^2+
 \lVert u_k-u_k^r\rVert_R^2\right)
-+\lVert x_N-x_N^r\rVert_{Q_N}^2
-\]
++\lVert x_N-x_N^r\rVert_{Q_N}^2, \\
+\text{subject to}\quad
+&x_{k+1}=f_d(x_k,u_k,\theta_k), \\
+&x_k\in\mathcal X,\qquad u_k\in\mathcal U.
+\end{aligned}
+$$
 
-uz
-
-\[
-x_{k+1}=f_d(x_k,u_k,\theta_k),
-\]
-
-granice aktuatora, vertikalne brzine, attitudea, body rates i površina.
+Skupovi $\mathcal X$ i $\mathcal U$ predstavljaju granice aktuatora,
+vertikalne brzine, attitudea, body rates i površina.
 Horizont je 20 koraka / 2.0 s, čvor radi na 20 Hz, a solver je acados
 SQP-RTI sa HPIPM QP solverom, ERK integracijom i Gauss–Newton Hessianom.
 
